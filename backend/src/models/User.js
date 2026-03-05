@@ -1,0 +1,116 @@
+const { pool } = require('../db/migrate');
+const bcrypt = require('@fastify/bcrypt');
+
+class User {
+  static async findAll() {
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.email, u.student_id, u.enabled, u.created_at,
+              u.group_id, g.name as group_name,
+              u.role_id, r.name as role_name
+       FROM users u
+       LEFT JOIN groups g ON u.group_id = g.id
+       LEFT JOIN roles r ON u.role_id = r.id
+       ORDER BY u.username`
+    );
+    return result.rows;
+  }
+
+  static async findById(id) {
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.email, u.student_id, u.enabled, u.created_at,
+              u.group_id, g.name as group_name,
+              u.role_id, r.name as role_name
+       FROM users u
+       LEFT JOIN groups g ON u.group_id = g.id
+       LEFT JOIN roles r ON u.role_id = r.id
+       WHERE u.id = $1`,
+      [id]
+    );
+    return result.rows[0];
+  }
+
+  static async findByUsername(username) {
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.email, u.password_hash, u.student_id, u.enabled,
+              u.group_id, g.name as group_name,
+              u.role_id, r.name as role_name
+       FROM users u
+       LEFT JOIN groups g ON u.group_id = g.id
+       LEFT JOIN roles r ON u.role_id = r.id
+       WHERE u.username = $1`,
+      [username]
+    );
+    return result.rows[0];
+  }
+
+  static async findByEmail(email) {
+    const result = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
+    return result.rows[0];
+  }
+
+  static async create(userData) {
+    const { username, email, password, studentId, groupId, roleId = 3 } = userData;
+    
+    // Hash password
+    const passwordHash = await bcrypt.hash(password);
+    
+    const result = await pool.query(
+      `INSERT INTO users (username, email, password_hash, student_id, group_id, role_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, email, student_id, enabled, created_at`,
+      [username, email, passwordHash, studentId || null, groupId || null, roleId]
+    );
+    return result.rows[0];
+  }
+
+  static async update(id, updates) {
+    const { username, email, studentId, groupId, roleId, enabled } = updates;
+    const result = await pool.query(
+      `UPDATE users 
+       SET username = COALESCE($1, username),
+           email = COALESCE($2, email),
+           student_id = COALESCE($3, student_id),
+           group_id = COALESCE($4, group_id),
+           role_id = COALESCE($5, role_id),
+           enabled = COALESCE($6, enabled),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $7 RETURNING *`,
+      [username, email, studentId, groupId, roleId, enabled, id]
+    );
+    return result.rows[0];
+  }
+
+  static async updateGroup(userId, groupId) {
+    const result = await pool.query(
+      `UPDATE users 
+       SET group_id = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 RETURNING *`,
+      [groupId, userId]
+    );
+    return result.rows[0];
+  }
+
+  static async updatePassword(id, newPassword) {
+    const passwordHash = await bcrypt.hash(newPassword);
+    const result = await pool.query(
+      `UPDATE users 
+       SET password_hash = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 RETURNING id, username, email`,
+      [passwordHash, id]
+    );
+    return result.rows[0];
+  }
+
+  static async delete(id) {
+    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING *', [id]);
+    return result.rows[0];
+  }
+
+  static async verifyPassword(password, hash) {
+    return await bcrypt.compare(password, hash);
+  }
+}
+
+module.exports = User;

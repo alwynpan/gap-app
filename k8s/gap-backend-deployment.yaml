@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gap-backend
+  namespace: gap-portal
+  labels:
+    app: gap-backend
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gap-backend
+  template:
+    metadata:
+      labels:
+        app: gap-backend
+    spec:
+      containers:
+        - name: gap-backend
+          image: gap-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+              name: http
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3001"
+            - name: DB_HOST
+              value: "postgres"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: "gap_db"
+            - name: DB_USER
+              value: "gap_user"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gap-secrets
+                  key: db-password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gap-secrets
+                  key: jwt-secret
+            - name: JWT_EXPIRES_IN
+              value: "24h"
+            - name: REGISTRATION_ENABLED
+              value: "true"
+            - name: CORS_ORIGIN
+              value: "http://gap.local"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z postgres 5432; do
+                echo "Waiting for postgres..."
+                sleep 2
+              done
+              echo "Postgres is ready!"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gap-backend
+  namespace: gap-portal
+  labels:
+    app: gap-backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3001
+      targetPort: 3001
+      protocol: TCP
+      name: http
+  selector:
+    app: gap-backend

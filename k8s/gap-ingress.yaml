@@ -1,0 +1,60 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gap-ingress
+  namespace: gap-portal
+  labels:
+    app: gap-portal
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+spec:
+  rules:
+    - host: gap.local
+      http:
+        paths:
+          # Backend API routes
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: gap-backend
+                port:
+                  number: 3001
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: gap-backend
+                port:
+                  number: 3001
+          - path: /users
+            pathType: Prefix
+            backend:
+              service:
+                name: gap-backend
+                port:
+                  number: 3001
+          - path: /groups
+            pathType: Prefix
+            backend:
+              service:
+                name: gap-backend
+                port:
+                  number: 3001
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: gap-backend
+                port:
+                  number: 3001
+          # Frontend (catch-all)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gap-frontend
+                port:
+                  number: 80
+  tls: []
