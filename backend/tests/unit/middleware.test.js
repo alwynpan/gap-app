@@ -182,4 +182,80 @@ describe('RBAC Middleware', () => {
 
     expect(mockBcrypt.compare).toHaveBeenCalledWith('plain', 'hashed');
   });
+
+  it('requireTeamManager allows team_manager', async () => {
+    const rbacPlugin = require('../../src/middleware/rbac');
+    fastify.checkRole = jest.fn().mockResolvedValue(true);
+    await rbacPlugin(fastify, {});
+
+    const requireTeamManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireTeamManager')[1];
+    const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    const result = await requireTeamManager({ user: { role: 'team_manager' } }, mockReply);
+
+    expect(result).toBe(true);
+    expect(fastify.checkRole).toHaveBeenCalledWith({ user: { role: 'team_manager' } }, mockReply, [
+      'team_manager',
+      'admin',
+    ]);
+  });
+
+  it('requireTeamManager allows admin', async () => {
+    const rbacPlugin = require('../../src/middleware/rbac');
+    fastify.checkRole = jest.fn().mockResolvedValue(true);
+    await rbacPlugin(fastify, {});
+
+    const requireTeamManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireTeamManager')[1];
+    const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    const result = await requireTeamManager({ user: { role: 'admin' } }, mockReply);
+
+    expect(result).toBe(true);
+  });
+
+  it('requireTeamManager denies user', async () => {
+    const rbacPlugin = require('../../src/middleware/rbac');
+    fastify.checkRole = jest.fn().mockImplementation((request, reply, roles) => {
+      reply.code(403).send({ error: 'Forbidden' });
+      return false;
+    });
+    await rbacPlugin(fastify, {});
+
+    const requireTeamManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireTeamManager')[1];
+    const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    await requireTeamManager({ user: { role: 'user' } }, mockReply);
+
+    expect(mockReply.code).toHaveBeenCalledWith(403);
+  });
+
+  it('requireAdmin allows admin', async () => {
+    const rbacPlugin = require('../../src/middleware/rbac');
+    fastify.checkRole = jest.fn().mockResolvedValue(true);
+    await rbacPlugin(fastify, {});
+
+    const requireAdmin = fastify.decorate.mock.calls.find((call) => call[0] === 'requireAdmin')[1];
+    const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    const result = await requireAdmin({ user: { role: 'admin' } }, mockReply);
+
+    expect(result).toBe(true);
+    expect(fastify.checkRole).toHaveBeenCalledWith({ user: { role: 'admin' } }, mockReply, ['admin']);
+  });
+
+  it('requireAdmin denies user', async () => {
+    const rbacPlugin = require('../../src/middleware/rbac');
+    fastify.checkRole = jest.fn().mockImplementation((request, reply, roles) => {
+      reply.code(403).send({ error: 'Forbidden' });
+      return false;
+    });
+    await rbacPlugin(fastify, {});
+
+    const requireAdmin = fastify.decorate.mock.calls.find((call) => call[0] === 'requireAdmin')[1];
+    const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    await requireAdmin({ user: { role: 'user' } }, mockReply);
+
+    expect(mockReply.code).toHaveBeenCalledWith(403);
+  });
 });
