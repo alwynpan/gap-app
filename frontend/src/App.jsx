@@ -17,7 +17,7 @@ function App() {
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          
+
           {/* Protected Routes */}
           <Route
             path="/dashboard"
@@ -27,7 +27,7 @@ function App() {
               </ProtectedRoute>
             }
           />
-          
+
           {/* Admin/Team Manager Routes */}
           <Route
             path="/users"
@@ -37,7 +37,7 @@ function App() {
               </ProtectedRoute>
             }
           />
-          
+
           {/* Admin Only Routes */}
           <Route
             path="/groups"
@@ -47,10 +47,10 @@ function App() {
               </ProtectedRoute>
             }
           />
-          
+
           {/* Default redirect */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          
+
           {/* 404 - Redirect to dashboard */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

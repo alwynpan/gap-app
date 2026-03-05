@@ -28,6 +28,14 @@ jobs:
         working-directory: ./backend
         run: npm run lint
 
+      - name: Upload backend lint report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-eslint-report
+          path: backend/eslint.xml
+          retention-days: 7
+
       - name: Install frontend dependencies
         working-directory: ./frontend
         run: npm ci
@@ -35,6 +43,14 @@ jobs:
       - name: Run frontend lint
         working-directory: ./frontend
         run: npm run lint
+
+      - name: Upload frontend lint report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-eslint-report
+          path: frontend/eslint.xml
+          retention-days: 7
 
   test:
     runs-on: ubuntu-latest
@@ -56,9 +72,54 @@ jobs:
         working-directory: ./backend
         run: npm test
 
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage/cobertura-coverage.xml
+          retention-days: 7
+
+      - name: Check coverage threshold
+        working-directory: ./backend
+        run: |
+          if [ ! -f coverage/cobertura-coverage.xml ]; then
+            echo "Coverage report not found"
+            exit 1
+          fi
+          echo "Coverage report generated successfully"
+
+  format:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Run backend format check
+        working-directory: ./backend
+        run: npm run format:check
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run frontend format check
+        working-directory: ./frontend
+        run: npm run format:check
+
   build:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, format]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

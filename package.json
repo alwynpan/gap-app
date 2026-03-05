@@ -1,0 +1,38 @@
+{
+  "name": "gap-app",
+  "version": "1.0.0",
+  "description": "G.A.P. Portal - Full Stack Application",
+  "private": true,
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "lint:backend": "cd backend && npm run lint",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "test:backend": "cd backend && npm test",
+    "test": "npm run test:backend",
+    "format:backend": "cd backend && npm run format:check",
+    "format:frontend": "cd frontend && npm run format:check",
+    "format": "npm run format:backend && npm run format:frontend",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "prepare": "husky || true"
+  },
+  "lint-staged": {
+    "backend/**/*.js": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "frontend/**/*.{js,jsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "**/*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2"
+  }
+}

@@ -47,7 +47,7 @@ function Users() {
 
   const handleAssignGroup = async () => {
     if (!selectedUser || selectedGroup === '') return;
-    
+
     const groupId = selectedGroup === '' ? null : parseInt(selectedGroup);
     await handleGroupChange(selectedUser, groupId);
     setSelectedUser(null);
@@ -130,26 +130,26 @@ function Users() {
                     <tr key={u.id}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{u.username}</div>
-                        {u.student_id && (
-                          <div className="text-sm text-gray-500">{u.student_id}</div>
-                        )}
+                        {u.student_id && <div className="text-sm text-gray-500">{u.student_id}</div>}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{u.email}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          u.role_name === 'admin' ? 'bg-red-100 text-red-800' :
-                          u.role_name === 'team_manager' ? 'bg-blue-100 text-blue-800' :
-                          'bg-green-100 text-green-800'
-                        }`}>
+                        <span
+                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                            u.role_name === 'admin'
+                              ? 'bg-red-100 text-red-800'
+                              : u.role_name === 'team_manager'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-green-100 text-green-800'
+                          }`}
+                        >
                           {u.role_name}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {u.group_name || 'Not assigned'}
-                        </div>
+                        <div className="text-sm text-gray-900">{u.group_name || 'Not assigned'}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {selectedUser === u.id ? (
@@ -166,10 +166,7 @@ function Users() {
                                 </option>
                               ))}
                             </select>
-                            <button
-                              onClick={handleAssignGroup}
-                              className="text-primary-600 hover:text-primary-800"
-                            >
+                            <button onClick={handleAssignGroup} className="text-primary-600 hover:text-primary-800">
                               Save
                             </button>
                             <button
@@ -196,11 +193,7 @@ function Users() {
                 </tbody>
               </table>
 
-              {users.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                  No users found
-                </div>
-              )}
+              {users.length === 0 && <div className="text-center py-8 text-gray-500">No users found</div>}
             </div>
           </div>
         </div>

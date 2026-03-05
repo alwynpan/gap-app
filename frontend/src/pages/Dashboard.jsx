@@ -21,10 +21,7 @@ function Dashboard() {
               <span className="text-sm text-gray-600">
                 {user?.username} ({user?.role})
               </span>
-              <button
-                onClick={handleLogout}
-                className="text-sm text-red-600 hover:text-red-700"
-              >
+              <button onClick={handleLogout} className="text-sm text-red-600 hover:text-red-700">
                 Logout
               </button>
             </div>
@@ -59,9 +56,7 @@ function Dashboard() {
                 </div>
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Group</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    {user?.groupName || 'Not assigned'}
-                  </dd>
+                  <dd className="mt-1 text-sm text-gray-900">{user?.groupName || 'Not assigned'}</dd>
                 </div>
                 {user?.studentId && (
                   <div>

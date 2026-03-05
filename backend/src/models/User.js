@@ -44,19 +44,16 @@ class User {
   }
 
   static async findByEmail(email) {
-    const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     return result.rows[0];
   }
 
   static async create(userData) {
     const { username, email, password, studentId, groupId, roleId = 3 } = userData;
-    
+
     // Hash password
     const passwordHash = await bcrypt.hash(password);
-    
+
     const result = await pool.query(
       `INSERT INTO users (username, email, password_hash, student_id, group_id, role_id)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, email, student_id, enabled, created_at`,
