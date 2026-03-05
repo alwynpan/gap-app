@@ -1,9 +1,27 @@
 const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
 const dbConfig = require('../config/database');
 
 const pool = new Pool(dbConfig);
 
-const migrationSQL = `
+async function generateMigrationSQL() {
+  // Read admin credentials from environment variables
+  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  
+  // Fail migration if ADMIN_PASSWORD is not set
+  if (!adminPassword) {
+    console.error('ERROR: ADMIN_PASSWORD environment variable is not set.');
+    console.error('Please set ADMIN_PASSWORD in your environment or .env file.');
+    console.error('Example: ADMIN_PASSWORD=your-secure-password');
+    process.exit(1);
+  }
+  
+  // Generate bcrypt hash dynamically at migration time
+  const saltRounds = 10;
+  const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
+  
+  return `
 -- Drop tables if they exist (for clean migration)
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS groups CASCADE;
@@ -50,13 +68,14 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_groups_enabled ON groups(enabled);
 
--- Insert default admin user (password: admin123)
--- Note: In production, change this immediately
+-- Insert default admin user with dynamically generated password hash
+-- Username: ${adminUsername}
+-- Password hash generated at migration time using bcrypt
 INSERT INTO users (username, email, password_hash, role_id, enabled) 
 VALUES (
-  'admin',
+  '${adminUsername}',
   'admin@gap.local',
-  '$2b$10$rQZ9vXJxL5K5J5K5J5K5JeQZ9vXJxL5K5J5K5J5K5J5K5J5K5J5K',
+  '${passwordHash}',
   1,
   true
 );
@@ -68,11 +87,16 @@ INSERT INTO groups (name, enabled) VALUES
   ('Team Gamma', true),
   ('Team Delta', false);
 `;
+}
 
 async function migrate() {
   const client = await pool.connect();
   try {
     console.log('Starting database migration...');
+    
+    // Generate SQL with dynamic admin credentials
+    const migrationSQL = await generateMigrationSQL();
+    
     await client.query('BEGIN');
     await client.query(migrationSQL);
     await client.query('COMMIT');
