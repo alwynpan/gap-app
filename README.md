@@ -89,12 +89,22 @@ npm run dev
 
 ## Default Credentials
 
-After running migrations:
-- **Username:** `admin`
-- **Password:** `admin123`
+After running migrations, the admin username and password are set via environment variables:
+- **Username:** `admin` (or set `ADMIN_USERNAME` before migration)
+- **Password:** Set via `ADMIN_PASSWORD` environment variable before migration
 - **Role:** Admin
 
-⚠️ **Change this password immediately in production!**
+⚠️ **Set secure values for `ADMIN_USERNAME` and `ADMIN_PASSWORD` before running migrations in production!**
+
+To set admin credentials:
+```bash
+# In your .env file or environment
+export ADMIN_USERNAME=admin
+export ADMIN_PASSWORD=your-secure-password
+
+# Then run migrations
+npm run migrate
+```
 
 ## API Endpoints
 
@@ -207,6 +217,8 @@ npm test -- auth.spec.js
 | `DB_NAME` | Database name | `gap_db` |
 | `DB_USER` | Database user | `gap_user` |
 | `DB_PASSWORD` | Database password | (required) |
+| `ADMIN_USERNAME` | Initial admin username | `admin` |
+| `ADMIN_PASSWORD` | Initial admin password (required for migration) | (required) |
 | `REGISTRATION_ENABLED` | Enable user registration | `true` |
 | `PORT` | Server port | `3001` |
 | `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:3000` |
