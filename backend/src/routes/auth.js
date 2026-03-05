@@ -3,11 +3,11 @@ const Role = require('../models/Role');
 const config = require('../config/index');
 
 async function authRoutes(fastify, options) {
-  // Register route
+  // Register route (stricter limit: 3 req/min per IP to prevent spam)
   fastify.post('/auth/register', {
     config: {
       rateLimit: {
-        max: 5,
+        max: 3,
         timeWindow: '1 minute',
       },
     },
@@ -69,7 +69,7 @@ async function authRoutes(fastify, options) {
     }
   });
 
-  // Login route
+  // Login route (5 req/min per IP to prevent brute-force attacks)
   fastify.post('/auth/login', {
     config: {
       rateLimit: {
@@ -131,7 +131,7 @@ async function authRoutes(fastify, options) {
     }
   });
 
-  // Logout route (client-side token removal, but we can invalidate if needed)
+  // Logout route (5 req/min per IP)
   fastify.post('/auth/logout', {
     config: {
       rateLimit: {
@@ -145,7 +145,7 @@ async function authRoutes(fastify, options) {
     return reply.send({ message: 'Logout successful' });
   });
 
-  // Get current user info
+  // Get current user info (5 req/min per IP)
   fastify.get('/auth/me', {
     config: {
       rateLimit: {
