@@ -30,12 +30,13 @@ async function buildServer() {
     credentials: true,
   });
 
-  // Register rate limiting plugin (applied per-route via config)
+  // Register rate limiting plugin (global default: 100 req/min per IP)
+  // Individual routes can override via config.rateLimit
   await fastify.register(rateLimit, {
-    max: 5, // 5 requests
+    max: 100, // 100 requests per minute (default for non-auth routes)
     timeWindow: '1 minute',
     keyGenerator: (request) => {
-      // Use IP address as the key
+      // Use IP address as the key for per-IP rate limiting
       return request.ip;
     },
     errorResponse: (request) => {
@@ -44,10 +45,6 @@ async function buildServer() {
         message: 'Rate limit exceeded. Please try again later.',
         retryAfter: 60,
       };
-    },
-    allowList: (request) => {
-      // Only apply rate limiting to auth endpoints
-      return !request.url.startsWith('/auth/');
     },
   });
 
