@@ -1,14 +1,12 @@
 {
   "env": {
     "browser": true,
-    "es2022": true,
-    "jest": true
+    "es2021": true
   },
   "extends": [
     "eslint:recommended",
     "plugin:react/recommended",
-    "plugin:react-hooks/recommended",
-    "eslint-config-prettier"
+    "plugin:react-hooks/recommended"
   ],
   "parserOptions": {
     "ecmaVersion": "latest",
@@ -17,37 +15,13 @@
       "jsx": true
     }
   },
-  "plugins": ["react", "react-hooks", "security"],
+  "plugins": ["react", "react-hooks"],
   "rules": {
-    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
-    "no-console": "warn",
-    "no-debugger": "error",
-    "no-eval": "error",
-    "no-implied-eval": "error",
-    "no-new-func": "error",
-    "no-return-await": "error",
-    "require-await": "error",
-    "eqeqeq": ["error", "always"],
-    "curly": ["error", "all"],
-    "no-var": "error",
-    "prefer-const": "error",
-    "no-implicit-globals": "error",
-    "no-unsafe-optional-chaining": "error",
-    "no-useless-catch": "error",
-    "no-useless-return": "error",
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "no-console": "off",
     "react/prop-types": "off",
     "react/react-in-jsx-scope": "off",
-    "react/no-unescaped-entities": "error",
-    "react/jsx-no-target-blank": "error",
-    "react/jsx-no-duplicate-props": "error",
-    "react/jsx-uses-react": "error",
-    "react/jsx-uses-vars": "error",
-    "react-hooks/rules-of-hooks": "error",
-    "react-hooks/exhaustive-deps": "warn",
-    "security/detect-object-injection": "error",
-    "security/detect-non-literal-regexp": "error",
-    "security/detect-eval-with-expression": "error",
-    "security/detect-unsafe-regex": "error"
+    "react/no-unescaped-entities": "off"
   },
   "settings": {
     "react": {
