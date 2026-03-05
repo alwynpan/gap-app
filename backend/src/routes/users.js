@@ -36,7 +36,7 @@ async function usersRoutes(fastify, _options) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
         // Users can view their own profile, admin/team_manager can view all
-        const userId = parseInt(request.params.id);
+        const userId = parseInt(request.params.id, 10);
         if (request.user.id !== userId) {
           const allowed = await fastify.checkRole(request, reply, ['admin', 'team_manager']);
           if (!allowed) {
@@ -47,7 +47,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const userId = parseInt(request.params.id);
+        const userId = parseInt(request.params.id, 10);
         const user = await User.findById(userId);
 
         if (!user) {
@@ -148,7 +148,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const userId = parseInt(request.params.id);
+        const userId = parseInt(request.params.id, 10);
         const { groupId } = request.body;
 
         if (groupId === undefined) {
@@ -202,7 +202,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const userId = parseInt(request.params.id);
+        const userId = parseInt(request.params.id, 10);
         const { username, email, studentId, groupId, roleId, enabled } = request.body;
 
         const user = await User.findById(userId);
@@ -246,7 +246,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const userId = parseInt(request.params.id);
+        const userId = parseInt(request.params.id, 10);
 
         // Prevent deleting yourself
         if (userId === request.user.id) {

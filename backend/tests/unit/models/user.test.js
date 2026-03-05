@@ -133,7 +133,7 @@ describe('User Model', () => {
 
       const result = await User.create(userData);
 
-      expect(bcrypt.hash).toHaveBeenCalledWith('password123');
+      expect(bcrypt.hash).toHaveBeenCalledWith('password123', expect.any(Number));
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO users'), [
         'newuser',
         'new@test.com',
@@ -311,7 +311,7 @@ describe('User Model', () => {
 
       const result = await User.updatePassword(1, 'newpassword123');
 
-      expect(bcrypt.hash).toHaveBeenCalledWith('newpassword123');
+      expect(bcrypt.hash).toHaveBeenCalledWith('newpassword123', expect.any(Number));
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), ['newHashedPassword', 1]);
       expect(result).toEqual(mockUpdatedUser);
     });

@@ -12,8 +12,7 @@
     "lint:fix": "eslint --fix .",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
-    "build": "echo 'Backend build complete'",
-    "prepare": "husky"
+    "build": "echo 'Backend build complete'"
   },
   "lint-staged": {
     "*.js": [

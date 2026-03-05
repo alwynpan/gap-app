@@ -11,8 +11,7 @@
     "lint:fix": "eslint --fix .",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
-    "test": "echo 'No tests yet'",
-    "prepare": "husky || true"
+    "test": "echo 'No tests yet'"
   },
   "lint-staged": {
     "*.{js,jsx}": [
