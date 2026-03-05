@@ -12,14 +12,16 @@ async function rbacPlugin(fastify, _options) {
   // Decorate fastify with RBAC helpers
   fastify.decorate('checkRole', async (request, reply, requiredRoles) => {
     if (!request.user) {
-      return reply.code(401).send({ error: 'Unauthorized' });
+      reply.code(401).send({ error: 'Unauthorized' });
+      return false;
     }
 
     const userRoleLevel = roleHierarchy[request.user.role] || 0;
     const requiredLevel = Math.max(...requiredRoles.map((role) => roleHierarchy[role] || 0));
 
     if (userRoleLevel < requiredLevel) {
-      return reply.code(403).send({ error: 'Forbidden: Insufficient permissions' });
+      reply.code(403).send({ error: 'Forbidden: Insufficient permissions' });
+      return false;
     }
 
     return true;

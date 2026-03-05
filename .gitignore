@@ -37,3 +37,6 @@ docker-compose.override.yml
 tmp/
 temp/
 *.tmp
+
+# Generated lint reports
+**/eslint.xml
