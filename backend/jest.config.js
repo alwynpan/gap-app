@@ -15,7 +15,6 @@ module.exports = {
   coveragePathIgnorePatterns: ['src/config/', 'src/db/', 'src/server.js'],
   testMatch: ['**/tests/**/*.test.js'],
   verbose: true,
-  forceExit: true,
   detectOpenHandles: true,
   clearMocks: true,
   resetMocks: true,

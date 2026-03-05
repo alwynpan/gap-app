@@ -52,7 +52,7 @@ class User {
     const { username, email, password, studentId, groupId, roleId = 3 } = userData;
 
     // Hash password
-    const passwordHash = await bcrypt.hash(password);
+    const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
       `INSERT INTO users (username, email, password_hash, student_id, group_id, role_id)
@@ -90,7 +90,7 @@ class User {
   }
 
   static async updatePassword(id, newPassword) {
-    const passwordHash = await bcrypt.hash(newPassword);
+    const passwordHash = await bcrypt.hash(newPassword, 10);
     const result = await pool.query(
       `UPDATE users 
        SET password_hash = $1, updated_at = CURRENT_TIMESTAMP
