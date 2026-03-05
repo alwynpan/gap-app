@@ -131,28 +131,15 @@ async function authRoutes(fastify, options) {
     }
   });
 
-  // Logout route (5 req/min per IP)
-  fastify.post('/auth/logout', {
-    config: {
-      rateLimit: {
-        max: 5,
-        timeWindow: '1 minute',
-      },
-    },
-  }, async (request, reply) => {
+  // Logout route
+  fastify.post('/auth/logout', async (request, reply) => {
     // In a stateless JWT system, logout is client-side (remove token)
     // We could add token blacklisting here if needed
     return reply.send({ message: 'Logout successful' });
   });
 
-  // Get current user info (5 req/min per IP)
+  // Get current user info
   fastify.get('/auth/me', {
-    config: {
-      rateLimit: {
-        max: 5,
-        timeWindow: '1 minute',
-      },
-    },
     preHandler: async (request, reply) => {
       if (!request.user) {
         return reply.code(401).send({ error: 'Unauthorized' });
