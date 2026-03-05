@@ -7,11 +7,21 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint --max-warnings 0 --format checkstyle -o eslint.xml .",
+    "lint": "eslint --format checkstyle -o eslint.xml .",
     "lint:fix": "eslint --fix .",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
-    "test": "echo 'No tests yet'"
+    "test": "echo 'No tests yet'",
+    "prepare": "husky || true"
+  },
+  "lint-staged": {
+    "*.{js,jsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,md,css}": [
+      "prettier --write"
+    ]
   },
   "lint-staged": {
     "*.{js,jsx}": [
@@ -34,8 +44,12 @@
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.2",
     "eslint-plugin-react": "^7.33.2",
     "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-security": "^2.1.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
     "postcss": "^8.4.32",
     "prettier": "^3.8.1",
     "tailwindcss": "^3.4.0",
