@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint --format checkstyle -o eslint.xml .",
+    "lint": "eslint --max-warnings 0 --format checkstyle -o eslint.xml .",
     "lint:fix": "eslint --fix .",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
