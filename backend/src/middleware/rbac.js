@@ -1,6 +1,7 @@
-const bcrypt = require('bcryptjs');
-
 async function rbacPlugin(fastify, options) {
+  // Register bcrypt plugin
+  await fastify.register(require('fastify-bcrypt'));
+
   // Role hierarchy: admin > team_manager > user
   const roleHierarchy = {
     admin: 3,
@@ -38,12 +39,12 @@ async function rbacPlugin(fastify, options) {
 
   // Password hashing helper
   fastify.decorate('hashPassword', async (password) => {
-    return await bcrypt.hash(password);
+    return await fastify.bcrypt.hash(password);
   });
 
   // Password verification helper
   fastify.decorate('verifyPassword', async (password, hash) => {
-    return await bcrypt.compare(password, hash);
+    return await fastify.bcrypt.compare(password, hash);
   });
 }
 
