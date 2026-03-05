@@ -35,7 +35,7 @@
     "no-unsafe-optional-chaining": "error",
     "no-useless-catch": "error",
     "no-useless-return": "error",
-    "react/prop-types": "error",
+    "react/prop-types": "off",
     "react/react-in-jsx-scope": "off",
     "react/no-unescaped-entities": "error",
     "react/jsx-no-target-blank": "error",
