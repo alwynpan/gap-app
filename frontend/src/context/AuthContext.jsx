@@ -49,12 +49,12 @@ export function AuthProvider({ children }) {
         username,
         password,
       });
-      
+
       const { token: newToken, user: userData } = response.data;
       localStorage.setItem('token', newToken);
       setToken(newToken);
       setUser(userData);
-      
+
       return { success: true };
     } catch (error) {
       return {
@@ -72,7 +72,7 @@ export function AuthProvider({ children }) {
         password,
         studentId,
       });
-      
+
       return { success: true, message: response.data.message };
     } catch (error) {
       return {

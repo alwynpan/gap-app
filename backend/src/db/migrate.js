@@ -8,7 +8,7 @@ async function generateMigrationSQL() {
   // Read admin credentials from environment variables
   const adminUsername = process.env.ADMIN_USERNAME || 'admin';
   const adminPassword = process.env.ADMIN_PASSWORD;
-  
+
   // Fail migration if ADMIN_PASSWORD is not set
   if (!adminPassword) {
     console.error('ERROR: ADMIN_PASSWORD environment variable is not set.');
@@ -16,11 +16,11 @@ async function generateMigrationSQL() {
     console.error('Example: ADMIN_PASSWORD=your-secure-password');
     process.exit(1);
   }
-  
+
   // Generate bcrypt hash dynamically at migration time
   const saltRounds = 10;
   const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
-  
+
   return `
 -- Drop tables if they exist (for clean migration)
 DROP TABLE IF EXISTS users CASCADE;
@@ -93,10 +93,10 @@ async function migrate() {
   const client = await pool.connect();
   try {
     console.log('Starting database migration...');
-    
+
     // Generate SQL with dynamic admin credentials
     const migrationSQL = await generateMigrationSQL();
-    
+
     await client.query('BEGIN');
     await client.query(migrationSQL);
     await client.query('COMMIT');

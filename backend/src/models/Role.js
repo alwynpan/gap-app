@@ -17,10 +17,7 @@ class Role {
   }
 
   static async create(name) {
-    const result = await pool.query(
-      'INSERT INTO roles (name) VALUES ($1) RETURNING *',
-      [name]
-    );
+    const result = await pool.query('INSERT INTO roles (name) VALUES ($1) RETURNING *', [name]);
     return result.rows[0];
   }
 }

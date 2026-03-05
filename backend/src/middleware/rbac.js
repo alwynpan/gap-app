@@ -1,4 +1,4 @@
-async function rbacPlugin(fastify, options) {
+async function rbacPlugin(fastify, _options) {
   // Register bcrypt plugin
   await fastify.register(require('fastify-bcrypt'));
 
@@ -16,9 +16,7 @@ async function rbacPlugin(fastify, options) {
     }
 
     const userRoleLevel = roleHierarchy[request.user.role] || 0;
-    const requiredLevel = Math.max(
-      ...requiredRoles.map((role) => roleHierarchy[role] || 0)
-    );
+    const requiredLevel = Math.max(...requiredRoles.map((role) => roleHierarchy[role] || 0));
 
     if (userRoleLevel < requiredLevel) {
       return reply.code(403).send({ error: 'Forbidden: Insufficient permissions' });

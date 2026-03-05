@@ -132,18 +132,14 @@ function Groups() {
             {groups.map((group) => (
               <div
                 key={group.id}
-                className={`bg-white shadow rounded-lg overflow-hidden ${
-                  !group.enabled ? 'opacity-60' : ''
-                }`}
+                className={`bg-white shadow rounded-lg overflow-hidden ${!group.enabled ? 'opacity-60' : ''}`}
               >
                 <div className="px-6 py-4">
                   <div className="flex justify-between items-start">
                     <h3 className="text-lg font-semibold text-gray-900">{group.name}</h3>
                     <span
                       className={`px-2 py-1 text-xs rounded-full ${
-                        group.enabled
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
+                        group.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                       }`}
                     >
                       {group.enabled ? 'Active' : 'Disabled'}
@@ -157,9 +153,7 @@ function Groups() {
                   <button
                     onClick={() => handleToggleEnabled(group.id, group.enabled)}
                     className={`text-sm ${
-                      group.enabled
-                        ? 'text-yellow-600 hover:text-yellow-800'
-                        : 'text-green-600 hover:text-green-800'
+                      group.enabled ? 'text-yellow-600 hover:text-yellow-800' : 'text-green-600 hover:text-green-800'
                     }`}
                   >
                     {group.enabled ? 'Disable' : 'Enable'}
@@ -196,9 +190,7 @@ function Groups() {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New Group</h3>
             <form onSubmit={handleCreateGroup}>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Group Name
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
                 <input
                   type="text"
                   value={newGroupName}
@@ -219,10 +211,7 @@ function Groups() {
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-                >
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
                   Create
                 </button>
               </div>

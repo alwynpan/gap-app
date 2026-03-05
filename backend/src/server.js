@@ -1,7 +1,6 @@
 const Fastify = require('fastify');
 const cors = require('@fastify/cors');
 const helmet = require('@fastify/helmet');
-const jwt = require('@fastify/jwt');
 const config = require('./config/index');
 
 // Import routes
@@ -43,7 +42,7 @@ async function buildServer() {
   });
 
   // PreHandler to attach user to request
-  fastify.addHook('preHandler', async (request, reply) => {
+  fastify.addHook('preHandler', async (request, _reply) => {
     if (request.headers.authorization) {
       try {
         const token = request.headers.authorization.replace('Bearer ', '');
@@ -57,12 +56,12 @@ async function buildServer() {
   });
 
   // Health check endpoint
-  fastify.get('/health', async (request, reply) => {
+  fastify.get('/health', async (_request, _reply) => {
     return { status: 'ok', timestamp: new Date().toISOString() };
   });
 
   // API Info endpoint
-  fastify.get('/api', async (request, reply) => {
+  fastify.get('/api', async (_request, _reply) => {
     return {
       name: 'G.A.P. Portal API',
       version: '1.0.0',
@@ -105,7 +104,7 @@ async function buildServer() {
 async function start() {
   try {
     const fastify = await buildServer();
-    
+
     await fastify.listen({
       port: config.app.port,
       host: config.app.host,

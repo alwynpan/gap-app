@@ -1,6 +1,6 @@
 const jwt = require('@fastify/jwt');
 
-async function authPlugin(fastify, options) {
+async function authPlugin(fastify, _options) {
   await fastify.register(jwt, {
     secret: process.env.JWT_SECRET || 'default-secret-change-me',
     sign: {
