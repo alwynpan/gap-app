@@ -4,7 +4,14 @@ const config = require('../config/index');
 
 async function authRoutes(fastify, options) {
   // Register route
-  fastify.post('/auth/register', async (request, reply) => {
+  fastify.post('/auth/register', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+      },
+    },
+  }, async (request, reply) => {
     // Check if registration is enabled
     if (!config.app.registrationEnabled) {
       return reply.code(403).send({ error: 'Registration is currently disabled' });
@@ -63,7 +70,14 @@ async function authRoutes(fastify, options) {
   });
 
   // Login route
-  fastify.post('/auth/login', async (request, reply) => {
+  fastify.post('/auth/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+      },
+    },
+  }, async (request, reply) => {
     const { username, password } = request.body;
 
     if (!username || !password) {
@@ -118,7 +132,14 @@ async function authRoutes(fastify, options) {
   });
 
   // Logout route (client-side token removal, but we can invalidate if needed)
-  fastify.post('/auth/logout', async (request, reply) => {
+  fastify.post('/auth/logout', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+      },
+    },
+  }, async (request, reply) => {
     // In a stateless JWT system, logout is client-side (remove token)
     // We could add token blacklisting here if needed
     return reply.send({ message: 'Logout successful' });
@@ -126,6 +147,12 @@ async function authRoutes(fastify, options) {
 
   // Get current user info
   fastify.get('/auth/me', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+      },
+    },
     preHandler: async (request, reply) => {
       if (!request.user) {
         return reply.code(401).send({ error: 'Unauthorized' });

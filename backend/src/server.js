@@ -2,7 +2,8 @@ const Fastify = require('fastify');
 const cors = require('@fastify/cors');
 const helmet = require('@fastify/helmet');
 const jwt = require('@fastify/jwt');
-const bcrypt = require('@fastify/bcrypt');
+const bcrypt = require('bcryptjs');
+const rateLimit = require('@fastify/rate-limit');
 const config = require('./config/index');
 
 // Import routes
@@ -27,6 +28,27 @@ async function buildServer() {
   await fastify.register(cors, {
     origin: config.cors.origin,
     credentials: true,
+  });
+
+  // Register rate limiting plugin (applied per-route via config)
+  await fastify.register(rateLimit, {
+    max: 5, // 5 requests
+    timeWindow: '1 minute',
+    keyGenerator: (request) => {
+      // Use IP address as the key
+      return request.ip;
+    },
+    errorResponse: (request) => {
+      return {
+        error: 'Too Many Requests',
+        message: 'Rate limit exceeded. Please try again later.',
+        retryAfter: 60,
+      };
+    },
+    allowList: (request) => {
+      // Only apply rate limiting to auth endpoints
+      return !request.url.startsWith('/auth/');
+    },
   });
 
   // Register authentication and RBAC plugins

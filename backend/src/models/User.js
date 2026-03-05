@@ -1,5 +1,5 @@
 const { pool } = require('../db/migrate');
-const bcrypt = require('@fastify/bcrypt');
+const bcrypt = require('bcryptjs');
 
 class User {
   static async findAll() {
