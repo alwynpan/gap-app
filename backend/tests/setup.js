@@ -15,13 +15,9 @@ jest.mock('bcryptjs', () => ({
 }));
 
 // Mock fastify plugins
-jest.mock('@fastify/jwt', () => ({
-  default: jest.fn(),
-}));
+jest.mock('@fastify/jwt', () => jest.fn());
 
-jest.mock('fastify-bcrypt', () => ({
-  default: jest.fn(),
-}));
+jest.mock('fastify-bcrypt', () => jest.fn());
 
 // Reset mocks before each test
 beforeEach(() => {
