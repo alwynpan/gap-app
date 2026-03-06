@@ -55,7 +55,7 @@ async function groupsRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const groupId = parseInt(request.params.id);
+        const groupId = parseInt(request.params.id, 10);
         const group = await Group.findById(groupId);
 
         if (!group) {
@@ -144,7 +144,7 @@ async function groupsRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const groupId = parseInt(request.params.id);
+        const groupId = parseInt(request.params.id, 10);
         const { name, enabled } = request.body;
 
         const group = await Group.findById(groupId);
@@ -181,7 +181,7 @@ async function groupsRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const groupId = parseInt(request.params.id);
+        const groupId = parseInt(request.params.id, 10);
 
         const deletedGroup = await Group.delete(groupId);
 

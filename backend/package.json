@@ -7,7 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "migrate": "node src/db/migrate.js",
-    "test": "jest --coverage --coverageReporters=text --coverageReporters=cobertura",
+    "test": "jest --coverage",
     "lint": "eslint --max-warnings 0 --format checkstyle -o eslint.xml .",
     "lint:fix": "eslint --fix .",
     "format:check": "prettier --check .",
