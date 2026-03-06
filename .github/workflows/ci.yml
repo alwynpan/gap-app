@@ -52,7 +52,7 @@ jobs:
           path: frontend/eslint.xml
           retention-days: 7
 
-  test:
+  test-backend:
     runs-on: ubuntu-latest
     needs: lint
     steps:
@@ -72,7 +72,7 @@ jobs:
         working-directory: ./backend
         run: npm test
 
-      - name: Upload coverage report
+      - name: Upload backend coverage report
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -80,7 +80,7 @@ jobs:
           path: backend/coverage/cobertura-coverage.xml
           retention-days: 7
 
-      - name: Check coverage threshold
+      - name: Check backend coverage report exists
         working-directory: ./backend
         run: |
           if [ ! -f coverage/cobertura-coverage.xml ]; then
@@ -88,6 +88,34 @@ jobs:
             exit 1
           fi
           echo "Coverage report generated successfully"
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: ./frontend
+        run: npm test
+
+      - name: Upload frontend coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/cobertura-coverage.xml
+          retention-days: 7
 
   format:
     runs-on: ubuntu-latest
@@ -119,7 +147,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    needs: [test, format]
+    needs: [test-backend, test-frontend, format]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
