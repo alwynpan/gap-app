@@ -3,9 +3,7 @@ module.exports = function transformImportMetaEnv({ types: t }) {
     if (!t.isMemberExpression(node)) return false;
     if (!t.isMetaProperty(node.object)) return false;
 
-    const isImportMeta =
-      node.object.meta?.name === 'import' &&
-      node.object.property?.name === 'meta';
+    const isImportMeta = node.object.meta?.name === 'import' && node.object.property?.name === 'meta';
 
     const isEnvProperty =
       (!node.computed && t.isIdentifier(node.property, { name: 'env' })) ||
@@ -19,9 +17,7 @@ module.exports = function transformImportMetaEnv({ types: t }) {
     visitor: {
       MemberExpression(path) {
         if (isImportMetaEnv(path.node)) {
-          path.replaceWith(
-            t.memberExpression(t.identifier('process'), t.identifier('env'))
-          );
+          path.replaceWith(t.memberExpression(t.identifier('process'), t.identifier('env')));
         }
       },
     },
