@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Role = require('../models/Role');
 const config = require('../config/index');
 
-async function authRoutes(fastify, options) {
+async function authRoutes(fastify, _options) {
   // Register route (stricter limit: 3 req/min per IP to prevent spam)
   fastify.post(
     '/auth/register',
