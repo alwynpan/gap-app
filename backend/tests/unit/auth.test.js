@@ -181,7 +181,7 @@ describe('Auth Routes', () => {
       );
 
       // Verify email validation passed (no 400 error for invalid email)
-      expect(mockReply.code).not.toHaveBeenCalledWith(400, { error: 'Invalid email format' });
+      expect(mockReply.code).not.toHaveBeenCalledWith(400);
       expect(mockReply.send).not.toHaveBeenCalledWith({ error: 'Invalid email format' });
       // Verify registration proceeded successfully
       expect(mockReply.code).toHaveBeenCalledWith(201);
