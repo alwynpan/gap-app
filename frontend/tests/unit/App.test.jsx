@@ -2,6 +2,10 @@ import { render, screen } from '@testing-library/react';
 import App from '../../src/App.jsx';
 import { useAuth } from '../../src/context/AuthContext.jsx';
 
+afterEach(() => {
+  window.location.hash = '';
+});
+
 jest.mock('../../src/pages/Login.jsx', () => {
   const MockLogin = () => <div>Login Page</div>;
   MockLogin.displayName = 'MockLogin';

@@ -184,16 +184,14 @@ describe('Groups page', () => {
     });
   });
 
-  it('toggles group state and deletes group after confirmation', async () => {
+  it('toggles group enabled state', async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     jest.useFakeTimers();
 
     axios.get
       .mockResolvedValueOnce({ data: { groups: groupsData } })
-      .mockResolvedValueOnce({ data: { groups: [{ ...groupsData[0], enabled: false }] } })
-      .mockResolvedValueOnce({ data: { groups: [] } });
+      .mockResolvedValueOnce({ data: { groups: [{ ...groupsData[0], enabled: false }] } });
     axios.put.mockResolvedValue({});
-    axios.delete.mockResolvedValue({});
 
     render(
       <MemoryRouter>
@@ -210,6 +208,24 @@ describe('Groups page', () => {
     await waitFor(() => {
       expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/1$/), { enabled: false });
       expect(screen.getByText('Group updated successfully')).toBeInTheDocument();
+    });
+  });
+
+  it('deletes group after confirmation', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    jest.useFakeTimers();
+
+    axios.get.mockResolvedValueOnce({ data: { groups: groupsData } }).mockResolvedValueOnce({ data: { groups: [] } });
+    axios.delete.mockResolvedValue({});
+
+    render(
+      <MemoryRouter>
+        <Groups />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole('button', { name: /delete/i }));
