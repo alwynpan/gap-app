@@ -11,8 +11,12 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 # Step 1: Run prettier on staged files
-echo "✨ Checking code formatting..."
+echo "✨ Checking code formatting (staged files)..."
 npx lint-staged --concurrent false
+
+# Step 1b: Full format check to catch any files lint-staged might miss
+echo "✨ Running full format check..."
+npm run format:check
 
 # Step 2: Run backend lint
 echo "📋 Running backend lint..."
