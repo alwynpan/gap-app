@@ -4,6 +4,7 @@ import { useAuth } from '../../src/context/AuthContext.jsx';
 
 afterEach(() => {
   window.location.hash = '';
+  window.history.pushState({}, '', '/');
 });
 
 jest.mock('../../src/pages/Login.jsx', () => {
