@@ -161,6 +161,32 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid email format' });
     });
 
+    it('accepts valid email format', async () => {
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: 3, name: 'user' });
+      User.create.mockResolvedValue({
+        id: 1,
+        username: 'testuser',
+        email: 'valid@example.com',
+        student_id: null,
+      });
+
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/register'](
+        { body: { username: 'test', email: 'valid@example.com', password: 'password123' } },
+        mockReply
+      );
+
+      // Verify email validation passed (no 400 error for invalid email)
+      expect(mockReply.code).not.toHaveBeenCalledWith(400, { error: 'Invalid email format' });
+      expect(mockReply.send).not.toHaveBeenCalledWith({ error: 'Invalid email format' });
+      // Verify registration proceeded successfully
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+    });
+
     it('rejects when username already exists', async () => {
       User.findByUsername.mockResolvedValue({ id: 1, username: 'existing' });
       User.findByEmail.mockResolvedValue(null);
