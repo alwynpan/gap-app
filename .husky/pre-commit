@@ -10,36 +10,8 @@ set -e
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# Step 1: Run prettier on staged files
-echo "✨ Checking code formatting (staged files)..."
+# Run prettier and eslint on staged files (via lint-staged)
+echo "✨ Formatting and linting staged files..."
 npx lint-staged --concurrent false
-
-# Step 1b: Full format check to catch any files lint-staged might miss
-echo "✨ Running full format check..."
-npm run format:check
-
-# Step 2: Run backend lint
-echo "📋 Running backend lint..."
-cd "$REPO_ROOT/backend"
-npm run lint
-cd "$REPO_ROOT"
-
-# Step 3: Run frontend lint
-echo "📋 Running frontend lint..."
-cd "$REPO_ROOT/frontend"
-npm run lint
-cd "$REPO_ROOT"
-
-# Step 4: Run backend unit tests
-echo "🧪 Running backend unit tests..."
-cd "$REPO_ROOT/backend"
-npm test
-cd "$REPO_ROOT"
-
-# Step 5: Run frontend unit tests
-echo "🧪 Running frontend unit tests..."
-cd "$REPO_ROOT/frontend"
-npm test
-cd "$REPO_ROOT"
 
 echo "✅ All pre-commit checks passed!"

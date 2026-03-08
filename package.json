@@ -21,10 +21,12 @@
   },
   "lint-staged": {
     "backend/**/*.js": [
-      "prettier --write"
+      "prettier --write",
+      "eslint --fix"
     ],
     "frontend/**/*.{js,jsx}": [
-      "prettier --write"
+      "prettier --write",
+      "eslint --fix"
     ],
     "**/*.{json,md}": [
       "prettier --write"
