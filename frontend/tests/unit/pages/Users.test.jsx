@@ -89,8 +89,8 @@ describe('Users page', () => {
   });
 
   it('assigns a group and shows success feedback', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
     axios.get
       .mockResolvedValueOnce({ data: { users: initialUsers } })
@@ -150,8 +150,8 @@ describe('Users page', () => {
   });
 
   it('shows API error when group update fails', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
     axios.get
       .mockResolvedValueOnce({ data: { users: initialUsers } })

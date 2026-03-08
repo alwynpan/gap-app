@@ -99,8 +99,8 @@ describe('Groups page', () => {
   });
 
   it('creates a group and shows success feedback', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
     axios.get
       .mockResolvedValueOnce({ data: { groups: [] } })
@@ -154,8 +154,8 @@ describe('Groups page', () => {
   });
 
   it('shows fallback error when create group fails without API message', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
     axios.get.mockResolvedValue({ data: { groups: [] } });
     axios.post.mockRejectedValue(new Error('network'));
@@ -185,8 +185,8 @@ describe('Groups page', () => {
   });
 
   it('toggles group enabled state', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
     axios.get
       .mockResolvedValueOnce({ data: { groups: groupsData } })
@@ -212,8 +212,8 @@ describe('Groups page', () => {
   });
 
   it('deletes group after confirmation', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
     axios.get.mockResolvedValueOnce({ data: { groups: groupsData } }).mockResolvedValueOnce({ data: { groups: [] } });
     axios.delete.mockResolvedValue({});
@@ -257,8 +257,8 @@ describe('Groups page', () => {
   });
 
   it('shows API error when toggle fails', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
     axios.get.mockResolvedValue({ data: { groups: groupsData } });
     axios.put.mockRejectedValue({ response: { data: { error: 'Cannot update group' } } });
