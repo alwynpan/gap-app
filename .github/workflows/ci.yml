@@ -110,6 +110,7 @@ jobs:
         run: npm test
 
       - name: Verify frontend coverage report exists
+        working-directory: ./frontend
         run: test -f coverage/lcov.info || (echo "Frontend coverage report not found!" && exit 1)
 
       - name: Upload frontend coverage report
