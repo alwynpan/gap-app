@@ -30,7 +30,9 @@ function Groups() {
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
-    if (!newGroupName.trim()) return;
+    if (!newGroupName.trim()) {
+      return;
+    }
 
     try {
       await axios.post(`${API_BASE}/groups`, { name: newGroupName.trim() });
@@ -58,7 +60,9 @@ function Groups() {
   };
 
   const handleDeleteGroup = async (groupId) => {
-    if (!confirm('Are you sure you want to delete this group?')) return;
+    if (!confirm('Are you sure you want to delete this group?')) {
+      return;
+    }
 
     try {
       await axios.delete(`${API_BASE}/groups/${groupId}`);
@@ -153,7 +157,9 @@ function Groups() {
                   <button
                     onClick={() => handleToggleEnabled(group.id, group.enabled)}
                     className={`text-sm ${
-                      group.enabled ? 'text-yellow-600 hover:text-yellow-800' : 'text-green-600 hover:text-green-800'
+                      group.enabled
+                        ? 'text-yellow-600 hover:text-yellow-800'
+                        : 'text-green-600 hover:text-green-800'
                     }`}
                   >
                     {group.enabled ? 'Disable' : 'Enable'}
@@ -211,7 +217,10 @@ function Groups() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                >
                   Create
                 </button>
               </div>

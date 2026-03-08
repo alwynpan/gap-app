@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 function Users() {
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +46,9 @@ function Users() {
   };
 
   const handleAssignGroup = async () => {
-    if (!selectedUser || selectedGroup === '') return;
+    if (!selectedUser || selectedGroup === '') {
+      return;
+    }
 
     const groupId = selectedGroup === '' ? null : parseInt(selectedGroup);
     await handleGroupChange(selectedUser, groupId);
@@ -130,7 +132,9 @@ function Users() {
                     <tr key={u.id}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{u.username}</div>
-                        {u.student_id && <div className="text-sm text-gray-500">{u.student_id}</div>}
+                        {u.student_id && (
+                          <div className="text-sm text-gray-500">{u.student_id}</div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{u.email}</div>
@@ -149,7 +153,9 @@ function Users() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{u.group_name || 'Not assigned'}</div>
+                        <div className="text-sm text-gray-900">
+                          {u.group_name || 'Not assigned'}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {selectedUser === u.id ? (
@@ -166,7 +172,10 @@ function Users() {
                                 </option>
                               ))}
                             </select>
-                            <button onClick={handleAssignGroup} className="text-primary-600 hover:text-primary-800">
+                            <button
+                              onClick={handleAssignGroup}
+                              className="text-primary-600 hover:text-primary-800"
+                            >
                               Save
                             </button>
                             <button
@@ -193,7 +202,9 @@ function Users() {
                 </tbody>
               </table>
 
-              {users.length === 0 && <div className="text-center py-8 text-gray-500">No users found</div>}
+              {users.length === 0 && (
+                <div className="text-center py-8 text-gray-500">No users found</div>
+              )}
             </div>
           </div>
         </div>

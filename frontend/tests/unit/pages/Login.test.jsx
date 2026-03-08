@@ -83,6 +83,9 @@ describe('Login page', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByRole('link', { name: /register here/i })).toHaveAttribute('href', '/register');
+    expect(screen.getByRole('link', { name: /register here/i })).toHaveAttribute(
+      'href',
+      '/register'
+    );
   });
 });

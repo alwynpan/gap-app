@@ -75,7 +75,9 @@ describe('Users Routes', () => {
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_get']({}, mockReply);
       expect(User.findAll).toHaveBeenCalled();
-      expect(mockReply.send).toHaveBeenCalledWith({ users: [{ id: 1, username: 'user1', email: 'user1@test.com' }] });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        users: [{ id: 1, username: 'user1', email: 'user1@test.com' }],
+      });
     });
 
     it('handles error when fetching users', async () => {
@@ -102,19 +104,29 @@ describe('Users Routes', () => {
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       const request = { user: { id: 1, role: 'user' }, params: { id: '2' } };
       handlers['/users/:id_get_pre'](request, mockReply);
-      expect(mockFastify.checkRole).toHaveBeenCalledWith(request, mockReply, ['admin', 'team_manager']);
+      expect(mockFastify.checkRole).toHaveBeenCalledWith(request, mockReply, [
+        'admin',
+        'team_manager',
+      ]);
     });
 
     it('returns user by id', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      User.findById.mockResolvedValue({ id: 1, username: 'testuser', email: 'test@test.com', password_hash: 'hash' });
+      User.findById.mockResolvedValue({
+        id: 1,
+        username: 'testuser',
+        email: 'test@test.com',
+        password_hash: 'hash',
+      });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id_get']({ params: { id: '1' } }, mockReply);
       expect(User.findById).toHaveBeenCalledWith(1);
-      expect(mockReply.send).toHaveBeenCalledWith({ user: { id: 1, username: 'testuser', email: 'test@test.com' } });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        user: { id: 1, username: 'testuser', email: 'test@test.com' },
+      });
     });
 
     it('returns 404 when user does not exist', async () => {
@@ -202,7 +214,9 @@ describe('Users Routes', () => {
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post']({ body: { username: 'u1', email: 'u1@test.com' } }, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username, email, and password are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Username, email, and password are required',
+      });
     });
 
     it('rejects when username already exists', async () => {
@@ -248,14 +262,26 @@ describe('Users Routes', () => {
       const handlers = captureHandlers(mockFastify);
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
-      User.create.mockResolvedValue({ id: 1, username: 'newuser', email: 'new@test.com', student_id: 'S123' });
+      User.create.mockResolvedValue({
+        id: 1,
+        username: 'newuser',
+        email: 'new@test.com',
+        student_id: 'S123',
+      });
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { username: 'newuser', email: 'new@test.com', password: 'password123', studentId: 'S123' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            studentId: 'S123',
+          },
+        },
         mockReply
       );
 
@@ -276,14 +302,26 @@ describe('Users Routes', () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
       Role.findByName.mockResolvedValue({ id: 1, name: 'admin' });
-      User.create.mockResolvedValue({ id: 1, username: 'adminuser', email: 'admin@test.com', student_id: null });
+      User.create.mockResolvedValue({
+        id: 1,
+        username: 'adminuser',
+        email: 'admin@test.com',
+        student_id: null,
+      });
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { username: 'adminuser', email: 'admin@test.com', password: 'password123', role: 'admin' } },
+        {
+          body: {
+            username: 'adminuser',
+            email: 'admin@test.com',
+            password: 'password123',
+            role: 'admin',
+          },
+        },
         mockReply
       );
 
@@ -296,14 +334,26 @@ describe('Users Routes', () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
       Role.findByName.mockResolvedValue(null);
-      User.create.mockResolvedValue({ id: 1, username: 'newuser', email: 'new@test.com', student_id: null });
+      User.create.mockResolvedValue({
+        id: 1,
+        username: 'newuser',
+        email: 'new@test.com',
+        student_id: null,
+      });
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { username: 'newuser', email: 'new@test.com', password: 'password123', role: 'unknown' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            role: 'unknown',
+          },
+        },
         mockReply
       );
 
@@ -353,7 +403,10 @@ describe('Users Routes', () => {
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       const request = { user: { id: 2, role: 'user' }, params: { id: '1' } };
       const result = await handlers['/users/:id/group_put_pre'](request, mockReply);
-      expect(mockFastify.checkRole).toHaveBeenCalledWith(request, mockReply, ['admin', 'team_manager']);
+      expect(mockFastify.checkRole).toHaveBeenCalledWith(request, mockReply, [
+        'admin',
+        'team_manager',
+      ]);
       expect(result).toBe(mockReply);
     });
 
@@ -377,7 +430,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id/group_put']({ params: { id: '999' }, body: { groupId: 1 } }, mockReply);
+      await handlers['/users/:id/group_put'](
+        { params: { id: '999' }, body: { groupId: 1 } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(404);
     });
@@ -392,7 +448,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id/group_put']({ params: { id: '1' }, body: { groupId: 999 } }, mockReply);
+      await handlers['/users/:id/group_put'](
+        { params: { id: '1' }, body: { groupId: 999 } },
+        mockReply
+      );
 
       expect(Group.findById).toHaveBeenCalledWith(999);
       expect(mockReply.code).toHaveBeenCalledWith(404);
@@ -409,7 +468,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id/group_put']({ params: { id: '1' }, body: { groupId: 2 } }, mockReply);
+      await handlers['/users/:id/group_put'](
+        { params: { id: '1' }, body: { groupId: 2 } },
+        mockReply
+      );
 
       expect(User.updateGroup).toHaveBeenCalledWith(1, 2);
     });
@@ -424,7 +486,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id/group_put']({ params: { id: '1' }, body: { groupId: null } }, mockReply);
+      await handlers['/users/:id/group_put'](
+        { params: { id: '1' }, body: { groupId: null } },
+        mockReply
+      );
 
       expect(User.updateGroup).toHaveBeenCalledWith(1, null);
     });
@@ -441,7 +506,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id/group_put']({ params: { id: '1' }, body: { groupId: 2 } }, mockReply);
+      await handlers['/users/:id/group_put'](
+        { params: { id: '1' }, body: { groupId: 2 } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
@@ -482,7 +550,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id_put']({ params: { id: '999' }, body: { username: 'newname' } }, mockReply);
+      await handlers['/users/:id_put'](
+        { params: { id: '999' }, body: { username: 'newname' } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(404);
     });
@@ -519,7 +590,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id_put']({ params: { id: '1' }, body: { username: 'newname' } }, mockReply);
+      await handlers['/users/:id_put'](
+        { params: { id: '1' }, body: { username: 'newname' } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
@@ -557,7 +631,10 @@ describe('Users Routes', () => {
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id_delete']({ user: { id: 2, role: 'admin' }, params: { id: '2' } }, mockReply);
+      await handlers['/users/:id_delete'](
+        { user: { id: 2, role: 'admin' }, params: { id: '2' } },
+        mockReply
+      );
       expect(mockReply.code).toHaveBeenCalledWith(400);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Cannot delete your own account' });
       expect(User.delete).not.toHaveBeenCalled();
@@ -572,7 +649,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id_delete']({ user: { id: 1, role: 'admin' }, params: { id: '2' } }, mockReply);
+      await handlers['/users/:id_delete'](
+        { user: { id: 1, role: 'admin' }, params: { id: '2' } },
+        mockReply
+      );
 
       expect(User.delete).toHaveBeenCalledWith(2);
       expect(mockReply.send).toHaveBeenCalledWith({ message: 'User deleted successfully' });
@@ -587,7 +667,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id_delete']({ user: { id: 1, role: 'admin' }, params: { id: '999' } }, mockReply);
+      await handlers['/users/:id_delete'](
+        { user: { id: 1, role: 'admin' }, params: { id: '999' } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(404);
     });
@@ -602,7 +685,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id_delete']({ user: { id: 1, role: 'admin' }, params: { id: '2' } }, mockReply);
+      await handlers['/users/:id_delete'](
+        { user: { id: 1, role: 'admin' }, params: { id: '2' } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
@@ -622,7 +708,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id/group_put']({ params: { id: '1' }, body: { groupId: 2 } }, mockReply);
+      await handlers['/users/:id/group_put'](
+        { params: { id: '1' }, body: { groupId: 2 } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
@@ -641,7 +730,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id_put']({ params: { id: '1' }, body: { username: 'newname' } }, mockReply);
+      await handlers['/users/:id_put'](
+        { params: { id: '1' }, body: { username: 'newname' } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
@@ -660,7 +752,10 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id_delete']({ user: { id: 1, role: 'admin' }, params: { id: '2' } }, mockReply);
+      await handlers['/users/:id_delete'](
+        { user: { id: 1, role: 'admin' }, params: { id: '2' } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);

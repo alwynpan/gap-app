@@ -11,7 +11,9 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
 }));
 
 describe('Groups page', () => {
-  const groupsData = [{ id: 1, name: 'Group A', enabled: true, created_at: '2025-01-01T00:00:00.000Z' }];
+  const groupsData = [
+    { id: 1, name: 'Group A', enabled: true, created_at: '2025-01-01T00:00:00.000Z' },
+  ];
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -102,9 +104,9 @@ describe('Groups page', () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-    axios.get
-      .mockResolvedValueOnce({ data: { groups: [] } })
-      .mockResolvedValueOnce({ data: { groups: [...groupsData, { ...groupsData[0], id: 2, name: 'New Team' }] } });
+    axios.get.mockResolvedValueOnce({ data: { groups: [] } }).mockResolvedValueOnce({
+      data: { groups: [...groupsData, { ...groupsData[0], id: 2, name: 'New Team' }] },
+    });
     axios.post.mockResolvedValue({});
 
     render(
@@ -122,7 +124,9 @@ describe('Groups page', () => {
     await user.click(screen.getByRole('button', { name: /^create$/i }));
 
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'New Team' });
+      expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), {
+        name: 'New Team',
+      });
       expect(screen.getByText('Group created successfully')).toBeInTheDocument();
     });
 
@@ -206,7 +210,9 @@ describe('Groups page', () => {
     await user.click(screen.getByRole('button', { name: /disable/i }));
 
     await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/1$/), { enabled: false });
+      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/1$/), {
+        enabled: false,
+      });
       expect(screen.getByText('Group updated successfully')).toBeInTheDocument();
     });
   });
@@ -215,7 +221,9 @@ describe('Groups page', () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-    axios.get.mockResolvedValueOnce({ data: { groups: groupsData } }).mockResolvedValueOnce({ data: { groups: [] } });
+    axios.get
+      .mockResolvedValueOnce({ data: { groups: groupsData } })
+      .mockResolvedValueOnce({ data: { groups: [] } });
     axios.delete.mockResolvedValue({});
 
     render(

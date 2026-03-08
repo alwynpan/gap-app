@@ -17,7 +17,10 @@ class Group {
   }
 
   static async create(name, enabled = true) {
-    const result = await pool.query('INSERT INTO groups (name, enabled) VALUES ($1, $2) RETURNING *', [name, enabled]);
+    const result = await pool.query(
+      'INSERT INTO groups (name, enabled) VALUES ($1, $2) RETURNING *',
+      [name, enabled]
+    );
     return result.rows[0];
   }
 

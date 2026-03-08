@@ -17,7 +17,13 @@ describe('Group Model', () => {
   describe('findAll', () => {
     it('returns all groups ordered by name', async () => {
       const mockGroups = [
-        { id: 1, name: 'Alpha Team', enabled: true, created_at: new Date(), updated_at: new Date() },
+        {
+          id: 1,
+          name: 'Alpha Team',
+          enabled: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
         { id: 2, name: 'Beta Team', enabled: true, created_at: new Date(), updated_at: new Date() },
       ];
       pool.query.mockResolvedValue({ rows: mockGroups });
@@ -39,7 +45,13 @@ describe('Group Model', () => {
 
   describe('findById', () => {
     it('returns group by id', async () => {
-      const mockGroup = { id: 1, name: 'Test Group', enabled: true, created_at: new Date(), updated_at: new Date() };
+      const mockGroup = {
+        id: 1,
+        name: 'Test Group',
+        enabled: true,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
       pool.query.mockResolvedValue({ rows: [mockGroup] });
 
       const result = await Group.findById(1);
@@ -67,7 +79,9 @@ describe('Group Model', () => {
 
       const result = await Group.findEnabled();
 
-      expect(pool.query).toHaveBeenCalledWith('SELECT * FROM groups WHERE enabled = true ORDER BY name');
+      expect(pool.query).toHaveBeenCalledWith(
+        'SELECT * FROM groups WHERE enabled = true ORDER BY name'
+      );
       expect(result).toEqual(mockGroups);
     });
 
@@ -82,15 +96,21 @@ describe('Group Model', () => {
 
   describe('create', () => {
     it('creates group with enabled=true by default', async () => {
-      const mockGroup = { id: 1, name: 'New Group', enabled: true, created_at: new Date(), updated_at: new Date() };
+      const mockGroup = {
+        id: 1,
+        name: 'New Group',
+        enabled: true,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
       pool.query.mockResolvedValue({ rows: [mockGroup] });
 
       const result = await Group.create('New Group');
 
-      expect(pool.query).toHaveBeenCalledWith('INSERT INTO groups (name, enabled) VALUES ($1, $2) RETURNING *', [
-        'New Group',
-        true,
-      ]);
+      expect(pool.query).toHaveBeenCalledWith(
+        'INSERT INTO groups (name, enabled) VALUES ($1, $2) RETURNING *',
+        ['New Group', true]
+      );
       expect(result).toEqual(mockGroup);
     });
 
@@ -106,10 +126,10 @@ describe('Group Model', () => {
 
       const result = await Group.create('Disabled Group', false);
 
-      expect(pool.query).toHaveBeenCalledWith('INSERT INTO groups (name, enabled) VALUES ($1, $2) RETURNING *', [
-        'Disabled Group',
-        false,
-      ]);
+      expect(pool.query).toHaveBeenCalledWith(
+        'INSERT INTO groups (name, enabled) VALUES ($1, $2) RETURNING *',
+        ['Disabled Group', false]
+      );
       expect(result).toEqual(mockGroup);
     });
 
@@ -125,10 +145,10 @@ describe('Group Model', () => {
 
       const result = await Group.create('Explicit Enabled Group', true);
 
-      expect(pool.query).toHaveBeenCalledWith('INSERT INTO groups (name, enabled) VALUES ($1, $2) RETURNING *', [
-        'Explicit Enabled Group',
-        true,
-      ]);
+      expect(pool.query).toHaveBeenCalledWith(
+        'INSERT INTO groups (name, enabled) VALUES ($1, $2) RETURNING *',
+        ['Explicit Enabled Group', true]
+      );
       expect(result).toEqual(mockGroup);
     });
   });
@@ -178,7 +198,11 @@ describe('Group Model', () => {
 
       const result = await Group.update(1, updates);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE groups'), [undefined, false, 1]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE groups'), [
+        undefined,
+        false,
+        1,
+      ]);
       expect(result).toEqual(mockUpdatedGroup);
     });
 
@@ -214,14 +238,31 @@ describe('Group Model', () => {
   describe('getMembers', () => {
     it('returns group members with role info', async () => {
       const mockMembers = [
-        { id: 1, username: 'user1', email: 'user1@test.com', student_id: 'S001', enabled: true, role_name: 'user' },
-        { id: 2, username: 'user2', email: 'user2@test.com', student_id: 'S002', enabled: true, role_name: 'admin' },
+        {
+          id: 1,
+          username: 'user1',
+          email: 'user1@test.com',
+          student_id: 'S001',
+          enabled: true,
+          role_name: 'user',
+        },
+        {
+          id: 2,
+          username: 'user2',
+          email: 'user2@test.com',
+          student_id: 'S002',
+          enabled: true,
+          role_name: 'admin',
+        },
       ];
       pool.query.mockResolvedValue({ rows: mockMembers });
 
       const result = await Group.getMembers(1);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('SELECT u.id, u.username, u.email'), [1]);
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT u.id, u.username, u.email'),
+        [1]
+      );
       expect(result).toEqual(mockMembers);
     });
 

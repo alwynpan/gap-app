@@ -103,7 +103,9 @@ describe('Role Model', () => {
 
       const result = await Role.create('moderator');
 
-      expect(pool.query).toHaveBeenCalledWith('INSERT INTO roles (name) VALUES ($1) RETURNING *', ['moderator']);
+      expect(pool.query).toHaveBeenCalledWith('INSERT INTO roles (name) VALUES ($1) RETURNING *', [
+        'moderator',
+      ]);
       expect(result).toEqual(mockRole);
     });
 

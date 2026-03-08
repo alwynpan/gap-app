@@ -106,7 +106,9 @@ async function groupsRoutes(fastify, _options) {
 
         // Check if group name already exists
         const existingGroups = await Group.findAll();
-        const existingGroup = existingGroups.find((g) => g.name.toLowerCase() === name.toLowerCase());
+        const existingGroup = existingGroups.find(
+          (g) => g.name.toLowerCase() === name.toLowerCase()
+        );
         if (existingGroup) {
           return reply.code(409).send({ error: 'Group name already exists' });
         }

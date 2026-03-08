@@ -11,7 +11,12 @@ module.exports = {
   },
   coverageReporters: ['text', 'cobertura'],
   coverageDirectory: 'coverage',
-  collectCoverageFrom: ['src/**/*.js', '!src/server.js', '!src/db/migrate.js', '!src/config/**/*.js'],
+  collectCoverageFrom: [
+    'src/**/*.js',
+    '!src/server.js',
+    '!src/db/migrate.js',
+    '!src/config/**/*.js',
+  ],
   coveragePathIgnorePatterns: ['src/config/', 'src/db/', 'src/server.js'],
   testMatch: ['**/tests/**/*.test.js'],
   verbose: true,

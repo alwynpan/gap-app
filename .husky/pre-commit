@@ -1,5 +1,17 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# Run lint-staged for staged files
-npx lint-staged
+echo "🔍 Running pre-commit checks..."
+
+# Exit on first error
+set -e
+
+# Get repository root
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Run prettier and eslint on staged files (via lint-staged)
+echo "✨ Formatting and linting staged files..."
+npx lint-staged --concurrent false
+
+echo "✅ All pre-commit checks passed!"

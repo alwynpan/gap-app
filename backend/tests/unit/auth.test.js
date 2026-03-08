@@ -88,14 +88,19 @@ describe('Auth Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username, email, and password are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Username, email, and password are required',
+      });
     });
 
     it('rejects missing email', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/register']({ body: { username: 'test', password: 'password123' } }, mockReply);
+      await capturedHandlers['/auth/register'](
+        { body: { username: 'test', password: 'password123' } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
     });
@@ -104,7 +109,10 @@ describe('Auth Routes', () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/register']({ body: { username: 'test', email: 'test@test.com' } }, mockReply);
+      await capturedHandlers['/auth/register'](
+        { body: { username: 'test', email: 'test@test.com' } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
     });
@@ -119,7 +127,9 @@ describe('Auth Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Password must be at least 6 characters' });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Password must be at least 6 characters',
+      });
     });
 
     it('rejects invalid email format (no @ symbol)', async () => {
@@ -234,7 +244,14 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'newuser', email: 'new@test.com', password: 'password123', studentId: 'S123' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            studentId: 'S123',
+          },
+        },
         mockReply
       );
 
@@ -329,19 +346,30 @@ describe('Auth Routes', () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/login']({ body: { username: 'nonexistent', password: 'password123' } }, mockReply);
+      await capturedHandlers['/auth/login'](
+        { body: { username: 'nonexistent', password: 'password123' } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(401);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid credentials' });
     });
 
     it('rejects when user is disabled', async () => {
-      User.findByUsername.mockResolvedValue({ id: 1, username: 'test', enabled: false, password_hash: 'hash' });
+      User.findByUsername.mockResolvedValue({
+        id: 1,
+        username: 'test',
+        enabled: false,
+        password_hash: 'hash',
+      });
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/login']({ body: { username: 'test', password: 'password123' } }, mockReply);
+      await capturedHandlers['/auth/login'](
+        { body: { username: 'test', password: 'password123' } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(401);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
@@ -362,7 +390,10 @@ describe('Auth Routes', () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/login']({ body: { username: 'test', password: 'wrongpassword' } }, mockReply);
+      await capturedHandlers['/auth/login'](
+        { body: { username: 'test', password: 'wrongpassword' } },
+        mockReply
+      );
 
       expect(User.verifyPassword).toHaveBeenCalledWith('wrongpassword', 'hash');
       expect(mockReply.code).toHaveBeenCalledWith(401);
@@ -388,7 +419,10 @@ describe('Auth Routes', () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/login']({ body: { username: 'testuser', password: 'correctpassword' } }, mockReply);
+      await capturedHandlers['/auth/login'](
+        { body: { username: 'testuser', password: 'correctpassword' } },
+        mockReply
+      );
 
       expect(mockFastify.generateToken).toHaveBeenCalledWith({
         id: 1,
@@ -421,7 +455,10 @@ describe('Auth Routes', () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/login']({ body: { username: 'test', password: 'password' } }, mockReply);
+      await capturedHandlers['/auth/login'](
+        { body: { username: 'test', password: 'password' } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
@@ -458,7 +495,14 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       const request = {
-        user: { id: 1, username: 'test', email: 'test@test.com', role: 'user', groupId: 1, groupName: 'Team' },
+        user: {
+          id: 1,
+          username: 'test',
+          email: 'test@test.com',
+          role: 'user',
+          groupId: 1,
+          groupName: 'Team',
+        },
       };
 
       const result = await capturedHandlers['/auth/me_pre'](request, mockReply);
@@ -471,7 +515,14 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       const request = {
-        user: { id: 1, username: 'testuser', email: 'test@test.com', role: 'admin', groupId: 1, groupName: 'Team A' },
+        user: {
+          id: 1,
+          username: 'testuser',
+          email: 'test@test.com',
+          role: 'admin',
+          groupId: 1,
+          groupName: 'Team A',
+        },
       };
 
       await capturedHandlers['/auth/me'](request, mockReply);
