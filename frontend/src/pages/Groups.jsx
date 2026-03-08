@@ -30,7 +30,9 @@ function Groups() {
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
-    if (!newGroupName.trim()) {return;}
+    if (!newGroupName.trim()) {
+      return;
+    }
 
     try {
       await axios.post(`${API_BASE}/groups`, { name: newGroupName.trim() });
@@ -58,7 +60,9 @@ function Groups() {
   };
 
   const handleDeleteGroup = async (groupId) => {
-    if (!confirm('Are you sure you want to delete this group?')) {return;}
+    if (!confirm('Are you sure you want to delete this group?')) {
+      return;
+    }
 
     try {
       await axios.delete(`${API_BASE}/groups/${groupId}`);

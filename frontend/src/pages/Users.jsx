@@ -46,7 +46,9 @@ function Users() {
   };
 
   const handleAssignGroup = async () => {
-    if (!selectedUser || selectedGroup === '') {return;}
+    if (!selectedUser || selectedGroup === '') {
+      return;
+    }
 
     const groupId = selectedGroup === '' ? null : parseInt(selectedGroup);
     await handleGroupChange(selectedUser, groupId);
