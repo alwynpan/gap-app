@@ -2,14 +2,17 @@ describe('Auth Middleware', () => {
   let fastify;
   let mockJwt;
   let originalJwtSecret;
+  let originalJwtSecretExists;
 
   beforeAll(() => {
     originalJwtSecret = process.env.JWT_SECRET;
+    originalJwtSecretExists = Object.hasOwn(process.env, 'JWT_SECRET');
     process.env.JWT_SECRET = 'test-secret-for-unit-tests';
   });
 
   afterAll(() => {
-    if (originalJwtSecret) {
+    // Restore exact original state (handles empty string correctly)
+    if (originalJwtSecretExists) {
       process.env.JWT_SECRET = originalJwtSecret;
     } else {
       delete process.env.JWT_SECRET;
