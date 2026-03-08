@@ -33,8 +33,12 @@ describe('Auth Middleware - JWT_SECRET Validation', () => {
       'JWT_SECRET environment variable is required for production security'
     );
 
-    // Restore for other tests
-    process.env.JWT_SECRET = originalJwtSecret || 'test-secret';
+    // Restore for other tests (preserve exact original state)
+    if (originalJwtSecretExists) {
+      process.env.JWT_SECRET = originalJwtSecret;
+    } else {
+      process.env.JWT_SECRET = 'test-secret-for-next-test';
+    }
   });
 
   it('proceeds when JWT_SECRET is configured', async () => {
