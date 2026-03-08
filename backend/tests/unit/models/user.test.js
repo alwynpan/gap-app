@@ -24,8 +24,20 @@ describe('User Model', () => {
   describe('findAll', () => {
     it('returns all users with group and role info', async () => {
       const mockUsers = [
-        { id: 1, username: 'user1', email: 'user1@test.com', group_name: 'Team A', role_name: 'user' },
-        { id: 2, username: 'user2', email: 'user2@test.com', group_name: 'Team B', role_name: 'admin' },
+        {
+          id: 1,
+          username: 'user1',
+          email: 'user1@test.com',
+          group_name: 'Team A',
+          role_name: 'user',
+        },
+        {
+          id: 2,
+          username: 'user2',
+          email: 'user2@test.com',
+          group_name: 'Team B',
+          role_name: 'admin',
+        },
       ];
       pool.query.mockResolvedValue({ rows: mockUsers });
 
@@ -46,7 +58,13 @@ describe('User Model', () => {
 
   describe('findById', () => {
     it('returns user by id with group and role info', async () => {
-      const mockUser = { id: 1, username: 'testuser', email: 'test@test.com', group_name: 'Team A', role_name: 'user' };
+      const mockUser = {
+        id: 1,
+        username: 'testuser',
+        email: 'test@test.com',
+        group_name: 'Team A',
+        role_name: 'user',
+      };
       pool.query.mockResolvedValue({ rows: [mockUser] });
 
       const result = await User.findById(1);
@@ -77,7 +95,9 @@ describe('User Model', () => {
 
       const result = await User.findByUsername('testuser');
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.username = $1'), ['testuser']);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.username = $1'), [
+        'testuser',
+      ]);
       expect(result).toEqual(mockUser);
     });
 
@@ -97,7 +117,9 @@ describe('User Model', () => {
 
       const result = await User.findByEmail('test@test.com');
 
-      expect(pool.query).toHaveBeenCalledWith('SELECT * FROM users WHERE email = $1', ['test@test.com']);
+      expect(pool.query).toHaveBeenCalledWith('SELECT * FROM users WHERE email = $1', [
+        'test@test.com',
+      ]);
       expect(result).toEqual(mockUser);
     });
 
@@ -223,7 +245,12 @@ describe('User Model', () => {
         roleId: 2,
         enabled: false,
       };
-      const mockUpdatedUser = { id: 1, username: 'updateduser', email: 'updated@test.com', enabled: false };
+      const mockUpdatedUser = {
+        id: 1,
+        username: 'updateduser',
+        email: 'updated@test.com',
+        enabled: false,
+      };
 
       pool.query.mockResolvedValue({ rows: [mockUpdatedUser] });
 
@@ -245,7 +272,12 @@ describe('User Model', () => {
       const updates = {
         username: 'updateduser',
       };
-      const mockUpdatedUser = { id: 1, username: 'updateduser', email: 'old@test.com', enabled: true };
+      const mockUpdatedUser = {
+        id: 1,
+        username: 'updateduser',
+        email: 'old@test.com',
+        enabled: true,
+      };
 
       pool.query.mockResolvedValue({ rows: [mockUpdatedUser] });
 
@@ -312,7 +344,10 @@ describe('User Model', () => {
       const result = await User.updatePassword(1, 'newpassword123');
 
       expect(bcrypt.hash).toHaveBeenCalledWith('newpassword123', expect.any(Number));
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), ['newHashedPassword', 1]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [
+        'newHashedPassword',
+        1,
+      ]);
       expect(result).toEqual(mockUpdatedUser);
     });
 

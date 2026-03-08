@@ -71,7 +71,9 @@ describe('Groups Routes', () => {
       await handlers['/groups_get']({}, mockReply);
 
       expect(Group.findAll).toHaveBeenCalled();
-      expect(mockReply.send).toHaveBeenCalledWith({ groups: [{ id: 1, name: 'Team A', enabled: true }] });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        groups: [{ id: 1, name: 'Team A', enabled: true }],
+      });
     });
 
     it('handles error when fetching groups', async () => {
@@ -132,7 +134,13 @@ describe('Groups Routes', () => {
     it('returns group by id with members', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      const mockGroup = { id: 1, name: 'Test Group', enabled: true, created_at: new Date(), updated_at: new Date() };
+      const mockGroup = {
+        id: 1,
+        name: 'Test Group',
+        enabled: true,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
       const mockMembers = [{ id: 1, username: 'user1', role_name: 'user' }];
       Group.findById.mockResolvedValue(mockGroup);
       Group.getMembers.mockResolvedValue(mockMembers);
@@ -242,7 +250,10 @@ describe('Groups Routes', () => {
       groupsRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/groups_post']({ user: { id: 1, role: 'admin' }, body: { name: 'existing group' } }, mockReply);
+      await handlers['/groups_post'](
+        { user: { id: 1, role: 'admin' }, body: { name: 'existing group' } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(409);
     });
@@ -257,7 +268,10 @@ describe('Groups Routes', () => {
       groupsRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/groups_post']({ user: { id: 1, role: 'admin' }, body: { name: 'New Group' } }, mockReply);
+      await handlers['/groups_post'](
+        { user: { id: 1, role: 'admin' }, body: { name: 'New Group' } },
+        mockReply
+      );
 
       expect(Group.create).toHaveBeenCalledWith('New Group', true);
       expect(mockReply.code).toHaveBeenCalledWith(201);
@@ -292,7 +306,10 @@ describe('Groups Routes', () => {
       groupsRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/groups_post']({ user: { id: 1, role: 'admin' }, body: { name: 'New Group' } }, mockReply);
+      await handlers['/groups_post'](
+        { user: { id: 1, role: 'admin' }, body: { name: 'New Group' } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
@@ -352,7 +369,11 @@ describe('Groups Routes', () => {
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/groups/:id_put'](
-        { user: { id: 1, role: 'admin' }, params: { id: '1' }, body: { name: 'New Name', enabled: false } },
+        {
+          user: { id: 1, role: 'admin' },
+          params: { id: '1' },
+          body: { name: 'New Name', enabled: false },
+        },
         mockReply
       );
 
@@ -408,7 +429,10 @@ describe('Groups Routes', () => {
       groupsRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/groups/:id_delete']({ user: { id: 1, role: 'admin' }, params: { id: '1' } }, mockReply);
+      await handlers['/groups/:id_delete'](
+        { user: { id: 1, role: 'admin' }, params: { id: '1' } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
@@ -449,7 +473,10 @@ describe('Groups Routes', () => {
       groupsRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/groups/:id_delete']({ user: { id: 1, role: 'admin' }, params: { id: '1' } }, mockReply);
+      await handlers['/groups/:id_delete'](
+        { user: { id: 1, role: 'admin' }, params: { id: '1' } },
+        mockReply
+      );
 
       expect(Group.delete).toHaveBeenCalledWith(1);
       expect(mockReply.send).toHaveBeenCalledWith({ message: 'Group deleted successfully' });
@@ -464,7 +491,10 @@ describe('Groups Routes', () => {
       groupsRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/groups/:id_delete']({ user: { id: 1, role: 'admin' }, params: { id: '999' } }, mockReply);
+      await handlers['/groups/:id_delete'](
+        { user: { id: 1, role: 'admin' }, params: { id: '999' } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(404);
     });
@@ -479,7 +509,10 @@ describe('Groups Routes', () => {
       groupsRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/groups/:id_delete']({ user: { id: 1, role: 'admin' }, params: { id: '1' } }, mockReply);
+      await handlers['/groups/:id_delete'](
+        { user: { id: 1, role: 'admin' }, params: { id: '1' } },
+        mockReply
+      );
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);

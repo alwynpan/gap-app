@@ -56,7 +56,9 @@ function Dashboard() {
                 </div>
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Group</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{user?.groupName || 'Not assigned'}</dd>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {user?.groupName || 'Not assigned'}
+                  </dd>
                 </div>
                 {user?.studentId && (
                   <div>

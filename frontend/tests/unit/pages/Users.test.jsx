@@ -12,7 +12,14 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
 
 describe('Users page', () => {
   const initialUsers = [
-    { id: 1, username: 'u1', email: 'u1@test.com', role_name: 'normal_user', group_name: null, student_id: 's1' },
+    {
+      id: 1,
+      username: 'u1',
+      email: 'u1@test.com',
+      role_name: 'normal_user',
+      group_name: null,
+      student_id: 's1',
+    },
   ];
   const initialGroups = [{ id: 2, name: 'Group A' }];
 
@@ -116,7 +123,9 @@ describe('Users page', () => {
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
     await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/users\/1\/group$/), { groupId: 2 });
+      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/users\/1\/group$/), {
+        groupId: 2,
+      });
       expect(screen.getByText('User group updated successfully')).toBeInTheDocument();
     });
 

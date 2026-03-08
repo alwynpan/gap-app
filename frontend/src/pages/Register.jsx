@@ -69,7 +69,9 @@ function Register() {
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">{error}</div>
+            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+              {error}
+            </div>
           )}
 
           {success && (
@@ -168,7 +170,10 @@ function Register() {
           </div>
 
           <div className="text-center">
-            <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500 text-sm">
+            <Link
+              to="/login"
+              className="font-medium text-primary-600 hover:text-primary-500 text-sm"
+            >
               Already have an account? Sign in
             </Link>
           </div>

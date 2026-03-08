@@ -6,7 +6,8 @@ import { AuthProvider, useAuth } from '../../../src/context/AuthContext.jsx';
 jest.mock('axios');
 
 function TestHarness() {
-  const { user, loading, token, isAuthenticated, isAdmin, isTeamManager, login, register, logout } = useAuth();
+  const { user, loading, token, isAuthenticated, isAdmin, isTeamManager, login, register, logout } =
+    useAuth();
 
   const handleLogin = async () => {
     const result = await login('demo', 'password');
