@@ -1,6 +1,20 @@
 describe('Auth Middleware', () => {
   let fastify;
   let mockJwt;
+  let originalJwtSecret;
+
+  beforeAll(() => {
+    originalJwtSecret = process.env.JWT_SECRET;
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+  });
+
+  afterAll(() => {
+    if (originalJwtSecret) {
+      process.env.JWT_SECRET = originalJwtSecret;
+    } else {
+      delete process.env.JWT_SECRET;
+    }
+  });
 
   beforeEach(() => {
     jest.resetModules();
