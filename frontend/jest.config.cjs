@@ -14,7 +14,7 @@ module.exports = {
       statements: 85,
     },
   },
-  coverageReporters: ['text', 'cobertura'],
+  coverageReporters: ['text', 'cobertura', 'lcov'],
   coverageDirectory: 'coverage',
   testMatch: ['**/tests/**/*.test.jsx', '**/tests/**/*.test.js'],
   transform: {
