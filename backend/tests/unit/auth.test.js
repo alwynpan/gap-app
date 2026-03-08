@@ -122,6 +122,45 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Password must be at least 6 characters' });
     });
 
+    it('rejects invalid email format (no @ symbol)', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/register'](
+        { body: { username: 'test', email: 'invalidemail', password: 'password123' } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid email format' });
+    });
+
+    it('rejects invalid email format (no domain)', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/register'](
+        { body: { username: 'test', email: 'test@', password: 'password123' } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid email format' });
+    });
+
+    it('rejects invalid email format (spaces)', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/register'](
+        { body: { username: 'test', email: 'test @email.com', password: 'password123' } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid email format' });
+    });
+
     it('rejects when username already exists', async () => {
       User.findByUsername.mockResolvedValue({ id: 1, username: 'existing' });
       User.findByEmail.mockResolvedValue(null);
