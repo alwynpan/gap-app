@@ -1,5 +1,41 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# Run lint-staged for staged files
-npx lint-staged
+echo "🔍 Running pre-commit checks..."
+
+# Exit on first error
+set -e
+
+# Get repository root
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Step 1: Run prettier on staged files
+echo "✨ Checking code formatting..."
+npx lint-staged --concurrent false
+
+# Step 2: Run backend lint
+echo "📋 Running backend lint..."
+cd "$REPO_ROOT/backend"
+npm run lint
+cd "$REPO_ROOT"
+
+# Step 3: Run frontend lint
+echo "📋 Running frontend lint..."
+cd "$REPO_ROOT/frontend"
+npm run lint
+cd "$REPO_ROOT"
+
+# Step 4: Run backend unit tests
+echo "🧪 Running backend unit tests..."
+cd "$REPO_ROOT/backend"
+npm test
+cd "$REPO_ROOT"
+
+# Step 5: Run frontend unit tests
+echo "🧪 Running frontend unit tests..."
+cd "$REPO_ROOT/frontend"
+npm test
+cd "$REPO_ROOT"
+
+echo "✅ All pre-commit checks passed!"
