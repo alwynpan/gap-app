@@ -1,12 +1,15 @@
 describe('Auth Middleware - JWT_SECRET Validation', () => {
   let originalJwtSecret;
+  let originalJwtSecretExists;
 
   beforeAll(() => {
     originalJwtSecret = process.env.JWT_SECRET;
+    originalJwtSecretExists = Object.hasOwn(process.env, 'JWT_SECRET');
   });
 
   afterAll(() => {
-    if (originalJwtSecret) {
+    // Restore exact original state (handles empty string correctly)
+    if (originalJwtSecretExists) {
       process.env.JWT_SECRET = originalJwtSecret;
     } else {
       delete process.env.JWT_SECRET;
@@ -45,7 +48,7 @@ describe('Auth Middleware - JWT_SECRET Validation', () => {
       jwt: {},
     };
 
-    // Should not throw error
-    await expect(authPlugin(fastify, {})).resolves.not.toThrow();
+    // Should not throw error (await directly, no rejection = success)
+    await authPlugin(fastify, {});
   });
 });
