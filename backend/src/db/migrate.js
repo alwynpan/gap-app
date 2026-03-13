@@ -21,6 +21,7 @@ async function generateMigrationSQL() {
   const saltRounds = 10;
   const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
 
+  // Return schema SQL (without the admin INSERT - that's done separately with parameterized query)
   return `
 -- Drop tables if they exist (for clean migration)
 DROP TABLE IF EXISTS users CASCADE;
@@ -68,18 +69,6 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_groups_enabled ON groups(enabled);
 
--- Insert default admin user with dynamically generated password hash
--- Username: ${adminUsername}
--- Password hash generated at migration time using bcrypt
-INSERT INTO users (username, email, password_hash, role_id, enabled) 
-VALUES (
-  '${adminUsername}',
-  'admin@gap.local',
-  '${passwordHash}',
-  1,
-  true
-);
-
 -- Insert sample groups
 INSERT INTO groups (name, enabled) VALUES 
   ('Team Alpha', true),
@@ -94,13 +83,39 @@ async function migrate() {
   try {
     console.log('Starting database migration...');
 
-    // Generate SQL with dynamic admin credentials
+    // Safety guard: require explicit confirmation for production migrations
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction && !process.env.ALLOW_DESTRUCTIVE_MIGRATION) {
+      console.error('ERROR: Production migration detected but ALLOW_DESTRUCTIVE_MIGRATION is not set.');
+      console.error('Migrations are destructive (DROP TABLE). Set ALLOW_DESTRUCTIVE_MIGRATION=true to proceed.');
+      console.error('WARNING: This will DELETE ALL DATA in the database.');
+      process.exit(1);
+    }
+
+    // Generate schema SQL (without admin INSERT)
     const migrationSQL = await generateMigrationSQL();
 
+    // Read admin credentials for parameterized INSERT
+    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
+
     await client.query('BEGIN');
+    
+    // Run schema migration
     await client.query(migrationSQL);
+    
+    // Insert admin user with parameterized query (fixes SQL injection #46)
+    await client.query(
+      `INSERT INTO users (username, email, password_hash, role_id, enabled) 
+       VALUES ($1, $2, $3, $4, $5)`,
+      [adminUsername, 'admin@gap.local', passwordHash, 1, true]
+    );
+    
     await client.query('COMMIT');
     console.log('Database migration completed successfully!');
+    console.log(`Admin user created: ${adminUsername}`);
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Migration failed:', error);
