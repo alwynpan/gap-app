@@ -115,13 +115,13 @@ async function migrate() {
 
     await client.query('BEGIN');
     await client.query(migrationSQL);
-    
+
     // Insert admin user using parameterized query to prevent SQL injection (Issue #46)
     await client.query(
       'INSERT INTO users (username, email, password_hash, role_id, enabled) VALUES ($1, $2, $3, $4, $5)',
       [adminUsername, 'admin@gap.local', passwordHash, 1, true]
     );
-    
+
     await client.query('COMMIT');
     console.log('Database migration completed successfully!');
   } catch (error) {
