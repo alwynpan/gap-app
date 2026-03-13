@@ -8,16 +8,14 @@ jest.mock('../src/db/migrate', () => ({
   pool: mockPool,
 }));
 
-// Mock bcryptjs
-jest.mock('bcryptjs', () => ({
+// Mock bcrypt
+jest.mock('bcrypt', () => ({
   hash: jest.fn((password) => Promise.resolve(`hashed_${password}`)),
   compare: jest.fn((password, hash) => Promise.resolve(hash === `hashed_${password}`)),
 }));
 
 // Mock fastify plugins
 jest.mock('@fastify/jwt', () => jest.fn());
-
-jest.mock('fastify-bcrypt', () => jest.fn());
 
 // Reset mocks before each test
 beforeEach(() => {

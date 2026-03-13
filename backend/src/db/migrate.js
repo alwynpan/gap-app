@@ -17,6 +17,15 @@ async function generateMigrationSQL() {
     process.exit(1);
   }
 
+  // Safety guard for destructive migrations (Issue #49)
+  const allowDestructive = process.env.ALLOW_DESTRUCTIVE_MIGRATION === 'true';
+  if (!allowDestructive) {
+    console.error('ERROR: Destructive migration blocked.');
+    console.error('This migration will DROP all tables. Set ALLOW_DESTRUCTIVE_MIGRATION=true to proceed.');
+    console.error('WARNING: This will DELETE ALL DATA in the database.');
+    process.exit(1);
+  }
+
   // Generate bcrypt hash dynamically at migration time
   const saltRounds = 10;
   const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
@@ -71,14 +80,15 @@ CREATE INDEX idx_groups_enabled ON groups(enabled);
 -- Insert default admin user with dynamically generated password hash
 -- Username: ${adminUsername}
 -- Password hash generated at migration time using bcrypt
-INSERT INTO users (username, email, password_hash, role_id, enabled) 
-VALUES (
-  '${adminUsername}',
-  'admin@gap.local',
-  '${passwordHash}',
-  1,
-  true
-);
+-- NOTE: Admin user inserted via parameterized query below (Issue #46)
+-- INSERT INTO users (username, email, password_hash, role_id, enabled) 
+-- VALUES (
+--   '${adminUsername}',
+--   'admin@gap.local',
+--   '${passwordHash}',
+--   1,
+--   true
+-- );
 
 -- Insert sample groups
 INSERT INTO groups (name, enabled) VALUES 
@@ -94,11 +104,24 @@ async function migrate() {
   try {
     console.log('Starting database migration...');
 
-    // Generate SQL with dynamic admin credentials
+    // Read admin credentials for parameterized INSERT (Issue #46)
+    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
+
+    // Generate SQL (without the admin INSERT - that's done via parameterized query)
     const migrationSQL = await generateMigrationSQL();
 
     await client.query('BEGIN');
     await client.query(migrationSQL);
+    
+    // Insert admin user using parameterized query to prevent SQL injection (Issue #46)
+    await client.query(
+      'INSERT INTO users (username, email, password_hash, role_id, enabled) VALUES ($1, $2, $3, $4, $5)',
+      [adminUsername, 'admin@gap.local', passwordHash, 1, true]
+    );
+    
     await client.query('COMMIT');
     console.log('Database migration completed successfully!');
   } catch (error) {

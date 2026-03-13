@@ -1,5 +1,5 @@
 const { pool } = require('../db/migrate');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 
 class User {
   static async findAll() {
