@@ -269,12 +269,116 @@ The project uses **GitHub Actions** for automated CI/CD with the following workf
 - `404 Not Found` - Resource not found
 - `500 Internal Server Error` - Server error
 
+### API Request/Response Examples
+
+#### User Registration
+**Request:**
+```bash
+curl -X POST http://localhost:3001/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "newuser",
+    "password": "securePassword123!",
+    "email": "newuser@example.com"
+  }'
+```
+
+**Success Response (201 Created):**
+```json
+{
+  "message": "User registered successfully",
+  "user": {
+    "id": "user_123",
+    "username": "newuser",
+    "email": "newuser@example.com",
+    "role": "user",
+    "createdAt": "2026-03-13T12:00:00Z"
+  }
+}
+```
+
+**Error Response (400 Bad Request):**
+```json
+{
+  "error": "Username already exists",
+  "code": "USERNAME_EXISTS"
+}
+```
+
+#### User Login
+**Request:**
+```bash
+curl -X POST http://localhost:3001/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "your-admin-password"
+  }'
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "user_admin",
+    "username": "admin",
+    "email": "admin@example.com",
+    "role": "admin",
+    "createdAt": "2026-03-13T12:00:00Z"
+  }
+}
+```
+
+#### Get Current User (Authenticated)
+**Request:**
+```bash
+curl -X GET http://localhost:3001/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "id": "user_admin",
+  "username": "admin",
+  "email": "admin@example.com",
+  "role": "admin",
+  "createdAt": "2026-03-13T12:00:00Z"
+}
+```
+
+#### Create New User (Admin Only)
+**Request:**
+```bash
+curl -X POST http://localhost:3001/users \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "teammanager",
+    "password": "managerPass123!",
+    "email": "manager@example.com",
+    "role": "team_manager"
+  }'
+```
+
+**Success Response (201 Created):**
+```json
+{
+  "id": "user_456",
+  "username": "teammanager",
+  "email": "manager@example.com",
+  "role": "team_manager",
+  "createdAt": "2026-03-13T12:05:00Z"
+}
+```
+
 ## Testing
 
 ### Coverage Requirements
-- **Backend**: 100% test coverage required
-- **Frontend**: Tests to be implemented
-- **E2E**: Comprehensive workflow testing
+- **Backend**: 100% test coverage required for all business logic and API routes
+- **Frontend**: Basic component tests planned for future implementation
+- **E2E**: Comprehensive workflow testing covering critical user journeys
 
 ### How to Run Tests
 ```bash
@@ -471,7 +575,14 @@ After running migrations, the admin username and password are set via environmen
 - **Password:** Set via `ADMIN_PASSWORD` environment variable before migration
 - **Role:** Admin
 
-⚠️ **Set secure values for `ADMIN_USERNAME` and `ADMIN_PASSWORD` before running migrations in production!**
+🚨 **CRITICAL SECURITY WARNING** 🚨
+- **NEVER use default credentials in production environments**
+- **ALWAYS change `ADMIN_USERNAME` and `ADMIN_PASSWORD` before running migrations**
+- **Use strong, randomly generated passwords (16+ characters with mixed case, numbers, and symbols)**
+- **Store credentials securely using Kubernetes secrets or environment-specific secret management**
+- **Rotate credentials immediately after initial setup**
+
+⚠️ **Failure to change default credentials will result in unauthorized access to your entire system!**
 
 ## Troubleshooting
 
