@@ -1,13 +1,6 @@
 const bcrypt = require('bcrypt');
 
 async function rbacPlugin(fastify, _options) {
-  // Role hierarchy: admin > team_manager > user
-  const roleHierarchy = {
-    admin: 3,
-    team_manager: 2,
-    user: 1,
-  };
-
   // Decorate fastify with RBAC helpers
   fastify.decorate('checkRole', async (request, reply, requiredRoles) => {
     if (!request.user) {
