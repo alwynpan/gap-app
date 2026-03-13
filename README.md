@@ -10,7 +10,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 - 🎭 **Role-Based Access Control (RBAC)** - Three-tier role system (Admin, Team Manager, User)
 - 🚀 **Kubernetes Ready** - Full K8s manifests for production deployment
 - 🐳 **Docker Support** - Local development with Docker Compose
-- 🧪 **Comprehensive Testing** - 100% test coverage requirement with E2E tests
+- 🧪 **Comprehensive Testing** - Full test suite with backend unit tests, frontend component tests, and E2E workflow tests
 - 🔄 **CI/CD Pipeline** - Automated linting, formatting, testing, and build validation
 
 ## Architecture
@@ -60,8 +60,10 @@ Group Assignment Portal - A role-based access control system for managing studen
 git clone https://github.com/alwyn-bot/gap-app.git
 cd gap-app
 
-# Install dependencies for all packages
-npm ci --workspaces --if-present
+# Install dependencies for all packages individually:
+cd backend && npm ci
+cd ../frontend && npm ci  
+cd ../tests && npm ci
 
 # OR install individually:
 # cd backend && npm ci
@@ -180,7 +182,7 @@ npm run format:write  # Apply formatting
 ```
 
 ### Testing Commands
-The project requires **100% test coverage** for all code.
+The project includes comprehensive test suites for both backend and frontend.
 
 ```bash
 # Backend testing (with coverage)
@@ -190,7 +192,7 @@ npm test -- --coverage      # Run with coverage report
 
 # Frontend testing
 cd frontend
-npm test                    # Currently no frontend tests
+npm test                    # Run frontend component tests with coverage
 
 # End-to-end testing
 cd tests
@@ -267,6 +269,7 @@ The project uses **GitHub Actions** for automated CI/CD with the following workf
 - `403 Forbidden` - Insufficient permissions for requested action
 - `400 Bad Request` - Invalid request data
 - `404 Not Found` - Resource not found
+- `409 Conflict` - Username or email already exists
 - `500 Internal Server Error` - Server error
 
 ### API Request/Response Examples
@@ -291,6 +294,9 @@ curl -X POST http://localhost:3001/auth/register \
     "id": "user_123",
     "username": "newuser",
     "email": "newuser@example.com",
+    "studentId": null,
+    "groupId": null,
+    "groupName": null,
     "role": "user",
     "createdAt": "2026-03-13T12:00:00Z"
   }
@@ -376,8 +382,8 @@ curl -X POST http://localhost:3001/users \
 ## Testing
 
 ### Coverage Requirements
-- **Backend**: 100% test coverage required for all business logic and API routes
-- **Frontend**: Basic component tests planned for future implementation
+- **Backend**: Comprehensive test coverage for all business logic and API routes
+- **Frontend**: Complete component and integration test suite with coverage reporting
 - **E2E**: Comprehensive workflow testing covering critical user journeys
 
 ### How to Run Tests
@@ -478,7 +484,9 @@ kubectl apply -f k8s/gap-ingress.yaml
 
 ### Rate Limiting
 - Backend includes rate limiting middleware
-- Default: 100 requests per 15 minutes per IP
+- **Registration**: 3 requests per minute per IP (prevents spam)
+- **Login**: 5 requests per minute per IP (prevents brute-force attacks)
+- **Other routes**: No rate limiting by default
 - Configurable via Fastify rate-limit plugin
 
 ### Authentication/Authorization
