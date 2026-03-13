@@ -10,7 +10,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 - 🎭 **Role-Based Access Control (RBAC)** - Three-tier role system (Admin, Assignment Manager, User)
 - 🚀 **Kubernetes Ready** - Full K8s manifests for production deployment
 - 🐳 **Docker Support** - Local development with Docker Compose
-- 🧪 **Comprehensive Testing** - 100% test coverage requirement with E2E tests
+- 🧪 **Comprehensive Testing** - ≥80% test coverage requirement with E2E tests
 - 🔄 **CI/CD Pipeline** - Automated linting, formatting, testing, and build validation
 
 ## Architecture
@@ -31,7 +31,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 - **Framework:** Fastify
 - **Database:** PostgreSQL 15
 - **Authentication:** JWT (@fastify/jwt)
-- **Password Hashing:** bcrypt (@fastify/bcrypt)
+- **Password Hashing:** bcrypt (fastify-bcrypt/bcrypt)
 
 ### Frontend
 
@@ -66,12 +66,9 @@ git clone https://github.com/alwyn-bot/gap-app.git
 cd gap-app
 
 # Install dependencies for all packages
-npm ci --workspaces --if-present
-
-# OR install individually:
-# cd backend && npm ci
-# cd frontend && npm ci  
-# cd tests && npm ci
+cd backend && npm ci
+cd ../frontend && npm ci
+cd ../tests && npm ci
 ```
 
 ### Environment Variables
@@ -175,7 +172,7 @@ The project uses **Husky** with **lint-staged** to automatically:
 - Fix ESLint issues
 - Prevent commits with lint errors
 
-**Hooks are automatically installed when you run `npm ci`.**
+**Hooks are automatically installed when you run `npm ci` at the root level.**
 
 To manually trigger pre-commit hooks:
 
@@ -214,7 +211,7 @@ npm run format:write  # Apply formatting
 
 ### Testing Commands
 
-The project requires **100% test coverage** for all code.
+The project requires **≥80% test coverage** for all code.
 
 ```bash
 # Backend testing (with coverage)
@@ -224,7 +221,7 @@ npm test -- --coverage      # Run with coverage report
 
 # Frontend testing
 cd frontend
-npm test                    # Currently no frontend tests
+npm test                    # Run frontend tests
 
 # End-to-end testing
 cd tests
@@ -234,6 +231,7 @@ npm run test:watch          # Watch mode for development
 
 # Test file locations:
 # - Backend unit tests: backend/tests/
+# - Frontend tests: frontend/tests/
 # - E2E tests: tests/e2e/
 ```
 
@@ -391,8 +389,8 @@ curl -X POST http://localhost:3001/users \
 
 ### Coverage Requirements
 
-- **Backend**: 100% test coverage required
-- **Frontend**: Tests to be implemented
+- **Backend**: ≥80% test coverage required
+- **Frontend**: Tests implemented in frontend/tests/
 - **E2E**: Comprehensive workflow testing
 
 ### How to Run Tests
@@ -501,16 +499,15 @@ kubectl apply -f k8s/gap-ingress.yaml
 
 ### Rate Limiting
 
-- Backend includes rate limiting middleware
-- Default: 100 requests per 15 minutes per IP
-- Configurable via Fastify rate-limit plugin
+- Rate limiting is not currently enabled in the backend
+- Can be added via Fastify rate-limit plugin if needed
 
 ### Authentication/Authorization
 
 - JWT tokens with configurable expiration
 - Role-based access control (RBAC)
 - Password hashing with bcrypt
-- Secure cookie handling
+- JWT via Authorization header
 - CORS protection
 
 ### Security Best Practices
