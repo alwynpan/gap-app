@@ -91,22 +91,26 @@ describe('RBAC Middleware', () => {
       compare: jest.fn().mockResolvedValue(true),
     };
 
+    // Mock bcrypt module before requiring rbac
+    jest.doMock('bcrypt', () => mockBcrypt);
+
     fastify = {
-      register: jest.fn().mockImplementation(async () => {
-        fastify.bcrypt = mockBcrypt;
-      }),
       decorate: jest.fn(),
-      bcrypt: mockBcrypt,
       checkRole: null,
     };
     jest.clearAllMocks();
   });
 
-  it('registers bcrypt plugin', async () => {
+  afterEach(() => {
+    jest.resetModules();
+  });
+
+  it('decorates fastify with RBAC helpers', async () => {
     const rbacPlugin = require('../../src/middleware/rbac');
     await rbacPlugin(fastify, {});
 
-    expect(fastify.register).toHaveBeenCalled();
+    // rbac plugin doesn't register anything, it just decorates
+    expect(fastify.decorate).toHaveBeenCalled();
   });
 
   it('decorates with checkRole', async () => {
@@ -185,9 +189,10 @@ describe('RBAC Middleware', () => {
     await rbacPlugin(fastify, {});
 
     const hashPassword = fastify.decorate.mock.calls.find((call) => call[0] === 'hashPassword')[1];
-    await hashPassword('plain');
+    const result = await hashPassword('plain');
 
-    expect(mockBcrypt.hash).toHaveBeenCalledWith('plain');
+    expect(mockBcrypt.hash).toHaveBeenCalledWith('plain', 10);
+    expect(result).toBe('hashed');
   });
 
   it('verifyPassword verifies password', async () => {
@@ -195,9 +200,10 @@ describe('RBAC Middleware', () => {
     await rbacPlugin(fastify, {});
 
     const verifyPassword = fastify.decorate.mock.calls.find((call) => call[0] === 'verifyPassword')[1];
-    await verifyPassword('plain', 'hashed');
+    const result = await verifyPassword('plain', 'hashed');
 
     expect(mockBcrypt.compare).toHaveBeenCalledWith('plain', 'hashed');
+    expect(result).toBe(true);
   });
 
   it('requireTeamManager allows team_manager', async () => {
