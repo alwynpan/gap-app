@@ -252,7 +252,7 @@ npm run build
 The project uses **GitHub Actions** for automated CI/CD with the following workflow:
 
 1. **Lint Stage**: Runs ESLint on both backend and frontend
-2. **Test Stage**: Runs Jest tests with 100% coverage requirement
+2. **Test Stage**: Runs Jest tests with ≥80% coverage requirement
 3. **Format Stage**: Validates Prettier formatting
 4. **Build Stage**: Verifies successful builds
 
@@ -264,7 +264,7 @@ The project uses **GitHub Actions** for automated CI/CD with the following workf
 **Requirements for merge:**
 
 - All lint checks pass
-- All tests pass with 100% coverage
+- All tests pass with ≥80% coverage
 - Code formatting is correct
 - Build succeeds
 
@@ -646,7 +646,7 @@ kubectl get events -n gap-portal --sort-by='.lastTimestamp'
 ### CI Pipeline Failures
 
 - **Lint errors**: Run `npm run lint:fix` locally before committing
-- **Coverage below 100%**: Add missing test cases
+- **Coverage below 80%**: Add missing test cases
 - **Formatting issues**: Run `npm run format:write` before committing
 - **Build failures**: Ensure all dependencies are properly declared
 
