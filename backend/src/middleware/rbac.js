@@ -1,14 +1,6 @@
+const bcrypt = require('bcrypt');
+
 async function rbacPlugin(fastify, _options) {
-  // Register bcrypt plugin
-  await fastify.register(require('fastify-bcrypt'));
-
-  // Role hierarchy: admin > team_manager > user
-  const roleHierarchy = {
-    admin: 3,
-    team_manager: 2,
-    user: 1,
-  };
-
   // Decorate fastify with RBAC helpers
   fastify.decorate('checkRole', async (request, reply, requiredRoles) => {
     if (!request.user) {
@@ -16,10 +8,8 @@ async function rbacPlugin(fastify, _options) {
       return false;
     }
 
-    const userRoleLevel = roleHierarchy[request.user.role] || 0;
-    const requiredLevel = Math.max(...requiredRoles.map((role) => roleHierarchy[role] || 0));
-
-    if (userRoleLevel < requiredLevel) {
+    // Check if user's role is in the allowed roles list (Issue #48)
+    if (!requiredRoles.includes(request.user.role)) {
       reply.code(403).send({ error: 'Forbidden: Insufficient permissions' });
       return false;
     }
@@ -39,12 +29,12 @@ async function rbacPlugin(fastify, _options) {
 
   // Password hashing helper
   fastify.decorate('hashPassword', async (password) => {
-    return await fastify.bcrypt.hash(password);
+    return await bcrypt.hash(password, 10);
   });
 
   // Password verification helper
   fastify.decorate('verifyPassword', async (password, hash) => {
-    return await fastify.bcrypt.compare(password, hash);
+    return await bcrypt.compare(password, hash);
   });
 }
 

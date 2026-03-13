@@ -8,12 +8,12 @@ jest.mock('../../../src/db/migrate', () => ({
 }));
 
 // Mock bcrypt
-jest.mock('bcryptjs', () => ({
+jest.mock('bcrypt', () => ({
   hash: jest.fn(),
   compare: jest.fn(),
 }));
 
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const { pool } = require('../../../src/db/migrate');
 
 describe('User Model', () => {
