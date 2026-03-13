@@ -304,6 +304,81 @@ The project uses **GitHub Actions** for automated CI/CD with the following workf
 3. Client stores token and includes in `Authorization: Bearer <token>` header
 4. All protected routes validate the token and user permissions
 
+### Request/Response Examples
+
+#### Register User
+```bash
+curl -X POST http://localhost:3001/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "newuser",
+    "email": "user@example.com",
+    "password": "SecurePass123!",
+    "role": "user"
+  }'
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": "uuid-here",
+  "username": "newuser",
+  "email": "user@example.com",
+  "role": "user"
+}
+```
+
+#### Login
+```bash
+curl -X POST http://localhost:3001/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "your-password"
+  }'
+```
+
+**Response (200 OK):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "uuid-here",
+    "username": "admin",
+    "role": "admin"
+  }
+}
+```
+
+#### Get Current User (Protected Route)
+```bash
+curl -X GET http://localhost:3001/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "uuid-here",
+  "username": "admin",
+  "email": "admin@example.com",
+  "role": "admin"
+}
+```
+
+#### Create User (Admin Only)
+```bash
+curl -X POST http://localhost:3001/users \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "teammanager1",
+    "email": "tm@example.com",
+    "password": "SecurePass123!",
+    "role": "team_manager"
+  }'
+```
+
 ### Error Codes
 
 - `401 Unauthorized` - Invalid or missing authentication token
