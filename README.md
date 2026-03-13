@@ -10,7 +10,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 - 🎭 **Role-Based Access Control (RBAC)** - Three-tier role system (Admin, Assignment Manager, User)
 - 🚀 **Kubernetes Ready** - Full K8s manifests for production deployment
 - 🐳 **Docker Support** - Local development with Docker Compose
-- 🧪 **Comprehensive Testing** - ≥80% test coverage requirement with E2E tests
+- 🧪 **Comprehensive Testing** - ≥80% test coverage requirement (backend and frontend)
 - 🔄 **CI/CD Pipeline** - Automated linting, formatting, testing, and build validation
 
 ## Architecture
@@ -31,7 +31,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 - **Framework:** Fastify
 - **Database:** PostgreSQL 15
 - **Authentication:** JWT (@fastify/jwt)
-- **Password Hashing:** bcrypt (fastify-bcrypt/bcrypt)
+- **Password Hashing:** Multiple libraries in use (bcrypt, bcryptjs, fastify-bcrypt) - standardization pending in PR #75
 
 ### Frontend
 
@@ -65,10 +65,13 @@ Group Assignment Portal - A role-based access control system for managing studen
 git clone https://github.com/alwyn-bot/gap-app.git
 cd gap-app
 
+# Install root dependencies first (required for Husky hooks and lint-staged)
+npm ci
+
 # Install dependencies for all packages
 cd backend && npm ci
 cd ../frontend && npm ci
-cd ../tests && npm ci
+cd ../tests && npm install
 ```
 
 ### Environment Variables
@@ -114,7 +117,7 @@ Run database migrations to create tables and seed initial admin user:
 
 ```bash
 # Using Docker Compose (recommended)
-docker-compose up -d postgres
+docker-compose up -d
 docker-compose exec backend npm run migrate
 
 # Manual setup
@@ -211,7 +214,7 @@ npm run format:write  # Apply formatting
 
 ### Testing Commands
 
-The project requires **≥80% test coverage** for all code.
+The project requires **≥80% test coverage** for backend and frontend (E2E tests have no coverage threshold).
 
 ```bash
 # Backend testing (with coverage)
@@ -252,7 +255,7 @@ npm run build
 The project uses **GitHub Actions** for automated CI/CD with the following workflow:
 
 1. **Lint Stage**: Runs ESLint on both backend and frontend
-2. **Test Stage**: Runs Jest tests with ≥80% coverage requirement
+2. **Test Stage**: Runs Jest tests for backend and frontend with ≥80% coverage requirement (E2E tests not run in CI)
 3. **Format Stage**: Validates Prettier formatting
 4. **Build Stage**: Verifies successful builds
 
@@ -264,7 +267,7 @@ The project uses **GitHub Actions** for automated CI/CD with the following workf
 **Requirements for merge:**
 
 - All lint checks pass
-- All tests pass with ≥80% coverage
+- All backend and frontend tests pass with ≥80% coverage
 - Code formatting is correct
 - Build succeeds
 
@@ -319,10 +322,13 @@ curl -X POST http://localhost:3001/auth/register \
 **Response (201 Created):**
 ```json
 {
-  "id": "uuid-here",
-  "username": "newuser",
-  "email": "user@example.com",
-  "role": "user"
+  "message": "User registered successfully",
+  "user": {
+    "id": "uuid-here",
+    "username": "newuser",
+    "email": "user@example.com",
+    "studentId": "S123456"
+  }
 }
 ```
 
@@ -339,11 +345,16 @@ curl -X POST http://localhost:3001/auth/login \
 **Response (200 OK):**
 ```json
 {
+  "message": "Login successful",
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "user": {
     "id": "uuid-here",
     "username": "admin",
-    "role": "admin"
+    "email": "admin@example.com",
+    "role": "admin",
+    "groupId": null,
+    "groupName": null,
+    "studentId": "S123456"
   }
 }
 ```
@@ -357,10 +368,14 @@ curl -X GET http://localhost:3001/auth/me \
 **Response (200 OK):**
 ```json
 {
-  "id": "uuid-here",
-  "username": "admin",
-  "email": "admin@example.com",
-  "role": "admin"
+  "user": {
+    "id": "uuid-here",
+    "username": "admin",
+    "email": "admin@example.com",
+    "role": "admin",
+    "groupId": null,
+    "groupName": null
+  }
 }
 ```
 
@@ -377,6 +392,19 @@ curl -X POST http://localhost:3001/users \
   }'
 ```
 
+**Response (201 Created):**
+```json
+{
+  "message": "User created successfully",
+  "user": {
+    "id": "uuid-here",
+    "username": "teammanager1",
+    "email": "tm@example.com",
+    "studentId": "S123456"
+  }
+}
+```
+
 ### Error Codes
 
 - `401 Unauthorized` - Invalid or missing authentication token
@@ -389,9 +417,9 @@ curl -X POST http://localhost:3001/users \
 
 ### Coverage Requirements
 
-- **Backend**: ≥80% test coverage required
-- **Frontend**: Tests implemented in frontend/tests/
-- **E2E**: Comprehensive workflow testing
+- **Backend**: ≥80% test coverage required (enforced by Jest config)
+- **Frontend**: ≥80% test coverage required (enforced by Jest config)
+- **E2E**: No coverage threshold enforced
 
 ### How to Run Tests
 
@@ -499,15 +527,16 @@ kubectl apply -f k8s/gap-ingress.yaml
 
 ### Rate Limiting
 
-- Rate limiting is not currently enabled in the backend
-- Can be added via Fastify rate-limit plugin if needed
+- Rate limiting is not globally enabled
+- Per-route rate limiting only (3/min for registration, 5/min for login)
+- Can be extended via Fastify rate-limit plugin if needed
 
 ### Authentication/Authorization
 
 - JWT tokens with configurable expiration
 - Role-based access control (RBAC)
-- Password hashing with bcrypt
-- JWT via Authorization header
+- Password hashing with bcrypt/bcryptjs
+- JWT via Authorization header (no cookies used)
 - CORS protection
 
 ### Security Best Practices
@@ -523,7 +552,7 @@ kubectl apply -f k8s/gap-ingress.yaml
 ## Project Structure
 
 ```
-gap-portal/
+gap-app/
 ├── backend/
 │   ├── src/
 │   │   ├── config/
@@ -645,9 +674,9 @@ kubectl get events -n gap-portal --sort-by='.lastTimestamp'
 
 ### CI Pipeline Failures
 
-- **Lint errors**: Run `npm run lint:fix` locally before committing
-- **Coverage below 80%**: Add missing test cases
-- **Formatting issues**: Run `npm run format:write` before committing
+- **Lint errors**: Run `npm run lint:fix` in backend/ or frontend/ before committing (no root-level lint scripts)
+- **Coverage below 80%**: Add missing test cases (backend/frontend only, E2E has no threshold)
+- **Formatting issues**: Run `npm run format:write` in backend/ or frontend/ before committing
 - **Build failures**: Ensure all dependencies are properly declared
 
 ## License
