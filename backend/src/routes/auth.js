@@ -20,7 +20,7 @@ async function authRoutes(fastify, _options) {
         return reply.code(403).send({ error: 'Registration is currently disabled' });
       }
 
-      const { username, email, password, studentId } = request.body;
+      const { username, email, password, firstName, lastName, studentId } = request.body;
 
       // Validate required fields
       if (!username || !email || !password) {
@@ -59,6 +59,8 @@ async function authRoutes(fastify, _options) {
           username,
           email,
           password,
+          firstName,
+          lastName,
           studentId,
           roleId: defaultRole.id,
         });
@@ -132,6 +134,8 @@ async function authRoutes(fastify, _options) {
             id: user.id,
             username: user.username,
             email: user.email,
+            firstName: user.first_name,
+            lastName: user.last_name,
             role: user.role_name,
             groupId: user.group_id,
             groupName: user.group_name,
@@ -174,6 +178,8 @@ async function authRoutes(fastify, _options) {
             id: freshUser.id,
             username: freshUser.username,
             email: freshUser.email,
+            firstName: freshUser.first_name,
+            lastName: freshUser.last_name,
             role: freshUser.role_name,
             groupId: freshUser.group_id,
             groupName: freshUser.group_name,

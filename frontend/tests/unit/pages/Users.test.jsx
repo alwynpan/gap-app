@@ -16,6 +16,8 @@ describe('Users page', () => {
       id: 1,
       username: 'u1',
       email: 'u1@test.com',
+      first_name: 'First',
+      last_name: 'Last',
       role_name: 'normal_user',
       group_name: null,
       student_id: 's1',
@@ -136,12 +138,18 @@ describe('Users page', () => {
     });
   });
 
-  it('does not submit assignment when group is not selected', async () => {
-    const user = userEvent.setup();
+  it('removes user from group when "No Group" is selected', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+    const usersInGroup = [{ ...initialUsers[0], group_name: 'Group A', group_id: 2 }];
 
     axios.get
+      .mockResolvedValueOnce({ data: { users: usersInGroup } })
+      .mockResolvedValueOnce({ data: { groups: initialGroups } })
       .mockResolvedValueOnce({ data: { users: initialUsers } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } });
+    axios.put.mockResolvedValue({});
 
     render(
       <MemoryRouter>
@@ -154,9 +162,20 @@ describe('Users page', () => {
     });
 
     await user.click(screen.getByRole('button', { name: /assign group/i }));
+    // "No Group" (value="") is already the default selection
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    expect(axios.put).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/users\/1\/group$/), {
+        groupId: null,
+      });
+      expect(screen.getByText('User group updated successfully')).toBeInTheDocument();
+    });
+
+    jest.advanceTimersByTime(3000);
+    await waitFor(() => {
+      expect(screen.queryByText('User group updated successfully')).not.toBeInTheDocument();
+    });
   });
 
   it('shows API error when group update fails', async () => {
@@ -331,6 +350,40 @@ describe('Users page', () => {
       expect(groupSelect.value).toBe('2');
     });
 
+    it('sends firstName and lastName when creating a user', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupRenderedPage();
+
+      axios.post.mockResolvedValue({ data: { message: 'User created' } });
+      axios.get
+        .mockResolvedValueOnce({ data: { users: initialUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await user.type(screen.getByPlaceholderText('Enter username'), 'jdoe');
+      await user.type(screen.getByPlaceholderText('Enter email'), 'j@test.com');
+      await user.type(screen.getByPlaceholderText('Enter first name'), 'John');
+      await user.type(screen.getByPlaceholderText('Enter last name'), 'Doe');
+      await user.type(screen.getByPlaceholderText('Enter password'), 'pass123');
+      await user.type(screen.getByPlaceholderText('Enter student ID'), 'ST99');
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+      await waitFor(() => {
+        expect(axios.post).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users$/),
+          expect.objectContaining({
+            username: 'jdoe',
+            email: 'j@test.com',
+            firstName: 'John',
+            lastName: 'Doe',
+            password: 'pass123',
+            studentId: 'ST99',
+          })
+        );
+      });
+    });
+
     it('assignment_manager does not see admin role option', async () => {
       useAuth.mockReturnValue({
         user: { username: 'manager', role: 'assignment_manager' },
@@ -498,6 +551,14 @@ describe('Users page', () => {
       await user.clear(usernameInput);
       await user.type(usernameInput, 'updated_u1');
 
+      const firstNameInput = screen.getByDisplayValue('First');
+      await user.clear(firstNameInput);
+      await user.type(firstNameInput, 'NewFirst');
+
+      const lastNameInput = screen.getByDisplayValue('Last');
+      await user.clear(lastNameInput);
+      await user.type(lastNameInput, 'NewLast');
+
       axios.put.mockResolvedValue({});
       axios.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
@@ -508,7 +569,7 @@ describe('Users page', () => {
       await waitFor(() => {
         expect(axios.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/1$/),
-          expect.objectContaining({ username: 'updated_u1' })
+          expect.objectContaining({ username: 'updated_u1', firstName: 'NewFirst', lastName: 'NewLast' })
         );
         expect(screen.getByText('User updated successfully')).toBeInTheDocument();
       });
@@ -519,6 +580,51 @@ describe('Users page', () => {
       jest.advanceTimersByTime(3000);
       await waitFor(() => {
         expect(screen.queryByText('User updated successfully')).not.toBeInTheDocument();
+      });
+    });
+
+    it('admin can edit email, studentId, role and enabled fields', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+
+      // Edit email
+      const emailInput = screen.getByDisplayValue('u1@test.com');
+      await user.clear(emailInput);
+      await user.type(emailInput, 'new@test.com');
+
+      // Edit studentId
+      const studentInput = screen.getByDisplayValue('s1');
+      await user.clear(studentInput);
+      await user.type(studentInput, 's999');
+
+      // Change role
+      const roleSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="1"]'));
+      await user.selectOptions(roleSelect, '2');
+
+      // Toggle enabled
+      const enabledCheckbox = screen.getByRole('checkbox');
+      await user.click(enabledCheckbox);
+
+      axios.put.mockResolvedValue({});
+      axios.get
+        .mockResolvedValueOnce({ data: { users: initialUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+      await waitFor(() => {
+        expect(axios.put).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\/1$/),
+          expect.objectContaining({
+            email: 'new@test.com',
+            studentId: 's999',
+            roleId: 2,
+            enabled: false,
+          })
+        );
       });
     });
 
@@ -567,6 +673,155 @@ describe('Users page', () => {
       jest.advanceTimersByTime(3000);
       await waitFor(() => {
         expect(screen.queryByText('Username taken')).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Change Password', () => {
+    const setupRenderedPage = async () => {
+      axios.get
+        .mockResolvedValueOnce({ data: { users: initialUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
+      });
+    };
+
+    it('shows Password button for admin on all users', async () => {
+      await setupRenderedPage();
+      expect(screen.getByRole('button', { name: /^password$/i })).toBeInTheDocument();
+    });
+
+    it('shows Password button for user on their own row', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 1, username: 'u1', role: 'user' },
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+      await setupRenderedPage();
+      expect(screen.getByRole('button', { name: /^password$/i })).toBeInTheDocument();
+    });
+
+    it('hides Password button for user on other users rows', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 999, username: 'other', role: 'user' },
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+      await setupRenderedPage();
+      expect(screen.queryByRole('button', { name: /^password$/i })).not.toBeInTheDocument();
+    });
+
+    it('opens and closes password change modal', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      expect(screen.getByText(/change password for/i)).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /cancel/i }));
+      expect(screen.queryByText(/change password for/i)).not.toBeInTheDocument();
+    });
+
+    it('admin does not see current password field', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      expect(screen.queryByPlaceholderText('Enter current password')).not.toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Enter new password')).toBeInTheDocument();
+    });
+
+    it('non-admin sees and can type into current password field', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 1, username: 'u1', role: 'user' },
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      const currentPwInput = screen.getByPlaceholderText('Enter current password');
+      expect(currentPwInput).toBeInTheDocument();
+      await user.type(currentPwInput, 'myoldpass');
+      expect(currentPwInput.value).toBe('myoldpass');
+    });
+
+    it('shows error when passwords do not match', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.type(screen.getByPlaceholderText('Enter new password'), 'newpass1');
+      await user.type(screen.getByPlaceholderText('Confirm new password'), 'newpass2');
+      await user.click(screen.getByRole('button', { name: /^change password$/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('New passwords do not match')).toBeInTheDocument();
+      });
+    });
+
+    it('shows error when password is too short', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.type(screen.getByPlaceholderText('Enter new password'), '12345');
+      await user.type(screen.getByPlaceholderText('Confirm new password'), '12345');
+      await user.click(screen.getByRole('button', { name: /^change password$/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('New password must be at least 6 characters')).toBeInTheDocument();
+      });
+    });
+
+    it('successfully changes password', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupRenderedPage();
+
+      axios.put.mockResolvedValue({});
+
+      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.type(screen.getByPlaceholderText('Enter new password'), 'newpass123');
+      await user.type(screen.getByPlaceholderText('Confirm new password'), 'newpass123');
+      await user.click(screen.getByRole('button', { name: /^change password$/i }));
+
+      await waitFor(() => {
+        expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/users\/1\/password$/), {
+          newPassword: 'newpass123',
+        });
+        expect(screen.getByText('Password changed successfully')).toBeInTheDocument();
+      });
+
+      jest.advanceTimersByTime(3000);
+      await waitFor(() => {
+        expect(screen.queryByText('Password changed successfully')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows API error when password change fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupRenderedPage();
+
+      axios.put.mockRejectedValue({ response: { data: { error: 'Current password is incorrect' } } });
+
+      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.type(screen.getByPlaceholderText('Enter new password'), 'newpass123');
+      await user.type(screen.getByPlaceholderText('Confirm new password'), 'newpass123');
+      await user.click(screen.getByRole('button', { name: /^change password$/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Current password is incorrect')).toBeInTheDocument();
       });
     });
   });

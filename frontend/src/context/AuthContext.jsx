@@ -64,12 +64,14 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const register = async (username, email, password, studentId) => {
+  const register = async (username, email, password, { firstName, lastName, studentId } = {}) => {
     try {
       const response = await axios.post(`${API_BASE}/auth/register`, {
         username,
         email,
         password,
+        firstName,
+        lastName,
         studentId,
       });
 

@@ -80,7 +80,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const { username, email, password, studentId, groupId, role } = request.body;
+        const { username, email, password, firstName, lastName, studentId, groupId, role } = request.body;
 
         if (!username || !email || !password) {
           return reply.code(400).send({ error: 'Username, email, and password are required' });
@@ -116,6 +116,8 @@ async function usersRoutes(fastify, _options) {
           username,
           email,
           password,
+          firstName,
+          lastName,
           studentId,
           groupId,
           roleId,
@@ -209,7 +211,7 @@ async function usersRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const userId = parseInt(request.params.id, 10);
-        const { username, email, studentId, groupId, roleId, enabled } = request.body;
+        const { username, email, firstName, lastName, studentId, groupId, roleId, enabled } = request.body;
 
         const user = await User.findById(userId);
         if (!user) {
@@ -218,7 +220,7 @@ async function usersRoutes(fastify, _options) {
 
         // Non-admin users can only update basic profile fields
         const isAdmin = request.user.role === 'admin';
-        const updates = { username, email, studentId };
+        const updates = { username, email, firstName, lastName, studentId };
         if (isAdmin) {
           updates.groupId = groupId;
           updates.roleId = roleId;
@@ -234,6 +236,57 @@ async function usersRoutes(fastify, _options) {
       } catch (error) {
         console.error('Update user error:', error);
         return reply.code(500).send({ error: 'Failed to update user' });
+      }
+    }
+  );
+
+  // Change password (any user can change their own; admin can change anyone's)
+  fastify.put(
+    '/users/:id/password',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+        const userId = parseInt(request.params.id, 10);
+        if (request.user.id !== userId && request.user.role !== 'admin') {
+          return reply.code(403).send({ error: 'Forbidden: You can only change your own password' });
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const userId = parseInt(request.params.id, 10);
+        const { currentPassword, newPassword } = request.body;
+
+        if (!newPassword || newPassword.length < 6) {
+          return reply.code(400).send({ error: 'New password must be at least 6 characters' });
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
+
+        // Non-admin users must provide current password
+        const isAdmin = request.user.role === 'admin';
+        if (!isAdmin) {
+          if (!currentPassword) {
+            return reply.code(400).send({ error: 'Current password is required' });
+          }
+          const userWithPassword = await User.findByUsername(user.username);
+          const valid = await User.verifyPassword(currentPassword, userWithPassword.password_hash);
+          if (!valid) {
+            return reply.code(401).send({ error: 'Current password is incorrect' });
+          }
+        }
+
+        await User.updatePassword(userId, newPassword);
+
+        return reply.send({ message: 'Password updated successfully' });
+      } catch (error) {
+        console.error('Change password error:', error);
+        return reply.code(500).send({ error: 'Failed to change password' });
       }
     }
   );

@@ -4,7 +4,16 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-const emptyNewUser = { username: '', email: '', password: '', studentId: '', groupId: '', role: 'user' };
+const emptyNewUser = {
+  username: '',
+  firstName: '',
+  lastName: '',
+  email: '',
+  password: '',
+  studentId: '',
+  groupId: '',
+  role: 'user',
+};
 
 const formatRoleName = (role) => (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -20,6 +29,7 @@ function Users() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newUser, setNewUser] = useState({ ...emptyNewUser });
   const [editingUser, setEditingUser] = useState(null);
+  const [passwordChange, setPasswordChange] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -53,7 +63,7 @@ function Users() {
   };
 
   const handleAssignGroup = async () => {
-    if (!selectedUser || selectedGroup === '') return;
+    if (!selectedUser) return;
 
     const groupId = selectedGroup === '' ? null : parseInt(selectedGroup);
     await handleGroupChange(selectedUser, groupId);
@@ -70,6 +80,8 @@ function Users() {
         username: newUser.username.trim(),
         email: newUser.email.trim(),
         password: newUser.password,
+        firstName: newUser.firstName.trim() || undefined,
+        lastName: newUser.lastName.trim() || undefined,
         studentId: newUser.studentId.trim() || undefined,
         groupId: newUser.groupId ? parseInt(newUser.groupId) : undefined,
         role: newUser.role,
@@ -93,6 +105,8 @@ function Users() {
       await axios.put(`${API_BASE}/users/${editingUser.id}`, {
         username: editingUser.username.trim(),
         email: editingUser.email.trim(),
+        firstName: editingUser.firstName?.trim() || null,
+        lastName: editingUser.lastName?.trim() || null,
         studentId: editingUser.studentId?.trim() || null,
         ...(isAdmin && {
           roleId: editingUser.roleId ? parseInt(editingUser.roleId) : undefined,
@@ -114,11 +128,43 @@ function Users() {
       id: u.id,
       username: u.username,
       email: u.email,
+      firstName: u.first_name || '',
+      lastName: u.last_name || '',
       studentId: u.student_id || '',
       roleId: u.role_id || '',
       roleName: u.role_name,
       enabled: u.enabled !== false,
     });
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (!passwordChange) return;
+
+    const { userId, currentPassword, newPassword, confirmPassword } = passwordChange;
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('New password must be at least 6 characters');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+
+    try {
+      await axios.put(`${API_BASE}/users/${userId}/password`, {
+        ...(currentPassword && { currentPassword }),
+        newPassword,
+      });
+      setSuccess('Password changed successfully');
+      setPasswordChange(null);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to change password');
+      setTimeout(() => setError(''), 3000);
+    }
   };
 
   if (loading) {
@@ -189,6 +235,9 @@ function Users() {
                       Username
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Name
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Email
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -208,6 +257,11 @@ function Users() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{u.username}</div>
                         {u.student_id && <div className="text-sm text-gray-500">{u.student_id}</div>}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {u.first_name} {u.last_name}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{u.email}</div>
@@ -259,12 +313,28 @@ function Users() {
                         ) : (
                           <div className="flex items-center space-x-3">
                             {(isAdmin || user?.id === u.id) && (
-                              <button
-                                onClick={() => openEditModal(u)}
-                                className="text-primary-600 hover:text-primary-800"
-                              >
-                                Edit
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => openEditModal(u)}
+                                  className="text-primary-600 hover:text-primary-800"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setPasswordChange({
+                                      userId: u.id,
+                                      username: u.username,
+                                      currentPassword: '',
+                                      newPassword: '',
+                                      confirmPassword: '',
+                                    })
+                                  }
+                                  className="text-primary-600 hover:text-primary-800"
+                                >
+                                  Password
+                                </button>
+                              </>
                             )}
                             <button
                               onClick={() => setSelectedUser(u.id)}
@@ -312,6 +382,26 @@ function Users() {
                   onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
                   placeholder="Enter email"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                <input
+                  type="text"
+                  value={newUser.firstName}
+                  onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter first name"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                <input
+                  type="text"
+                  value={newUser.lastName}
+                  onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter last name"
                 />
               </div>
               <div className="mb-3">
@@ -410,6 +500,26 @@ function Users() {
                 />
               </div>
               <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                <input
+                  type="text"
+                  value={editingUser.firstName}
+                  onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter first name"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                <input
+                  type="text"
+                  value={editingUser.lastName}
+                  onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter last name"
+                />
+              </div>
+              <div className="mb-3">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
                 <input
                   type="text"
@@ -456,6 +566,63 @@ function Users() {
                 </button>
                 <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
                   Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Change Password Modal */}
+      {passwordChange && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password for {passwordChange.username}</h3>
+            <form onSubmit={handleChangePassword}>
+              {!isAdmin && (
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={passwordChange.currentPassword}
+                    onChange={(e) => setPasswordChange({ ...passwordChange, currentPassword: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="Enter current password"
+                  />
+                </div>
+              )}
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={passwordChange.newPassword}
+                  onChange={(e) => setPasswordChange({ ...passwordChange, newPassword: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter new password"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={passwordChange.confirmPassword}
+                  onChange={(e) => setPasswordChange({ ...passwordChange, confirmPassword: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Confirm new password"
+                />
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setPasswordChange(null)}
+                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
+                  Change Password
                 </button>
               </div>
             </form>
