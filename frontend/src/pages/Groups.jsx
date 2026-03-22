@@ -5,13 +5,18 @@ import { useAuth } from '../context/AuthContext.jsx';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 function Groups() {
-  const { user } = useAuth();
+  const { user, isTeamManager } = useAuth();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [expandedGroup, setExpandedGroup] = useState(null);
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState('');
 
   useEffect(() => {
     fetchGroups();
@@ -70,6 +75,66 @@ function Groups() {
       setTimeout(() => setError(''), 3000);
     }
   };
+
+  const fetchGroupMembers = async (groupId) => {
+    setMembersLoading(true);
+    try {
+      const [groupRes, usersRes] = await Promise.all([
+        axios.get(`${API_BASE}/groups/${groupId}`),
+        isTeamManager ? axios.get(`${API_BASE}/users`) : Promise.resolve({ data: { users: [] } }),
+      ]);
+      setGroupMembers(groupRes.data.members || []);
+      setAllUsers(usersRes.data.users || []);
+    } catch (err) {
+      setError('Failed to load group members');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setMembersLoading(false);
+    }
+  };
+
+  const handleExpandGroup = (groupId) => {
+    if (expandedGroup === groupId) {
+      setExpandedGroup(null);
+      setGroupMembers([]);
+      setAllUsers([]);
+      setSelectedUserId('');
+      return;
+    }
+    setExpandedGroup(groupId);
+    setSelectedUserId('');
+    fetchGroupMembers(groupId);
+  };
+
+  const handleRemoveMember = async (userId) => {
+    try {
+      await axios.put(`${API_BASE}/users/${userId}/group`, { groupId: null });
+      setSuccess('Member removed successfully');
+      setTimeout(() => setSuccess(''), 3000);
+      fetchGroupMembers(expandedGroup);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to remove member');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!selectedUserId) return;
+    try {
+      await axios.put(`${API_BASE}/users/${parseInt(selectedUserId)}/group`, { groupId: expandedGroup });
+      setSuccess('Member added successfully');
+      setSelectedUserId('');
+      setTimeout(() => setSuccess(''), 3000);
+      fetchGroupMembers(expandedGroup);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to add member');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const availableUsers = allUsers.filter(
+    (u) => !groupMembers.some((m) => m.id === u.id)
+  );
 
   if (loading) {
     return (
@@ -134,7 +199,10 @@ function Groups() {
                 key={group.id}
                 className={`bg-white shadow rounded-lg overflow-hidden ${!group.enabled ? 'opacity-60' : ''}`}
               >
-                <div className="px-6 py-4">
+                <div
+                  className="px-6 py-4 cursor-pointer hover:bg-gray-50"
+                  onClick={() => handleExpandGroup(group.id)}
+                >
                   <div className="flex justify-between items-start">
                     <h3 className="text-lg font-semibold text-gray-900">{group.name}</h3>
                     <span
@@ -149,6 +217,78 @@ function Groups() {
                     Created: {new Date(group.created_at).toLocaleDateString()}
                   </p>
                 </div>
+
+                {/* Members Section */}
+                {expandedGroup === group.id && (
+                  <div className="px-6 py-4 border-t border-gray-200">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3">Members</h4>
+                    {membersLoading ? (
+                      <div className="flex justify-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
+                      </div>
+                    ) : (
+                      <>
+                        {groupMembers.length === 0 ? (
+                          <p className="text-sm text-gray-500 py-2">No members in this group</p>
+                        ) : (
+                          <ul className="divide-y divide-gray-100">
+                            {groupMembers.map((member) => (
+                              <li key={member.id} className="flex items-center justify-between py-2">
+                                <div>
+                                  <span className="text-sm font-medium text-gray-900">{member.username}</span>
+                                  <span className="text-sm text-gray-500 ml-2">{member.email}</span>
+                                  <span
+                                    className={`ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                      member.role_name === 'admin'
+                                        ? 'bg-red-100 text-red-800'
+                                        : member.role_name === 'team_manager'
+                                          ? 'bg-blue-100 text-blue-800'
+                                          : 'bg-green-100 text-green-800'
+                                    }`}
+                                  >
+                                    {member.role_name}
+                                  </span>
+                                </div>
+                                {isTeamManager && (
+                                  <button
+                                    onClick={() => handleRemoveMember(member.id)}
+                                    className="text-sm text-red-600 hover:text-red-800"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        {isTeamManager && availableUsers.length > 0 && (
+                          <div className="mt-3 flex items-center space-x-2">
+                            <select
+                              value={selectedUserId}
+                              onChange={(e) => setSelectedUserId(e.target.value)}
+                              className="border border-gray-300 rounded-md px-2 py-1 text-sm flex-1"
+                            >
+                              <option value="">Select a user to add</option>
+                              {availableUsers.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.username} ({u.email})
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={handleAddMember}
+                              className="text-sm text-primary-600 hover:text-primary-800 font-medium"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <div className="bg-gray-50 px-6 py-3 flex justify-between items-center">
                   <button
                     onClick={() => handleToggleEnabled(group.id, group.enabled)}

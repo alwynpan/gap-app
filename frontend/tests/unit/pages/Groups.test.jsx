@@ -15,7 +15,7 @@ describe('Groups page', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    useAuth.mockReturnValue({ user: { username: 'admin', role: 'admin' } });
+    useAuth.mockReturnValue({ user: { username: 'admin', role: 'admin' }, isAdmin: true, isTeamManager: true });
     jest.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
@@ -254,6 +254,228 @@ describe('Groups page', () => {
 
     await user.click(screen.getByRole('button', { name: /delete/i }));
     expect(axios.delete).not.toHaveBeenCalled();
+  });
+
+  describe('Group Members', () => {
+    const groupsData = [{ id: 1, name: 'Group A', enabled: true, created_at: '2025-01-01T00:00:00.000Z' }];
+    const membersData = [
+      { id: 10, username: 'alice', email: 'alice@test.com', role_name: 'user', student_id: 's1', enabled: true },
+      { id: 11, username: 'bob', email: 'bob@test.com', role_name: 'team_manager', student_id: null, enabled: true },
+    ];
+    const allUsersData = [
+      { id: 10, username: 'alice', email: 'alice@test.com', role_name: 'user' },
+      { id: 11, username: 'bob', email: 'bob@test.com', role_name: 'team_manager' },
+      { id: 12, username: 'charlie', email: 'charlie@test.com', role_name: 'user' },
+    ];
+
+    const setupWithGroups = async () => {
+      axios.get.mockResolvedValueOnce({ data: { groups: groupsData } });
+
+      render(
+        <MemoryRouter>
+          <Groups />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Group A')).toBeInTheDocument();
+      });
+    };
+
+    it('expands group card to show members', async () => {
+      const user = userEvent.setup();
+      await setupWithGroups();
+
+      // Mock the expand fetch
+      axios.get
+        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: membersData } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => {
+        expect(screen.getByText('alice')).toBeInTheDocument();
+        expect(screen.getByText('bob')).toBeInTheDocument();
+        expect(screen.getByText('alice@test.com')).toBeInTheDocument();
+      });
+    });
+
+    it('shows empty members message when group has no members', async () => {
+      const user = userEvent.setup();
+      await setupWithGroups();
+
+      axios.get
+        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: [] } })
+        .mockResolvedValueOnce({ data: { users: [] } });
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => {
+        expect(screen.getByText('No members in this group')).toBeInTheDocument();
+      });
+    });
+
+    it('removes a member from the group', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupWithGroups();
+
+      axios.get
+        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: membersData } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => {
+        expect(screen.getByText('alice')).toBeInTheDocument();
+      });
+
+      axios.put.mockResolvedValue({});
+      // Mock refetch after remove
+      axios.get
+        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: [membersData[1]] } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      const removeButtons = screen.getAllByRole('button', { name: /remove/i });
+      await user.click(removeButtons[0]);
+
+      await waitFor(() => {
+        expect(axios.put).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\/10\/group$/),
+          { groupId: null }
+        );
+        expect(screen.getByText('Member removed successfully')).toBeInTheDocument();
+      });
+
+      jest.advanceTimersByTime(3000);
+      await waitFor(() => {
+        expect(screen.queryByText('Member removed successfully')).not.toBeInTheDocument();
+      });
+    });
+
+    it('adds a member to the group', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupWithGroups();
+
+      axios.get
+        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: membersData } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => {
+        expect(screen.getByText('alice')).toBeInTheDocument();
+      });
+
+      // charlie is the only user not in the group
+      const addSelect = screen.getByRole('combobox');
+      await user.selectOptions(addSelect, '12');
+
+      axios.put.mockResolvedValue({});
+      // Mock refetch after add
+      axios.get
+        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: [...membersData, allUsersData[2]] } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+      await waitFor(() => {
+        expect(axios.put).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\/12\/group$/),
+          { groupId: 1 }
+        );
+        expect(screen.getByText('Member added successfully')).toBeInTheDocument();
+      });
+
+      jest.advanceTimersByTime(3000);
+      await waitFor(() => {
+        expect(screen.queryByText('Member added successfully')).not.toBeInTheDocument();
+      });
+    });
+
+    it('does not submit add when no user selected', async () => {
+      const user = userEvent.setup();
+      await setupWithGroups();
+
+      axios.get
+        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: membersData } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^add$/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+      // Only the initial GET calls + expand calls, no PUT
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    it('shows error when fetching members fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupWithGroups();
+
+      axios.get.mockRejectedValueOnce(new Error('network'));
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to load group members')).toBeInTheDocument();
+      });
+
+      jest.advanceTimersByTime(3000);
+      await waitFor(() => {
+        expect(screen.queryByText('Failed to load group members')).not.toBeInTheDocument();
+      });
+    });
+
+    it('hides add/remove controls for regular users', async () => {
+      useAuth.mockReturnValue({
+        user: { username: 'regular', role: 'user' },
+        isAdmin: false,
+        isTeamManager: false,
+      });
+      const user = userEvent.setup();
+      await setupWithGroups();
+
+      // Regular user doesn't fetch /users, only group members
+      axios.get
+        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: membersData } });
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => {
+        expect(screen.getByText('alice')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    });
+
+    it('collapses group on second click', async () => {
+      const user = userEvent.setup();
+      await setupWithGroups();
+
+      axios.get
+        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: membersData } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => {
+        expect(screen.getByText('alice')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => {
+        expect(screen.queryByText('alice')).not.toBeInTheDocument();
+      });
+    });
   });
 
   it('shows API error when toggle fails', async () => {
