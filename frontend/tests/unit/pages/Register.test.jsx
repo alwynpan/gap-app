@@ -101,7 +101,11 @@ describe('Register page', () => {
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() => {
-      expect(mockRegister).toHaveBeenCalledWith('newuser', 'new@example.com', 'password123', 's001');
+      expect(mockRegister).toHaveBeenCalledWith('newuser', 'new@example.com', 'password123', {
+        firstName: undefined,
+        lastName: undefined,
+        studentId: 's001',
+      });
     });
   });
 
@@ -122,7 +126,11 @@ describe('Register page', () => {
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() => {
-      expect(mockRegister).toHaveBeenCalledWith('nostudent', 'nostudent@example.com', 'password123', undefined);
+      expect(mockRegister).toHaveBeenCalledWith('nostudent', 'nostudent@example.com', 'password123', {
+        firstName: undefined,
+        lastName: undefined,
+        studentId: undefined,
+      });
     });
   });
 

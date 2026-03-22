@@ -14,7 +14,7 @@ function TestHarness() {
   };
 
   const handleRegister = async () => {
-    const result = await register('demo', 'demo@example.com', 'password123', 's1234');
+    const result = await register('demo', 'demo@example.com', 'password123', { studentId: 's1234' });
     window.__authResult = result;
   };
 

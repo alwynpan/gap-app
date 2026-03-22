@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 function Register() {
   const [formData, setFormData] = useState({
     username: '',
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -42,12 +44,11 @@ function Register() {
 
     setLoading(true);
 
-    const result = await register(
-      formData.username,
-      formData.email,
-      formData.password,
-      formData.studentId || undefined
-    );
+    const result = await register(formData.username, formData.email, formData.password, {
+      firstName: formData.firstName || undefined,
+      lastName: formData.lastName || undefined,
+      studentId: formData.studentId || undefined,
+    });
 
     if (result.success) {
       setSuccess(result.message || 'Registration successful! Redirecting to login...');
@@ -107,6 +108,36 @@ function Register() {
               onChange={handleChange}
               className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
               placeholder="Enter your email"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
+              First Name
+            </label>
+            <input
+              id="firstName"
+              name="firstName"
+              type="text"
+              value={formData.firstName}
+              onChange={handleChange}
+              className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+              placeholder="Enter your first name"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
+              Last Name
+            </label>
+            <input
+              id="lastName"
+              name="lastName"
+              type="text"
+              value={formData.lastName}
+              onChange={handleChange}
+              className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+              placeholder="Enter your last name"
             />
           </div>
 

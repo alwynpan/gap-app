@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 class User {
   static async findAll() {
     const result = await pool.query(
-      `SELECT u.id, u.username, u.email, u.student_id, u.enabled, u.created_at,
+      `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id, u.enabled, u.created_at,
               u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
@@ -17,7 +17,7 @@ class User {
 
   static async findById(id) {
     const result = await pool.query(
-      `SELECT u.id, u.username, u.email, u.student_id, u.enabled, u.created_at,
+      `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id, u.enabled, u.created_at,
               u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
@@ -31,7 +31,7 @@ class User {
 
   static async findByUsername(username) {
     const result = await pool.query(
-      `SELECT u.id, u.username, u.email, u.password_hash, u.student_id, u.enabled,
+      `SELECT u.id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.student_id, u.enabled,
               u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
@@ -49,15 +49,24 @@ class User {
   }
 
   static async create(userData) {
-    const { username, email, password, studentId, groupId, roleId = 3 } = userData;
+    const { username, email, password, firstName, lastName, studentId, groupId, roleId = 3 } = userData;
 
     // Hash password
     const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      `INSERT INTO users (username, email, password_hash, student_id, group_id, role_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, email, student_id, enabled, created_at`,
-      [username, email, passwordHash, studentId || null, groupId || null, roleId]
+      `INSERT INTO users (username, email, password_hash, first_name, last_name, student_id, group_id, role_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, username, email, first_name, last_name, student_id, enabled, created_at`,
+      [
+        username,
+        email,
+        passwordHash,
+        firstName || username,
+        lastName || username,
+        studentId || null,
+        groupId || null,
+        roleId,
+      ]
     );
     return result.rows[0];
   }
@@ -72,6 +81,8 @@ class User {
     const fieldMap = {
       username: 'username',
       email: 'email',
+      firstName: 'first_name',
+      lastName: 'last_name',
       studentId: 'student_id',
       groupId: 'group_id',
       roleId: 'role_id',

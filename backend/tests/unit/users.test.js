@@ -593,6 +593,8 @@ describe('Users Routes', () => {
       expect(User.update).toHaveBeenCalledWith(2, {
         username: 'newname',
         email: 'new@test.com',
+        firstName: undefined,
+        lastName: undefined,
         studentId: undefined,
         groupId: undefined,
         roleId: 1,
@@ -623,6 +625,8 @@ describe('Users Routes', () => {
       expect(User.update).toHaveBeenCalledWith(1, {
         username: 'newname',
         email: 'new@test.com',
+        firstName: undefined,
+        lastName: undefined,
         studentId: undefined,
       });
     });
@@ -769,6 +773,171 @@ describe('Users Routes', () => {
       );
 
       expect(consoleSpy).toHaveBeenCalled();
+      expect(mockReply.code).toHaveBeenCalledWith(500);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('PUT /users/:id/password', () => {
+    it('rejects unauthenticated request in preHandler', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put_pre']({ user: null }, mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(401);
+    });
+
+    it('allows user to change own password', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put_pre']({ user: { id: 1, role: 'user' }, params: { id: '1' } }, mockReply);
+      expect(mockReply.code).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-admin changing another users password', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put_pre']({ user: { id: 1, role: 'user' }, params: { id: '2' } }, mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+    });
+
+    it('allows admin to change another users password', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put_pre']({ user: { id: 1, role: 'admin' }, params: { id: '2' } }, mockReply);
+      expect(mockReply.code).not.toHaveBeenCalled();
+    });
+
+    it('rejects password shorter than 6 characters', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put'](
+        { user: { id: 1, role: 'user' }, params: { id: '1' }, body: { currentPassword: 'old', newPassword: '12345' } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'New password must be at least 6 characters' });
+    });
+
+    it('rejects when current password is not provided for non-admin', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({ id: 1, username: 'testuser' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put'](
+        { user: { id: 1, role: 'user' }, params: { id: '1' }, body: { newPassword: 'newpass123' } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Current password is required' });
+    });
+
+    it('rejects when current password is incorrect', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({ id: 1, username: 'testuser' });
+      User.findByUsername.mockResolvedValue({ id: 1, password_hash: 'hashed' });
+      User.verifyPassword.mockResolvedValue(false);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put'](
+        {
+          user: { id: 1, role: 'user' },
+          params: { id: '1' },
+          body: { currentPassword: 'wrong', newPassword: 'newpass123' },
+        },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(401);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Current password is incorrect' });
+    });
+
+    it('successfully changes password for non-admin with correct current password', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({ id: 1, username: 'testuser' });
+      User.findByUsername.mockResolvedValue({ id: 1, password_hash: 'hashed' });
+      User.verifyPassword.mockResolvedValue(true);
+      User.updatePassword.mockResolvedValue({ id: 1, username: 'testuser' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put'](
+        {
+          user: { id: 1, role: 'user' },
+          params: { id: '1' },
+          body: { currentPassword: 'correct', newPassword: 'newpass123' },
+        },
+        mockReply
+      );
+      expect(User.updatePassword).toHaveBeenCalledWith(1, 'newpass123');
+      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password updated successfully' });
+    });
+
+    it('admin can change another users password without current password', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({ id: 2, username: 'otheruser' });
+      User.updatePassword.mockResolvedValue({ id: 2, username: 'otheruser' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put'](
+        {
+          user: { id: 1, role: 'admin' },
+          params: { id: '2' },
+          body: { newPassword: 'newpass123' },
+        },
+        mockReply
+      );
+      expect(User.verifyPassword).not.toHaveBeenCalled();
+      expect(User.updatePassword).toHaveBeenCalledWith(2, 'newpass123');
+      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password updated successfully' });
+    });
+
+    it('returns 404 when user not found', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue(null);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put'](
+        { user: { id: 1, role: 'admin' }, params: { id: '999' }, body: { newPassword: 'newpass123' } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+    });
+
+    it('handles server error', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockRejectedValue(new Error('Database error'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put'](
+        { user: { id: 1, role: 'admin' }, params: { id: '1' }, body: { newPassword: 'newpass123' } },
+        mockReply
+      );
       expect(mockReply.code).toHaveBeenCalledWith(500);
       consoleSpy.mockRestore();
     });

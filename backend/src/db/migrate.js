@@ -38,6 +38,8 @@ CREATE TABLE users (
   username VARCHAR(100) UNIQUE NOT NULL,
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  first_name VARCHAR(100),
+  last_name VARCHAR(100),
   student_id VARCHAR(50) UNIQUE,
   group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
   role_id INTEGER REFERENCES roles(id) ON DELETE RESTRICT,
