@@ -1,8 +1,7 @@
 import { useAuth } from '../context/AuthContext.jsx';
 import { Link } from 'react-router-dom';
 
-const formatRoleName = (role) =>
-  (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+const formatRoleName = (role) => (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Dashboard() {
   const { user, logout, isAdmin, isAssignmentManager } = useAuth();

@@ -79,7 +79,8 @@ class User {
     };
 
     for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
-      if (updates[jsKey] !== undefined) { // eslint-disable-line security/detect-object-injection
+      if (updates[jsKey] !== undefined) {
+        // eslint-disable-line security/detect-object-injection
         setClauses.push(`${dbCol} = $${paramIndex}`);
         values.push(updates[jsKey]); // eslint-disable-line security/detect-object-injection
         paramIndex++;

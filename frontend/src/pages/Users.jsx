@@ -6,8 +6,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const emptyNewUser = { username: '', email: '', password: '', studentId: '', groupId: '', role: 'user' };
 
-const formatRoleName = (role) =>
-  (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+const formatRoleName = (role) => (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Users() {
   const { user, isAdmin, isAssignmentManager } = useAuth();

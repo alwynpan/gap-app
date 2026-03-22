@@ -205,7 +205,9 @@ describe('RBAC Middleware', () => {
     fastify.checkRole = jest.fn().mockResolvedValue(true);
     await rbacPlugin(fastify, {});
 
-    const requireAssignmentManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireAssignmentManager')[1];
+    const requireAssignmentManager = fastify.decorate.mock.calls.find(
+      (call) => call[0] === 'requireAssignmentManager'
+    )[1];
     const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
 
     const result = await requireAssignmentManager({ user: { role: 'assignment_manager' } }, mockReply);
@@ -222,7 +224,9 @@ describe('RBAC Middleware', () => {
     fastify.checkRole = jest.fn().mockResolvedValue(true);
     await rbacPlugin(fastify, {});
 
-    const requireAssignmentManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireAssignmentManager')[1];
+    const requireAssignmentManager = fastify.decorate.mock.calls.find(
+      (call) => call[0] === 'requireAssignmentManager'
+    )[1];
     const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
 
     const result = await requireAssignmentManager({ user: { role: 'admin' } }, mockReply);
@@ -238,7 +242,9 @@ describe('RBAC Middleware', () => {
     });
     await rbacPlugin(fastify, {});
 
-    const requireAssignmentManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireAssignmentManager')[1];
+    const requireAssignmentManager = fastify.decorate.mock.calls.find(
+      (call) => call[0] === 'requireAssignmentManager'
+    )[1];
     const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
 
     await requireAssignmentManager({ user: { role: 'user' } }, mockReply);
