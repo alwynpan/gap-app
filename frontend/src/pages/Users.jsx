@@ -4,8 +4,10 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+const emptyNewUser = { username: '', email: '', password: '', studentId: '', groupId: '', role: 'user' };
+
 function Users() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isTeamManager } = useAuth();
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -13,6 +15,8 @@ function Users() {
   const [success, setSuccess] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newUser, setNewUser] = useState({ ...emptyNewUser });
 
   useEffect(() => {
     fetchData();
@@ -54,6 +58,30 @@ function Users() {
     setSelectedGroup('');
   };
 
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    if (!newUser.username.trim() || !newUser.email.trim() || !newUser.password) return;
+
+    try {
+      await axios.post(`${API_BASE}/users`, {
+        username: newUser.username.trim(),
+        email: newUser.email.trim(),
+        password: newUser.password,
+        studentId: newUser.studentId.trim() || undefined,
+        groupId: newUser.groupId ? parseInt(newUser.groupId) : undefined,
+        role: newUser.role,
+      });
+      setSuccess('User created successfully');
+      setNewUser({ ...emptyNewUser });
+      setShowCreateModal(false);
+      fetchData();
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to create user');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -85,9 +113,19 @@ function Users() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Manage Users</h2>
-            <p className="text-gray-600 mt-1">Assign users to groups and manage team membership</p>
+          <div className="mb-6 flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Manage Users</h2>
+              <p className="text-gray-600 mt-1">Assign users to groups and manage team membership</p>
+            </div>
+            {isTeamManager && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+              >
+                + Create User
+              </button>
+            )}
           </div>
 
           {error && (
@@ -198,6 +236,102 @@ function Users() {
           </div>
         </div>
       </main>
+
+      {/* Create User Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New User</h3>
+            <form onSubmit={handleCreateUser}>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  type="text"
+                  required
+                  value={newUser.username}
+                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter username"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter email"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  type="password"
+                  required
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter password"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Student ID (Optional)</label>
+                <input
+                  type="text"
+                  value={newUser.studentId}
+                  onChange={(e) => setNewUser({ ...newUser, studentId: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter student ID"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Group (Optional)</label>
+                <select
+                  value={newUser.groupId}
+                  onChange={(e) => setNewUser({ ...newUser, groupId: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">No Group</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  value={newUser.role}
+                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="user">User</option>
+                  <option value="team_manager">Team Manager</option>
+                  {isAdmin && <option value="admin">Admin</option>}
+                </select>
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setNewUser({ ...emptyNewUser });
+                  }}
+                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

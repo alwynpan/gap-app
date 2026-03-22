@@ -40,3 +40,7 @@ temp/
 
 # Generated lint reports
 **/eslint.xml
+
+G-A-P-Project.md
+
+.claude/settings.local.json

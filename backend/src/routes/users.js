@@ -64,7 +64,7 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Create new user (admin only)
+  // Create new user (admin/team_manager)
   fastify.post(
     '/users',
     {
@@ -72,7 +72,7 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const allowed = await fastify.requireAdmin(request, reply);
+        const allowed = await fastify.checkRole(request, reply, ['admin', 'team_manager']);
         if (!allowed) {
           return reply;
         }
@@ -84,6 +84,11 @@ async function usersRoutes(fastify, _options) {
 
         if (!username || !email || !password) {
           return reply.code(400).send({ error: 'Username, email, and password are required' });
+        }
+
+        // Only admins can create admin users
+        if (role === 'admin' && request.user.role !== 'admin') {
+          return reply.code(403).send({ error: 'Only admins can create admin users' });
         }
 
         // Check if username/email exists
