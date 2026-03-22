@@ -260,7 +260,14 @@ describe('Groups page', () => {
     const groupsData = [{ id: 1, name: 'Group A', enabled: true, created_at: '2025-01-01T00:00:00.000Z' }];
     const membersData = [
       { id: 10, username: 'alice', email: 'alice@test.com', role_name: 'user', student_id: 's1', enabled: true },
-      { id: 11, username: 'bob', email: 'bob@test.com', role_name: 'assignment_manager', student_id: null, enabled: true },
+      {
+        id: 11,
+        username: 'bob',
+        email: 'bob@test.com',
+        role_name: 'assignment_manager',
+        student_id: null,
+        enabled: true,
+      },
     ];
     const allUsersData = [
       { id: 10, username: 'alice', email: 'alice@test.com', role_name: 'user' },
@@ -340,10 +347,7 @@ describe('Groups page', () => {
       await user.click(removeButtons[0]);
 
       await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(
-          expect.stringMatching(/\/users\/10\/group$/),
-          { groupId: null }
-        );
+        expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/users\/10\/group$/), { groupId: null });
         expect(screen.getByText('Member removed successfully')).toBeInTheDocument();
       });
 
@@ -375,16 +379,15 @@ describe('Groups page', () => {
       axios.put.mockResolvedValue({});
       // Mock refetch after add
       axios.get
-        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: [...membersData, allUsersData[2]] } })
+        .mockResolvedValueOnce({
+          data: { group: { id: 1, name: 'Group A' }, members: [...membersData, allUsersData[2]] },
+        })
         .mockResolvedValueOnce({ data: { users: allUsersData } });
 
       await user.click(screen.getByRole('button', { name: /^add$/i }));
 
       await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(
-          expect.stringMatching(/\/users\/12\/group$/),
-          { groupId: 1 }
-        );
+        expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/users\/12\/group$/), { groupId: 1 });
         expect(screen.getByText('Member added successfully')).toBeInTheDocument();
       });
 
@@ -443,8 +446,7 @@ describe('Groups page', () => {
       await setupWithGroups();
 
       // Regular user doesn't fetch /users, only group members
-      axios.get
-        .mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: membersData } });
+      axios.get.mockResolvedValueOnce({ data: { group: { id: 1, name: 'Group A' }, members: membersData } });
 
       await user.click(screen.getByText('Group A'));
 

@@ -12,7 +12,16 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
 
 describe('Users page', () => {
   const initialUsers = [
-    { id: 1, username: 'u1', email: 'u1@test.com', role_name: 'normal_user', group_name: null, student_id: 's1', role_id: 3, enabled: true },
+    {
+      id: 1,
+      username: 'u1',
+      email: 'u1@test.com',
+      role_name: 'normal_user',
+      group_name: null,
+      student_id: 's1',
+      role_id: 3,
+      enabled: true,
+    },
   ];
   const initialGroups = [{ id: 2, name: 'Group A' }];
 
@@ -342,9 +351,36 @@ describe('Users page', () => {
 
   it('displays formatted role names instead of raw values', async () => {
     const usersWithRoles = [
-      { id: 1, username: 'u1', email: 'u1@test.com', role_name: 'admin', group_name: null, student_id: null, role_id: 1, enabled: true },
-      { id: 2, username: 'u2', email: 'u2@test.com', role_name: 'assignment_manager', group_name: null, student_id: null, role_id: 2, enabled: true },
-      { id: 3, username: 'u3', email: 'u3@test.com', role_name: 'user', group_name: null, student_id: null, role_id: 3, enabled: true },
+      {
+        id: 1,
+        username: 'u1',
+        email: 'u1@test.com',
+        role_name: 'admin',
+        group_name: null,
+        student_id: null,
+        role_id: 1,
+        enabled: true,
+      },
+      {
+        id: 2,
+        username: 'u2',
+        email: 'u2@test.com',
+        role_name: 'assignment_manager',
+        group_name: null,
+        student_id: null,
+        role_id: 2,
+        enabled: true,
+      },
+      {
+        id: 3,
+        username: 'u3',
+        email: 'u3@test.com',
+        role_name: 'user',
+        group_name: null,
+        student_id: null,
+        role_id: 3,
+        enabled: true,
+      },
     ];
 
     axios.get

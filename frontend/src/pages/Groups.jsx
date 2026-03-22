@@ -4,8 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-const formatRoleName = (role) =>
-  (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+const formatRoleName = (role) => (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Groups() {
   const { user, isAssignmentManager } = useAuth();
@@ -79,20 +78,27 @@ function Groups() {
     }
   };
 
+  const expandedGroupRef = { current: null };
+
   const fetchGroupMembers = async (groupId) => {
+    expandedGroupRef.current = groupId;
     setMembersLoading(true);
     try {
       const [groupRes, usersRes] = await Promise.all([
         axios.get(`${API_BASE}/groups/${groupId}`),
         isAssignmentManager ? axios.get(`${API_BASE}/users`) : Promise.resolve({ data: { users: [] } }),
       ]);
+      if (expandedGroupRef.current !== groupId) return;
       setGroupMembers(groupRes.data.members || []);
       setAllUsers(usersRes.data.users || []);
     } catch (err) {
+      if (expandedGroupRef.current !== groupId) return;
       setError('Failed to load group members');
       setTimeout(() => setError(''), 3000);
     } finally {
-      setMembersLoading(false);
+      if (expandedGroupRef.current === groupId) {
+        setMembersLoading(false);
+      }
     }
   };
 
@@ -135,9 +141,7 @@ function Groups() {
     }
   };
 
-  const availableUsers = allUsers.filter(
-    (u) => !groupMembers.some((m) => m.id === u.id)
-  );
+  const availableUsers = allUsers.filter((u) => !groupMembers.some((m) => m.id === u.id));
 
   if (loading) {
     return (
@@ -202,9 +206,11 @@ function Groups() {
                 key={group.id}
                 className={`bg-white shadow rounded-lg overflow-hidden ${!group.enabled ? 'opacity-60' : ''}`}
               >
-                <div
-                  className="px-6 py-4 cursor-pointer hover:bg-gray-50"
+                <button
+                  type="button"
+                  className="w-full text-left px-6 py-4 cursor-pointer hover:bg-gray-50"
                   onClick={() => handleExpandGroup(group.id)}
+                  aria-expanded={expandedGroup === group.id}
                 >
                   <div className="flex justify-between items-start">
                     <h3 className="text-lg font-semibold text-gray-900">{group.name}</h3>
@@ -219,7 +225,7 @@ function Groups() {
                   <p className="text-sm text-gray-500 mt-2">
                     Created: {new Date(group.created_at).toLocaleDateString()}
                   </p>
-                </div>
+                </button>
 
                 {/* Members Section */}
                 {expandedGroup === group.id && (

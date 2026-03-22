@@ -65,7 +65,8 @@ async function runMigrations(client) {
   const migrationsDir = path.join(__dirname, 'migrations');
   if (!fs.existsSync(migrationsDir)) return;
 
-  const files = fs.readdirSync(migrationsDir)
+  const files = fs
+    .readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
