@@ -19,6 +19,9 @@ jest.mock('@fastify/jwt', () => jest.fn());
 
 jest.mock('fastify-bcrypt', () => jest.fn());
 
+// Mock fastify-plugin to pass through the plugin function unwrapped
+jest.mock('fastify-plugin', () => (fn) => fn);
+
 // Reset mocks before each test
 beforeEach(() => {
   jest.clearAllMocks();

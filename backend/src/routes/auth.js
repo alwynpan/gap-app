@@ -152,7 +152,7 @@ async function authRoutes(fastify, _options) {
     return reply.send({ message: 'Logout successful' });
   });
 
-  // Get current user info
+  // Get current user info (fresh from DB, not stale JWT claims)
   fastify.get(
     '/auth/me',
     {
@@ -163,16 +163,27 @@ async function authRoutes(fastify, _options) {
       },
     },
     async (request, reply) => {
-      return reply.send({
-        user: {
-          id: request.user.id,
-          username: request.user.username,
-          email: request.user.email,
-          role: request.user.role,
-          groupId: request.user.groupId,
-          groupName: request.user.groupName,
-        },
-      });
+      try {
+        const freshUser = await User.findById(request.user.id);
+        if (!freshUser) {
+          return reply.code(401).send({ error: 'User not found' });
+        }
+
+        return reply.send({
+          user: {
+            id: freshUser.id,
+            username: freshUser.username,
+            email: freshUser.email,
+            role: freshUser.role_name,
+            groupId: freshUser.group_id,
+            groupName: freshUser.group_name,
+            studentId: freshUser.student_id,
+          },
+        });
+      } catch (error) {
+        console.error('Get current user error:', error);
+        return reply.code(500).send({ error: 'Failed to retrieve user info' });
+      }
     }
   );
 }

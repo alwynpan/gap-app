@@ -1,0 +1,12 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install all dependencies
+COPY package*.json ./
+RUN npm ci
+
+# Source code is mounted as a volume in docker-compose
+EXPOSE 3000
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

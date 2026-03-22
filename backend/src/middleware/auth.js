@@ -1,4 +1,5 @@
 const jwt = require('@fastify/jwt');
+const fp = require('fastify-plugin');
 
 async function authPlugin(fastify, _options) {
   // Fail startup if JWT_SECRET is not configured (security requirement)
@@ -24,4 +25,4 @@ async function authPlugin(fastify, _options) {
   });
 }
 
-module.exports = authPlugin;
+module.exports = fp(authPlugin);

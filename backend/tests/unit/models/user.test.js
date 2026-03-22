@@ -251,15 +251,8 @@ describe('User Model', () => {
 
       const result = await User.update(1, updates);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [
-        'updateduser',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        1,
-      ]);
+      // Only provided fields are included in the query (no undefined values)
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), ['updateduser', 1]);
       expect(result).toEqual(mockUpdatedUser);
     });
 
