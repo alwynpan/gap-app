@@ -1,13 +1,8 @@
+const fp = require('fastify-plugin');
+
 async function rbacPlugin(fastify, _options) {
   // Register bcrypt plugin
   await fastify.register(require('fastify-bcrypt'));
-
-  // Role hierarchy: admin > team_manager > user
-  const roleHierarchy = {
-    admin: 3,
-    team_manager: 2,
-    user: 1,
-  };
 
   // Decorate fastify with RBAC helpers
   fastify.decorate('checkRole', async (request, reply, requiredRoles) => {
@@ -16,10 +11,9 @@ async function rbacPlugin(fastify, _options) {
       return false;
     }
 
-    const userRoleLevel = roleHierarchy[request.user.role] || 0;
-    const requiredLevel = Math.max(...requiredRoles.map((role) => roleHierarchy[role] || 0));
-
-    if (userRoleLevel < requiredLevel) {
+    const userRole = request.user.role;
+    // Admin always has access; otherwise check if user's role is in the allowed list
+    if (userRole !== 'admin' && !requiredRoles.includes(userRole)) {
       reply.code(403).send({ error: 'Forbidden: Insufficient permissions' });
       return false;
     }
@@ -48,4 +42,4 @@ async function rbacPlugin(fastify, _options) {
   });
 }
 
-module.exports = rbacPlugin;
+module.exports = fp(rbacPlugin);

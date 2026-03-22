@@ -1,6 +1,7 @@
 const Fastify = require('fastify');
 const cors = require('@fastify/cors');
 const helmet = require('@fastify/helmet');
+const rateLimit = require('@fastify/rate-limit');
 const config = require('./config/index');
 
 // Import routes
@@ -25,6 +26,12 @@ async function buildServer() {
   await fastify.register(cors, {
     origin: config.cors.origin,
     credentials: true,
+  });
+
+  // Register rate limiting (enables per-route rateLimit config)
+  await fastify.register(rateLimit, {
+    max: 100,
+    timeWindow: '1 minute',
   });
 
   // Register authentication and RBAC plugins

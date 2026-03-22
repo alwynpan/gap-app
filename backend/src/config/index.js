@@ -3,7 +3,7 @@ require('dotenv').config();
 module.exports = {
   // JWT Configuration
   jwt: {
-    secret: process.env.JWT_SECRET || 'default-secret-change-in-production',
+    secret: process.env.JWT_SECRET,
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   },
 

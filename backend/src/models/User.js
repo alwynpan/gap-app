@@ -63,18 +63,39 @@ class User {
   }
 
   static async update(id, updates) {
-    const { username, email, studentId, groupId, roleId, enabled } = updates;
+    // Build SET clauses dynamically so we only update fields that were explicitly provided.
+    // This allows setting nullable fields (group_id, student_id) to null.
+    const setClauses = [];
+    const values = [];
+    let paramIndex = 1;
+
+    const fieldMap = {
+      username: 'username',
+      email: 'email',
+      studentId: 'student_id',
+      groupId: 'group_id',
+      roleId: 'role_id',
+      enabled: 'enabled',
+    };
+
+    for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
+      if (updates[jsKey] !== undefined) { // eslint-disable-line security/detect-object-injection
+        setClauses.push(`${dbCol} = $${paramIndex}`);
+        values.push(updates[jsKey]); // eslint-disable-line security/detect-object-injection
+        paramIndex++;
+      }
+    }
+
+    if (setClauses.length === 0) {
+      return this.findById(id);
+    }
+
+    setClauses.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(id);
+
     const result = await pool.query(
-      `UPDATE users 
-       SET username = COALESCE($1, username),
-           email = COALESCE($2, email),
-           student_id = COALESCE($3, student_id),
-           group_id = COALESCE($4, group_id),
-           role_id = COALESCE($5, role_id),
-           enabled = COALESCE($6, enabled),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7 RETURNING *`,
-      [username, email, studentId, groupId, roleId, enabled, id]
+      `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      values
     );
     return result.rows[0];
   }

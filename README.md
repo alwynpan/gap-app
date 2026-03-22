@@ -52,22 +52,29 @@ Group Assignment Portal - A role-based access control system for managing studen
 ### Option 1: Docker Compose (Recommended)
 
 ```bash
-# Clone the repository
-cd gap-portal
-
-# Copy environment file
-cp backend/.env.example backend/.env
-
-# Start all services
+# Start all services (migrations run automatically on backend startup)
 docker-compose up -d
-
-# Run database migrations
-docker-compose exec backend npm run migrate
 
 # Access the application
 # Frontend: http://localhost:3000
 # Backend API: http://localhost:3001
 # API Docs: http://localhost:3001/api
+```
+
+To override default credentials, create a `.env` file in the project root:
+
+```bash
+ADMIN_PASSWORD=my-secure-password
+JWT_SECRET=my-jwt-secret
+```
+
+Useful commands:
+
+```bash
+docker-compose logs -f backend    # Watch backend logs
+docker-compose logs -f frontend   # Watch frontend logs
+docker-compose down               # Stop all services
+docker-compose down -v            # Stop and wipe database data
 ```
 
 ### Option 2: Manual Setup
@@ -190,17 +197,27 @@ kubectl apply -f k8s/gap-ingress.yaml
 
 ## Testing
 
+### Backend Unit Tests
 ```bash
-# Run all tests
+cd backend
+npm test                              # Run with coverage
+npx jest tests/unit/auth.test.js      # Run a single test file
+```
+
+### Frontend Unit Tests
+```bash
+cd frontend
+npm test                              # Run with coverage
+npx jest tests/unit/pages/Login.test.jsx  # Run a single test file
+```
+
+### E2E Tests (requires running services)
+```bash
 cd tests
 npm install
-npm test
-
-# Run with coverage
-npm run test:coverage
-
-# Run specific test file
-npm test -- auth.spec.js
+npm test                    # Run all e2e tests
+npm test -- auth.spec.js    # Run a single e2e test file
+npm run test:coverage       # Run with coverage
 ```
 
 ## Configuration
@@ -252,6 +269,8 @@ gap-portal/
 │   │   │   └── groups.js
 │   │   └── server.js
 │   ├── package.json
+│   ├── Dockerfile              # Production (node, npm ci --only=production)
+│   ├── Dockerfile.dev          # Development (includes nodemon)
 │   └── .env.example
 ├── frontend/
 │   ├── src/
@@ -268,6 +287,8 @@ gap-portal/
 │   │   ├── App.jsx
 │   │   └── main.jsx
 │   ├── package.json
+│   ├── Dockerfile              # Production (multi-stage: build + nginx)
+│   ├── Dockerfile.dev          # Development (Vite dev server)
 │   └── tailwind.config.js
 ├── k8s/
 │   ├── gap-namespace.yaml
@@ -294,7 +315,7 @@ gap-portal/
 - Set appropriate CORS origins
 - Keep dependencies updated
 - Use Kubernetes secrets for sensitive data
-- Implement rate limiting for production
+- Rate limiting is enabled (100 req/min global, stricter on auth endpoints)
 
 ## Troubleshooting
 

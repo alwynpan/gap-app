@@ -470,12 +470,23 @@ describe('Auth Routes', () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
+      User.findById.mockResolvedValue({
+        id: 1,
+        username: 'testuser',
+        email: 'test@test.com',
+        role_name: 'admin',
+        group_id: 1,
+        group_name: 'Team A',
+        student_id: null,
+      });
+
       const request = {
         user: { id: 1, username: 'testuser', email: 'test@test.com', role: 'admin', groupId: 1, groupName: 'Team A' },
       };
 
       await capturedHandlers['/auth/me'](request, mockReply);
 
+      expect(User.findById).toHaveBeenCalledWith(1);
       expect(mockReply.send).toHaveBeenCalledWith({
         user: {
           id: 1,
@@ -484,6 +495,7 @@ describe('Auth Routes', () => {
           role: 'admin',
           groupId: 1,
           groupName: 'Team A',
+          studentId: null,
         },
       });
     });

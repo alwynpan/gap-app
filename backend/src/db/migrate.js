@@ -4,24 +4,7 @@ const dbConfig = require('../config/database');
 
 const pool = new Pool(dbConfig);
 
-async function generateMigrationSQL() {
-  // Read admin credentials from environment variables
-  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-  const adminPassword = process.env.ADMIN_PASSWORD;
-
-  // Fail migration if ADMIN_PASSWORD is not set
-  if (!adminPassword) {
-    console.error('ERROR: ADMIN_PASSWORD environment variable is not set.');
-    console.error('Please set ADMIN_PASSWORD in your environment or .env file.');
-    console.error('Example: ADMIN_PASSWORD=your-secure-password');
-    process.exit(1);
-  }
-
-  // Generate bcrypt hash dynamically at migration time
-  const saltRounds = 10;
-  const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
-
-  return `
+const schemaSQL = `
 -- Drop tables if they exist (for clean migration)
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS groups CASCADE;
@@ -68,37 +51,61 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_groups_enabled ON groups(enabled);
 
--- Insert default admin user with dynamically generated password hash
--- Username: ${adminUsername}
--- Password hash generated at migration time using bcrypt
-INSERT INTO users (username, email, password_hash, role_id, enabled) 
-VALUES (
-  '${adminUsername}',
-  'admin@gap.local',
-  '${passwordHash}',
-  1,
-  true
-);
-
 -- Insert sample groups
-INSERT INTO groups (name, enabled) VALUES 
+INSERT INTO groups (name, enabled) VALUES
   ('Team Alpha', true),
   ('Team Beta', true),
   ('Team Gamma', true),
   ('Team Delta', false);
 `;
-}
 
 async function migrate() {
-  const client = await pool.connect();
+  // Read admin credentials from environment variables
+  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  // Fail migration if ADMIN_PASSWORD is not set
+  if (!adminPassword) {
+    console.error('ERROR: ADMIN_PASSWORD environment variable is not set.');
+    console.error('Please set ADMIN_PASSWORD in your environment or .env file.');
+    console.error('Example: ADMIN_PASSWORD=your-secure-password');
+    process.exit(1);
+  }
+
+  // Generate bcrypt hash dynamically at migration time
+  const saltRounds = 10;
+  const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
+
+  // Retry connecting to the database (handles Docker DNS propagation delay)
+  const maxRetries = 10;
+  let client;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      client = await pool.connect();
+      break;
+    } catch (err) {
+      if (attempt === maxRetries) {
+        console.error(`Failed to connect to database after ${maxRetries} attempts:`, err.message);
+        process.exit(1);
+      }
+      console.log(`Waiting for database... (attempt ${attempt}/${maxRetries})`);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+
   try {
     console.log('Starting database migration...');
 
-    // Generate SQL with dynamic admin credentials
-    const migrationSQL = await generateMigrationSQL();
-
     await client.query('BEGIN');
-    await client.query(migrationSQL);
+    await client.query(schemaSQL);
+
+    // Insert admin user with parameterized query to prevent SQL injection
+    await client.query(
+      `INSERT INTO users (username, email, password_hash, role_id, enabled)
+       VALUES ($1, $2, $3, 1, true)`,
+      [adminUsername, 'admin@gap.local', passwordHash]
+    );
+
     await client.query('COMMIT');
     console.log('Database migration completed successfully!');
   } catch (error) {
