@@ -55,7 +55,7 @@ async function buildServer() {
         const token = request.headers.authorization.replace('Bearer ', '');
         const decoded = await fastify.verifyToken(token);
         request.user = decoded;
-      } catch (err) {
+      } catch (_err) {
         // Token invalid, but don't fail - let route-specific auth handle it
         request.user = null;
       }

@@ -43,7 +43,7 @@ function Users() {
       ]);
       setUsers(usersRes.data.users || []);
       setGroups(groupsRes.data.groups || []);
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to load data');
     } finally {
       setLoading(false);
@@ -63,7 +63,9 @@ function Users() {
   };
 
   const handleAssignGroup = async () => {
-    if (!selectedUser) return;
+    if (!selectedUser) {
+      return;
+    }
 
     const groupId = selectedGroup === '' ? null : parseInt(selectedGroup);
     await handleGroupChange(selectedUser, groupId);
@@ -73,7 +75,9 @@ function Users() {
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
-    if (!newUser.username.trim() || !newUser.email.trim() || !newUser.password) return;
+    if (!newUser.username.trim() || !newUser.email.trim() || !newUser.password) {
+      return;
+    }
 
     try {
       await axios.post(`${API_BASE}/users`, {
@@ -99,7 +103,9 @@ function Users() {
 
   const handleEditUser = async (e) => {
     e.preventDefault();
-    if (!editingUser || !editingUser.username.trim() || !editingUser.email.trim()) return;
+    if (!editingUser || !editingUser.username.trim() || !editingUser.email.trim()) {
+      return;
+    }
 
     try {
       await axios.put(`${API_BASE}/users/${editingUser.id}`, {
@@ -139,7 +145,9 @@ function Users() {
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
-    if (!passwordChange) return;
+    if (!passwordChange) {
+      return;
+    }
 
     const { userId, currentPassword, newPassword, confirmPassword } = passwordChange;
     if (newPassword !== confirmPassword) {

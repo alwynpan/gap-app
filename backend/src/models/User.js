@@ -90,10 +90,11 @@ class User {
     };
 
     for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
+      // eslint-disable-next-line security/detect-object-injection
       if (updates[jsKey] !== undefined) {
-        // eslint-disable-line security/detect-object-injection
         setClauses.push(`${dbCol} = $${paramIndex}`);
-        values.push(updates[jsKey]); // eslint-disable-line security/detect-object-injection
+        // eslint-disable-next-line security/detect-object-injection
+        values.push(updates[jsKey]);
         paramIndex++;
       }
     }

@@ -1,6 +1,5 @@
 import '@testing-library/jest-dom';
 
-/* eslint-disable no-undef, security/detect-object-injection */
 process.env.VITE_API_URL = 'http://localhost:3001';
 
 const localStorageMock = (() => {

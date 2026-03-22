@@ -28,7 +28,7 @@ function Groups() {
     try {
       const response = await axios.get(`${API_BASE}/groups`);
       setGroups(response.data.groups || []);
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to load groups');
     } finally {
       setLoading(false);
@@ -37,7 +37,9 @@ function Groups() {
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
-    if (!newGroupName.trim()) return;
+    if (!newGroupName.trim()) {
+      return;
+    }
 
     try {
       await axios.post(`${API_BASE}/groups`, { name: newGroupName.trim() });
@@ -65,7 +67,9 @@ function Groups() {
   };
 
   const handleDeleteGroup = async (groupId) => {
-    if (!confirm('Are you sure you want to delete this group?')) return;
+    if (!confirm('Are you sure you want to delete this group?')) {
+      return;
+    }
 
     try {
       await axios.delete(`${API_BASE}/groups/${groupId}`);
@@ -88,11 +92,15 @@ function Groups() {
         axios.get(`${API_BASE}/groups/${groupId}`),
         isAssignmentManager ? axios.get(`${API_BASE}/users`) : Promise.resolve({ data: { users: [] } }),
       ]);
-      if (expandedGroupRef.current !== groupId) return;
+      if (expandedGroupRef.current !== groupId) {
+        return;
+      }
       setGroupMembers(groupRes.data.members || []);
       setAllUsers(usersRes.data.users || []);
-    } catch (err) {
-      if (expandedGroupRef.current !== groupId) return;
+    } catch (_err) {
+      if (expandedGroupRef.current !== groupId) {
+        return;
+      }
       setError('Failed to load group members');
       setTimeout(() => setError(''), 3000);
     } finally {
@@ -128,7 +136,9 @@ function Groups() {
   };
 
   const handleAddMember = async () => {
-    if (!selectedUserId) return;
+    if (!selectedUserId) {
+      return;
+    }
     try {
       await axios.put(`${API_BASE}/users/${parseInt(selectedUserId)}/group`, { groupId: expandedGroup });
       setSuccess('Member added successfully');

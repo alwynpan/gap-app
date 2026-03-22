@@ -65,20 +65,26 @@ INSERT INTO groups (name, enabled) VALUES
 
 async function runMigrations(client) {
   const migrationsDir = path.join(__dirname, 'migrations');
-  if (!fs.existsSync(migrationsDir)) return;
+  if (!fs.existsSync(migrationsDir)) {
+    return;
+  }
 
   const files = fs
     .readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
-  if (files.length === 0) return;
+  if (files.length === 0) {
+    return;
+  }
 
   const { rows: applied } = await client.query('SELECT name FROM schema_migrations');
   const appliedSet = new Set(applied.map((r) => r.name));
 
   for (const file of files) {
-    if (appliedSet.has(file)) continue;
+    if (appliedSet.has(file)) {
+      continue;
+    }
     const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
     console.log(`Applying migration: ${file}`);
     await client.query(sql);
