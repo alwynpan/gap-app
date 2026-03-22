@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
       try {
         const response = await axios.get(`${API_BASE}/auth/me`);
         setUser(response.data.user);
-      } catch (error) {
+      } catch (_error) {
         // Token invalid, clear it
         localStorage.removeItem('token');
         setToken(null);
@@ -87,7 +87,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await axios.post(`${API_BASE}/auth/logout`);
-    } catch (error) {
+    } catch (_error) {
       // Ignore errors on logout
     } finally {
       localStorage.removeItem('token');

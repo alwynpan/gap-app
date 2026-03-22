@@ -83,7 +83,7 @@ function Login() {
 
           <div className="text-center">
             <Link to="/register" className="font-medium text-primary-600 hover:text-primary-500 text-sm">
-              Don't have an account? Register here
+              Don&apos;t have an account? Register here
             </Link>
           </div>
         </form>
