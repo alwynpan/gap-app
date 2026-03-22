@@ -1,8 +1,8 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
-function ProtectedRoute({ children, requireAdmin = false, requireTeamManager = false }) {
-  const { isAuthenticated, loading, isAdmin, isTeamManager } = useAuth();
+function ProtectedRoute({ children, requireAdmin = false, requireAssignmentManager = false }) {
+  const { isAuthenticated, loading, isAdmin, isAssignmentManager } = useAuth();
 
   if (loading) {
     return (
@@ -20,7 +20,7 @@ function ProtectedRoute({ children, requireAdmin = false, requireTeamManager = f
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (requireTeamManager && !isTeamManager) {
+  if (requireAssignmentManager && !isAssignmentManager) {
     return <Navigate to="/dashboard" replace />;
   }
 

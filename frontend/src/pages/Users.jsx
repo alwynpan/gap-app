@@ -6,8 +6,11 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const emptyNewUser = { username: '', email: '', password: '', studentId: '', groupId: '', role: 'user' };
 
+const formatRoleName = (role) =>
+  (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 function Users() {
-  const { user, isAdmin, isTeamManager } = useAuth();
+  const { user, isAdmin, isAssignmentManager } = useAuth();
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +20,7 @@ function Users() {
   const [selectedGroup, setSelectedGroup] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newUser, setNewUser] = useState({ ...emptyNewUser });
+  const [editingUser, setEditingUser] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -82,6 +86,42 @@ function Users() {
     }
   };
 
+  const handleEditUser = async (e) => {
+    e.preventDefault();
+    if (!editingUser || !editingUser.username.trim() || !editingUser.email.trim()) return;
+
+    try {
+      await axios.put(`${API_BASE}/users/${editingUser.id}`, {
+        username: editingUser.username.trim(),
+        email: editingUser.email.trim(),
+        studentId: editingUser.studentId?.trim() || null,
+        ...(isAdmin && {
+          roleId: editingUser.roleId ? parseInt(editingUser.roleId) : undefined,
+          enabled: editingUser.enabled,
+        }),
+      });
+      setSuccess('User updated successfully');
+      setEditingUser(null);
+      fetchData();
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to update user');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const openEditModal = (u) => {
+    setEditingUser({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      studentId: u.student_id || '',
+      roleId: u.role_id || '',
+      roleName: u.role_name,
+      enabled: u.enabled !== false,
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -118,7 +158,7 @@ function Users() {
               <h2 className="text-2xl font-bold text-gray-900">Manage Users</h2>
               <p className="text-gray-600 mt-1">Assign users to groups and manage team membership</p>
             </div>
-            {isTeamManager && (
+            {isAssignmentManager && (
               <button
                 onClick={() => setShowCreateModal(true)}
                 className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
@@ -178,12 +218,12 @@ function Users() {
                           className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                             u.role_name === 'admin'
                               ? 'bg-red-100 text-red-800'
-                              : u.role_name === 'team_manager'
+                              : u.role_name === 'assignment_manager'
                                 ? 'bg-blue-100 text-blue-800'
                                 : 'bg-green-100 text-green-800'
                           }`}
                         >
-                          {u.role_name}
+                          {formatRoleName(u.role_name)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -218,12 +258,22 @@ function Users() {
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => setSelectedUser(u.id)}
-                            className="text-primary-600 hover:text-primary-800"
-                          >
-                            Assign Group
-                          </button>
+                          <div className="flex items-center space-x-3">
+                            {(isAdmin || user?.id === u.id) && (
+                              <button
+                                onClick={() => openEditModal(u)}
+                                className="text-primary-600 hover:text-primary-800"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setSelectedUser(u.id)}
+                              className="text-primary-600 hover:text-primary-800"
+                            >
+                              Assign Group
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -309,7 +359,7 @@ function Users() {
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="user">User</option>
-                  <option value="team_manager">Team Manager</option>
+                  <option value="assignment_manager">Assignment Manager</option>
                   {isAdmin && <option value="admin">Admin</option>}
                 </select>
               </div>
@@ -326,6 +376,87 @@ function Users() {
                 </button>
                 <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
                   Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit User Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit User</h3>
+            <form onSubmit={handleEditUser}>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  type="text"
+                  required
+                  value={editingUser.username}
+                  onChange={(e) => setEditingUser({ ...editingUser, username: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter username"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={editingUser.email}
+                  onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter email"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
+                <input
+                  type="text"
+                  value={editingUser.studentId}
+                  onChange={(e) => setEditingUser({ ...editingUser, studentId: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter student ID"
+                />
+              </div>
+              {isAdmin && (
+                <>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                    <select
+                      value={editingUser.roleId}
+                      onChange={(e) => setEditingUser({ ...editingUser, roleId: e.target.value })}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      <option value="3">User</option>
+                      <option value="2">Assignment Manager</option>
+                      <option value="1">Admin</option>
+                    </select>
+                  </div>
+                  <div className="mb-4">
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={editingUser.enabled}
+                        onChange={(e) => setEditingUser({ ...editingUser, enabled: e.target.checked })}
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Enabled</span>
+                    </label>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
+                  Save
                 </button>
               </div>
             </form>

@@ -26,9 +26,9 @@ async function rbacPlugin(fastify, _options) {
     return fastify.checkRole(request, reply, ['admin']);
   });
 
-  // Helper to check if user is team_manager or admin
-  fastify.decorate('requireTeamManager', async (request, reply) => {
-    return fastify.checkRole(request, reply, ['team_manager', 'admin']);
+  // Helper to check if user is assignment_manager or admin
+  fastify.decorate('requireAssignmentManager', async (request, reply) => {
+    return fastify.checkRole(request, reply, ['assignment_manager', 'admin']);
   });
 
   // Password hashing helper

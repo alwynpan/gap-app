@@ -15,7 +15,7 @@ describe('Groups page', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    useAuth.mockReturnValue({ user: { username: 'admin', role: 'admin' }, isAdmin: true, isTeamManager: true });
+    useAuth.mockReturnValue({ user: { username: 'admin', role: 'admin' }, isAdmin: true, isAssignmentManager: true });
     jest.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
@@ -260,11 +260,11 @@ describe('Groups page', () => {
     const groupsData = [{ id: 1, name: 'Group A', enabled: true, created_at: '2025-01-01T00:00:00.000Z' }];
     const membersData = [
       { id: 10, username: 'alice', email: 'alice@test.com', role_name: 'user', student_id: 's1', enabled: true },
-      { id: 11, username: 'bob', email: 'bob@test.com', role_name: 'team_manager', student_id: null, enabled: true },
+      { id: 11, username: 'bob', email: 'bob@test.com', role_name: 'assignment_manager', student_id: null, enabled: true },
     ];
     const allUsersData = [
       { id: 10, username: 'alice', email: 'alice@test.com', role_name: 'user' },
-      { id: 11, username: 'bob', email: 'bob@test.com', role_name: 'team_manager' },
+      { id: 11, username: 'bob', email: 'bob@test.com', role_name: 'assignment_manager' },
       { id: 12, username: 'charlie', email: 'charlie@test.com', role_name: 'user' },
     ];
 
@@ -437,7 +437,7 @@ describe('Groups page', () => {
       useAuth.mockReturnValue({
         user: { username: 'regular', role: 'user' },
         isAdmin: false,
-        isTeamManager: false,
+        isAssignmentManager: false,
       });
       const user = userEvent.setup();
       await setupWithGroups();

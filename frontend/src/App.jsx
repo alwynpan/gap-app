@@ -28,11 +28,11 @@ function App() {
             }
           />
 
-          {/* Admin/Team Manager Routes */}
+          {/* Admin/Assignment Manager Routes */}
           <Route
             path="/users"
             element={
-              <ProtectedRoute requireTeamManager>
+              <ProtectedRoute requireAssignmentManager>
                 <Users />
               </ProtectedRoute>
             }

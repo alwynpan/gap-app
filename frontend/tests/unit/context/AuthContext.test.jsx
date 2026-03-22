@@ -6,7 +6,7 @@ import { AuthProvider, useAuth } from '../../../src/context/AuthContext.jsx';
 jest.mock('axios');
 
 function TestHarness() {
-  const { user, loading, token, isAuthenticated, isAdmin, isTeamManager, login, register, logout } = useAuth();
+  const { user, loading, token, isAuthenticated, isAdmin, isAssignmentManager, login, register, logout } = useAuth();
 
   const handleLogin = async () => {
     const result = await login('demo', 'password');
@@ -25,7 +25,7 @@ function TestHarness() {
       <div data-testid="token">{token ?? 'none'}</div>
       <div data-testid="user">{user?.username ?? 'none'}</div>
       <div data-testid="is-admin">{isAdmin ? 'yes' : 'no'}</div>
-      <div data-testid="is-team-manager">{isTeamManager ? 'yes' : 'no'}</div>
+      <div data-testid="is-assignment-manager">{isAssignmentManager ? 'yes' : 'no'}</div>
       <button onClick={handleLogin}>Login</button>
       <button onClick={handleRegister}>Register</button>
       <button onClick={logout}>Logout</button>
@@ -59,7 +59,7 @@ describe('AuthContext', () => {
   it('hydrates user from token via /auth/me', async () => {
     localStorage.setItem('token', 'existing-token');
     axios.get.mockResolvedValue({
-      data: { user: { username: 'alice', role: 'team_manager' } },
+      data: { user: { username: 'alice', role: 'assignment_manager' } },
     });
 
     render(
@@ -74,7 +74,7 @@ describe('AuthContext', () => {
 
     expect(screen.getByTestId('user')).toHaveTextContent('alice');
     expect(screen.getByTestId('is-admin')).toHaveTextContent('no');
-    expect(screen.getByTestId('is-team-manager')).toHaveTextContent('yes');
+    expect(screen.getByTestId('is-assignment-manager')).toHaveTextContent('yes');
     expect(axios.defaults.headers.common.Authorization).toBe('Bearer existing-token');
   });
 

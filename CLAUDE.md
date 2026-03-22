@@ -21,6 +21,13 @@ cd backend && npm run dev                   # Backend dev server (port 3001) - m
 cd frontend && npm run dev                  # Frontend dev server (port 3000) - manual setup
 ```
 
+### Database Migrations
+```bash
+cd backend && npm run migrate        # Full reset: DROP all tables, recreate schema, run all migrations
+cd backend && npm run migrate:up     # Incremental only: apply pending migrations (safe for existing data)
+```
+Incremental migrations live in `backend/src/db/migrations/` as numbered SQL files (e.g. `001_rename_team_manager_to_assignment_manager.sql`). New schema changes should always be added as a new migration file.
+
 ### Testing
 ```bash
 npm test                                    # Run backend unit tests (from root)
@@ -45,7 +52,7 @@ cd frontend && npm run lint:fix     # Auto-fix frontend lint issues
 ### Backend (Fastify, CommonJS)
 - `backend/src/server.js` — App entry point, exports `buildServer()` for testing
 - `backend/src/middleware/auth.js` — Fastify plugin: registers `@fastify/jwt`, provides `verifyToken` decorator
-- `backend/src/middleware/rbac.js` — Fastify plugin: `checkRole` checks if user's role is in the allowed list (admin always passes); also provides `requireAdmin` and `requireTeamManager` helpers
+- `backend/src/middleware/rbac.js` — Fastify plugin: `checkRole` checks if user's role is in the allowed list (admin always passes); also provides `requireAdmin` and `requireAssignmentManager` helpers
 - `backend/src/models/` — Data access layer (User, Group, Role) using raw SQL via `pg` pool
 - `backend/src/routes/` — Route handlers registered as Fastify plugins (auth, users, groups)
 - `backend/src/config/` — Environment config and database pool setup
@@ -65,7 +72,7 @@ cd frontend && npm run lint:fix     # Auto-fix frontend lint issues
 
 ### Three-Tier Role System
 - **Admin** — Full CRUD on users and groups
-- **Team Manager** — View users, assign users to groups
+- **Assignment Manager** — View users, assign users to groups
 - **User** — View own profile and groups
 
 ### Testing Setup

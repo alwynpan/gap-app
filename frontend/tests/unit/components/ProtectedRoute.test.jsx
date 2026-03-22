@@ -23,7 +23,7 @@ describe('ProtectedRoute', () => {
       loading: true,
       isAuthenticated: false,
       isAdmin: false,
-      isTeamManager: false,
+      isAssignmentManager: false,
     });
 
     const { container } = renderRoute();
@@ -35,7 +35,7 @@ describe('ProtectedRoute', () => {
       loading: false,
       isAuthenticated: false,
       isAdmin: false,
-      isTeamManager: false,
+      isAssignmentManager: false,
     });
 
     renderRoute();
@@ -47,7 +47,7 @@ describe('ProtectedRoute', () => {
       loading: false,
       isAuthenticated: true,
       isAdmin: false,
-      isTeamManager: true,
+      isAssignmentManager: true,
     });
 
     renderRoute({ requireAdmin: true });
@@ -59,10 +59,10 @@ describe('ProtectedRoute', () => {
       loading: false,
       isAuthenticated: true,
       isAdmin: false,
-      isTeamManager: false,
+      isAssignmentManager: false,
     });
 
-    renderRoute({ requireTeamManager: true });
+    renderRoute({ requireAssignmentManager: true });
     expect(screen.queryByText('Secret Content')).not.toBeInTheDocument();
   });
 
@@ -71,10 +71,10 @@ describe('ProtectedRoute', () => {
       loading: false,
       isAuthenticated: true,
       isAdmin: true,
-      isTeamManager: true,
+      isAssignmentManager: true,
     });
 
-    renderRoute({ requireAdmin: true, requireTeamManager: true });
+    renderRoute({ requireAdmin: true, requireAssignmentManager: true });
     expect(screen.getByText('Secret Content')).toBeInTheDocument();
   });
 });

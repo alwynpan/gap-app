@@ -7,6 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "migrate": "node src/db/migrate.js",
+    "migrate:up": "node src/db/migrate.js up",
     "test": "jest --coverage",
     "lint": "eslint --max-warnings 0 --format checkstyle -o eslint.xml .",
     "lint:fix": "eslint --fix .",

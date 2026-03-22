@@ -18,7 +18,7 @@ describe('Role Model', () => {
     it('returns all roles ordered by id', async () => {
       const mockRoles = [
         { id: 1, name: 'admin', created_at: new Date() },
-        { id: 2, name: 'team_manager', created_at: new Date() },
+        { id: 2, name: 'assignment_manager', created_at: new Date() },
         { id: 3, name: 'user', created_at: new Date() },
       ];
       pool.query.mockResolvedValue({ rows: mockRoles });
@@ -86,11 +86,11 @@ describe('Role Model', () => {
       expect(result).toEqual(mockRole);
     });
 
-    it('finds team_manager role', async () => {
-      const mockRole = { id: 2, name: 'team_manager', created_at: new Date() };
+    it('finds assignment_manager role', async () => {
+      const mockRole = { id: 2, name: 'assignment_manager', created_at: new Date() };
       pool.query.mockResolvedValue({ rows: [mockRole] });
 
-      const result = await Role.findByName('team_manager');
+      const result = await Role.findByName('assignment_manager');
 
       expect(result).toEqual(mockRole);
     });

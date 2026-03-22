@@ -16,7 +16,7 @@ describe('Dashboard page', () => {
       user: { username: 'testuser', email: 'test@example.com', role: 'normal_user' },
       logout: mockLogout,
       isAdmin: false,
-      isTeamManager: false,
+      isAssignmentManager: false,
     });
   });
 
@@ -29,7 +29,7 @@ describe('Dashboard page', () => {
 
     expect(screen.getByText(/welcome back, testuser!/i)).toBeInTheDocument();
     expect(screen.getByText('test@example.com')).toBeInTheDocument();
-    expect(screen.getByText('normal_user')).toBeInTheDocument();
+    expect(screen.getByText('Normal User')).toBeInTheDocument();
   });
 
   it('calls logout handler', async () => {
@@ -49,7 +49,7 @@ describe('Dashboard page', () => {
       user: { username: 'admin', email: 'admin@example.com', role: 'admin' },
       logout: mockLogout,
       isAdmin: true,
-      isTeamManager: true,
+      isAssignmentManager: true,
     });
 
     render(

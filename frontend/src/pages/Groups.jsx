@@ -4,8 +4,11 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+const formatRoleName = (role) =>
+  (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 function Groups() {
-  const { user, isTeamManager } = useAuth();
+  const { user, isAssignmentManager } = useAuth();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -81,7 +84,7 @@ function Groups() {
     try {
       const [groupRes, usersRes] = await Promise.all([
         axios.get(`${API_BASE}/groups/${groupId}`),
-        isTeamManager ? axios.get(`${API_BASE}/users`) : Promise.resolve({ data: { users: [] } }),
+        isAssignmentManager ? axios.get(`${API_BASE}/users`) : Promise.resolve({ data: { users: [] } }),
       ]);
       setGroupMembers(groupRes.data.members || []);
       setAllUsers(usersRes.data.users || []);
@@ -241,15 +244,15 @@ function Groups() {
                                     className={`ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                       member.role_name === 'admin'
                                         ? 'bg-red-100 text-red-800'
-                                        : member.role_name === 'team_manager'
+                                        : member.role_name === 'assignment_manager'
                                           ? 'bg-blue-100 text-blue-800'
                                           : 'bg-green-100 text-green-800'
                                     }`}
                                   >
-                                    {member.role_name}
+                                    {formatRoleName(member.role_name)}
                                   </span>
                                 </div>
-                                {isTeamManager && (
+                                {isAssignmentManager && (
                                   <button
                                     onClick={() => handleRemoveMember(member.id)}
                                     className="text-sm text-red-600 hover:text-red-800"
@@ -262,7 +265,7 @@ function Groups() {
                           </ul>
                         )}
 
-                        {isTeamManager && availableUsers.length > 0 && (
+                        {isAssignmentManager && availableUsers.length > 0 && (
                           <div className="mt-3 flex items-center space-x-2">
                             <select
                               value={selectedUserId}

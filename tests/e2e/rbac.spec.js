@@ -4,7 +4,7 @@ const API_BASE = process.env.API_BASE || 'http://localhost:3001';
 
 describe('RBAC E2E Tests', () => {
   let adminToken = null;
-  let teamManagerToken = null;
+  let assignmentManagerToken = null;
   let userToken = null;
   let testGroupId = null;
 
@@ -30,19 +30,19 @@ describe('RBAC E2E Tests', () => {
       console.warn('Admin setup failed - may need to run migrations first');
     }
 
-    // Create and login as team manager
+    // Create and login as assignment manager
     try {
-      const tmUsername = `tm_${Date.now()}`;
+      const amUsername = `am_${Date.now()}`;
       await axios.post(`${API_BASE}/auth/register`, {
-        username: tmUsername,
-        email: `${tmUsername}@example.com`,
+        username: amUsername,
+        email: `${amUsername}@example.com`,
         password: 'password123',
       });
 
-      // Admin updates role to team_manager (would need admin API for this)
-      // For now, we'll skip team manager tests if setup fails
+      // Admin updates role to assignment_manager (would need admin API for this)
+      // For now, we'll skip assignment manager tests if setup fails
     } catch (error) {
-      console.warn('Team manager setup failed');
+      console.warn('Assignment manager setup failed');
     }
 
     // Create and login as regular user
@@ -126,7 +126,7 @@ describe('RBAC E2E Tests', () => {
     });
   });
 
-  describe('GET /users (Admin/Team Manager Only)', () => {
+  describe('GET /users (Admin/Assignment Manager Only)', () => {
     it('should allow admin to list users', async () => {
       const response = await axios.get(`${API_BASE}/users`, {
         headers: { Authorization: `Bearer ${adminToken}` },
@@ -145,7 +145,7 @@ describe('RBAC E2E Tests', () => {
     });
   });
 
-  describe('PUT /users/:id/group (Admin/Team Manager Only)', () => {
+  describe('PUT /users/:id/group (Admin/Assignment Manager Only)', () => {
     let testUserId = null;
 
     beforeEach(async () => {

@@ -80,11 +80,11 @@ async function buildServer() {
           me: 'GET /auth/me',
         },
         users: {
-          list: 'GET /users (admin/team_manager)',
+          list: 'GET /users (admin/assignment_manager)',
           get: 'GET /users/:id',
           create: 'POST /users (admin)',
           update: 'PUT /users/:id (admin)',
-          updateGroup: 'PUT /users/:id/group (admin/team_manager)',
+          updateGroup: 'PUT /users/:id/group (admin/assignment_manager)',
           delete: 'DELETE /users/:id (admin)',
         },
         groups: {

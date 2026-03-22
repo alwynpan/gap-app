@@ -123,11 +123,11 @@ describe('RBAC Middleware', () => {
     expect(fastify.decorate).toHaveBeenCalledWith('requireAdmin', expect.any(Function));
   });
 
-  it('decorates with requireTeamManager', async () => {
+  it('decorates with requireAssignmentManager', async () => {
     const rbacPlugin = require('../../src/middleware/rbac');
     await rbacPlugin(fastify, {});
 
-    expect(fastify.decorate).toHaveBeenCalledWith('requireTeamManager', expect.any(Function));
+    expect(fastify.decorate).toHaveBeenCalledWith('requireAssignmentManager', expect.any(Function));
   });
 
   it('decorates with hashPassword', async () => {
@@ -200,37 +200,37 @@ describe('RBAC Middleware', () => {
     expect(mockBcrypt.compare).toHaveBeenCalledWith('plain', 'hashed');
   });
 
-  it('requireTeamManager allows team_manager', async () => {
+  it('requireAssignmentManager allows assignment_manager', async () => {
     const rbacPlugin = require('../../src/middleware/rbac');
     fastify.checkRole = jest.fn().mockResolvedValue(true);
     await rbacPlugin(fastify, {});
 
-    const requireTeamManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireTeamManager')[1];
+    const requireAssignmentManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireAssignmentManager')[1];
     const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
 
-    const result = await requireTeamManager({ user: { role: 'team_manager' } }, mockReply);
+    const result = await requireAssignmentManager({ user: { role: 'assignment_manager' } }, mockReply);
 
     expect(result).toBe(true);
-    expect(fastify.checkRole).toHaveBeenCalledWith({ user: { role: 'team_manager' } }, mockReply, [
-      'team_manager',
+    expect(fastify.checkRole).toHaveBeenCalledWith({ user: { role: 'assignment_manager' } }, mockReply, [
+      'assignment_manager',
       'admin',
     ]);
   });
 
-  it('requireTeamManager allows admin', async () => {
+  it('requireAssignmentManager allows admin', async () => {
     const rbacPlugin = require('../../src/middleware/rbac');
     fastify.checkRole = jest.fn().mockResolvedValue(true);
     await rbacPlugin(fastify, {});
 
-    const requireTeamManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireTeamManager')[1];
+    const requireAssignmentManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireAssignmentManager')[1];
     const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
 
-    const result = await requireTeamManager({ user: { role: 'admin' } }, mockReply);
+    const result = await requireAssignmentManager({ user: { role: 'admin' } }, mockReply);
 
     expect(result).toBe(true);
   });
 
-  it('requireTeamManager denies user', async () => {
+  it('requireAssignmentManager denies user', async () => {
     const rbacPlugin = require('../../src/middleware/rbac');
     fastify.checkRole = jest.fn().mockImplementation((request, reply, roles) => {
       reply.code(403).send({ error: 'Forbidden' });
@@ -238,10 +238,10 @@ describe('RBAC Middleware', () => {
     });
     await rbacPlugin(fastify, {});
 
-    const requireTeamManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireTeamManager')[1];
+    const requireAssignmentManager = fastify.decorate.mock.calls.find((call) => call[0] === 'requireAssignmentManager')[1];
     const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
 
-    await requireTeamManager({ user: { role: 'user' } }, mockReply);
+    await requireAssignmentManager({ user: { role: 'user' } }, mockReply);
 
     expect(mockReply.code).toHaveBeenCalledWith(403);
   });

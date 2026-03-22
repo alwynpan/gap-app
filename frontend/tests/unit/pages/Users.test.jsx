@@ -12,16 +12,16 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
 
 describe('Users page', () => {
   const initialUsers = [
-    { id: 1, username: 'u1', email: 'u1@test.com', role_name: 'normal_user', group_name: null, student_id: 's1' },
+    { id: 1, username: 'u1', email: 'u1@test.com', role_name: 'normal_user', group_name: null, student_id: 's1', role_id: 3, enabled: true },
   ];
   const initialGroups = [{ id: 2, name: 'Group A' }];
 
   beforeEach(() => {
     jest.clearAllMocks();
     useAuth.mockReturnValue({
-      user: { username: 'admin', role: 'admin' },
+      user: { id: 99, username: 'admin', role: 'admin' },
       isAdmin: true,
-      isTeamManager: true,
+      isAssignmentManager: true,
     });
   });
 
@@ -205,11 +205,11 @@ describe('Users page', () => {
       expect(screen.getByRole('button', { name: /create user/i })).toBeInTheDocument();
     });
 
-    it('shows Create User button for team_manager', async () => {
+    it('shows Create User button for assignment_manager', async () => {
       useAuth.mockReturnValue({
-        user: { username: 'manager', role: 'team_manager' },
+        user: { username: 'manager', role: 'assignment_manager' },
         isAdmin: false,
-        isTeamManager: true,
+        isAssignmentManager: true,
       });
       await setupRenderedPage();
       expect(screen.getByRole('button', { name: /create user/i })).toBeInTheDocument();
@@ -219,7 +219,7 @@ describe('Users page', () => {
       useAuth.mockReturnValue({
         user: { username: 'regularuser', role: 'user' },
         isAdmin: false,
-        isTeamManager: false,
+        isAssignmentManager: false,
       });
       await setupRenderedPage();
       expect(screen.queryByRole('button', { name: /create user/i })).not.toBeInTheDocument();
@@ -307,14 +307,26 @@ describe('Users page', () => {
 
       const roleSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="user"]'));
       const options = Array.from(roleSelect.querySelectorAll('option')).map((o) => o.value);
-      expect(options).toEqual(['user', 'team_manager', 'admin']);
+      expect(options).toEqual(['user', 'assignment_manager', 'admin']);
     });
 
-    it('team_manager does not see admin role option', async () => {
+    it('allows selecting a group in create form', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+
+      const groupSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="2"]'));
+      expect(groupSelect).toBeTruthy();
+      await user.selectOptions(groupSelect, '2');
+      expect(groupSelect.value).toBe('2');
+    });
+
+    it('assignment_manager does not see admin role option', async () => {
       useAuth.mockReturnValue({
-        user: { username: 'manager', role: 'team_manager' },
+        user: { username: 'manager', role: 'assignment_manager' },
         isAdmin: false,
-        isTeamManager: true,
+        isAssignmentManager: true,
       });
       const user = userEvent.setup();
       await setupRenderedPage();
@@ -323,8 +335,203 @@ describe('Users page', () => {
 
       const roleSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="user"]'));
       const options = Array.from(roleSelect.querySelectorAll('option')).map((o) => o.value);
-      expect(options).toEqual(['user', 'team_manager']);
+      expect(options).toEqual(['user', 'assignment_manager']);
       expect(options).not.toContain('admin');
+    });
+  });
+
+  it('displays formatted role names instead of raw values', async () => {
+    const usersWithRoles = [
+      { id: 1, username: 'u1', email: 'u1@test.com', role_name: 'admin', group_name: null, student_id: null, role_id: 1, enabled: true },
+      { id: 2, username: 'u2', email: 'u2@test.com', role_name: 'assignment_manager', group_name: null, student_id: null, role_id: 2, enabled: true },
+      { id: 3, username: 'u3', email: 'u3@test.com', role_name: 'user', group_name: null, student_id: null, role_id: 3, enabled: true },
+    ];
+
+    axios.get
+      .mockResolvedValueOnce({ data: { users: usersWithRoles } })
+      .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+    render(
+      <MemoryRouter>
+        <Users />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin')).toBeInTheDocument();
+      expect(screen.getByText('Assignment Manager')).toBeInTheDocument();
+    });
+
+    // Verify raw role values don't appear in role badge spans
+    const roleBadges = document.querySelectorAll('span.rounded-full');
+    const badgeTexts = Array.from(roleBadges).map((el) => el.textContent);
+    expect(badgeTexts).not.toContain('admin');
+    expect(badgeTexts).not.toContain('assignment_manager');
+    expect(badgeTexts).toContain('Admin');
+    expect(badgeTexts).toContain('Assignment Manager');
+    expect(badgeTexts).toContain('User');
+  });
+
+  it('cancels group assignment inline', async () => {
+    const user = userEvent.setup();
+
+    axios.get
+      .mockResolvedValueOnce({ data: { users: initialUsers } })
+      .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+    render(
+      <MemoryRouter>
+        <Users />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /assign group/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /assign group/i }));
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  describe('Edit User', () => {
+    const setupRenderedPage = async () => {
+      axios.get
+        .mockResolvedValueOnce({ data: { users: initialUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
+      });
+    };
+
+    it('shows Edit button for admin on all users', async () => {
+      await setupRenderedPage();
+      expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
+    });
+
+    it('shows Edit button for user on their own row only', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 1, username: 'u1', role: 'user' },
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+      await setupRenderedPage();
+      expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
+    });
+
+    it('hides Edit button for user on other users rows', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 999, username: 'other', role: 'user' },
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+      await setupRenderedPage();
+      expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
+    });
+
+    it('opens and closes edit modal', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+      expect(screen.getByText('Edit User')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('u1')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('u1@test.com')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /cancel/i }));
+      expect(screen.queryByText('Edit User')).not.toBeInTheDocument();
+    });
+
+    it('admin can edit user and save successfully', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+
+      const usernameInput = screen.getByDisplayValue('u1');
+      await user.clear(usernameInput);
+      await user.type(usernameInput, 'updated_u1');
+
+      axios.put.mockResolvedValue({});
+      axios.get
+        .mockResolvedValueOnce({ data: { users: initialUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+      await waitFor(() => {
+        expect(axios.put).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\/1$/),
+          expect.objectContaining({ username: 'updated_u1' })
+        );
+        expect(screen.getByText('User updated successfully')).toBeInTheDocument();
+      });
+
+      // Modal should be closed
+      expect(screen.queryByText('Edit User')).not.toBeInTheDocument();
+
+      jest.advanceTimersByTime(3000);
+      await waitFor(() => {
+        expect(screen.queryByText('User updated successfully')).not.toBeInTheDocument();
+      });
+    });
+
+    it('admin sees role and enabled fields in edit modal', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+
+      // Admin should see role dropdown and enabled checkbox
+      expect(screen.getByText('Enabled')).toBeInTheDocument();
+      const roleSelects = screen.getAllByRole('combobox');
+      const roleSelect = roleSelects.find((el) => el.querySelector('option[value="1"]'));
+      expect(roleSelect).toBeTruthy();
+    });
+
+    it('non-admin does not see role and enabled fields in edit modal', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 1, username: 'u1', role: 'user' },
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+
+      expect(screen.queryByText('Enabled')).not.toBeInTheDocument();
+    });
+
+    it('shows error when edit fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+
+      axios.put.mockRejectedValue({ response: { data: { error: 'Username taken' } } });
+
+      await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Username taken')).toBeInTheDocument();
+      });
+
+      jest.advanceTimersByTime(3000);
+      await waitFor(() => {
+        expect(screen.queryByText('Username taken')).not.toBeInTheDocument();
+      });
     });
   });
 });

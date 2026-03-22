@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Group = require('../models/Group');
 
 async function usersRoutes(fastify, _options) {
-  // Get all users (admin/team_manager only)
+  // Get all users (admin/assignment_manager only)
   fastify.get(
     '/users',
     {
@@ -10,7 +10,7 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const allowed = await fastify.checkRole(request, reply, ['admin', 'team_manager']);
+        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
         if (!allowed) {
           return reply;
         }
@@ -35,10 +35,10 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        // Users can view their own profile, admin/team_manager can view all
+        // Users can view their own profile, admin/assignment_manager can view all
         const userId = parseInt(request.params.id, 10);
         if (request.user.id !== userId) {
-          const allowed = await fastify.checkRole(request, reply, ['admin', 'team_manager']);
+          const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
           if (!allowed) {
             return reply;
           }
@@ -64,7 +64,7 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Create new user (admin/team_manager)
+  // Create new user (admin/assignment_manager)
   fastify.post(
     '/users',
     {
@@ -72,7 +72,7 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const allowed = await fastify.checkRole(request, reply, ['admin', 'team_manager']);
+        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
         if (!allowed) {
           return reply;
         }
@@ -137,7 +137,7 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Update user's group assignment (admin/team_manager only)
+  // Update user's group assignment (admin/assignment_manager only)
   fastify.put(
     '/users/:id/group',
     {
@@ -145,7 +145,7 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const allowed = await fastify.checkRole(request, reply, ['admin', 'team_manager']);
+        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
         if (!allowed) {
           return reply;
         }
@@ -191,7 +191,7 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Update user (admin only for full updates)
+  // Update user (admin can edit any user; users can edit their own profile)
   fastify.put(
     '/users/:id',
     {
@@ -199,9 +199,10 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const allowed = await fastify.requireAdmin(request, reply);
-        if (!allowed) {
-          return reply;
+        const userId = parseInt(request.params.id, 10);
+        // Non-admin users can only edit themselves
+        if (request.user.id !== userId && request.user.role !== 'admin') {
+          return reply.code(403).send({ error: 'Forbidden: You can only edit your own profile' });
         }
       },
     },
@@ -215,14 +216,16 @@ async function usersRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
-        const updatedUser = await User.update(userId, {
-          username,
-          email,
-          studentId,
-          groupId,
-          roleId,
-          enabled,
-        });
+        // Non-admin users can only update basic profile fields
+        const isAdmin = request.user.role === 'admin';
+        const updates = { username, email, studentId };
+        if (isAdmin) {
+          updates.groupId = groupId;
+          updates.roleId = roleId;
+          updates.enabled = enabled;
+        }
+
+        const updatedUser = await User.update(userId, updates);
 
         return reply.send({
           message: 'User updated successfully',

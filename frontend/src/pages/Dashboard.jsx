@@ -1,8 +1,11 @@
 import { useAuth } from '../context/AuthContext.jsx';
 import { Link } from 'react-router-dom';
 
+const formatRoleName = (role) =>
+  (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 function Dashboard() {
-  const { user, logout, isAdmin, isTeamManager } = useAuth();
+  const { user, logout, isAdmin, isAssignmentManager } = useAuth();
 
   const handleLogout = async () => {
     await logout();
@@ -19,7 +22,7 @@ function Dashboard() {
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">
-                {user?.username} ({user?.role})
+                {user?.username} ({formatRoleName(user?.role)})
               </span>
               <button onClick={handleLogout} className="text-sm text-red-600 hover:text-red-700">
                 Logout
@@ -52,7 +55,7 @@ function Dashboard() {
                 </div>
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Role</dt>
-                  <dd className="mt-1 text-sm text-gray-900 capitalize">{user?.role}</dd>
+                  <dd className="mt-1 text-sm text-gray-900">{formatRoleName(user?.role)}</dd>
                 </div>
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Group</dt>
@@ -68,13 +71,13 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Admin/Team Manager Links */}
-          {(isAdmin || isTeamManager) && (
+          {/* Admin/Assignment Manager Links */}
+          {(isAdmin || isAssignmentManager) && (
             <div className="bg-white overflow-hidden shadow rounded-lg mb-6">
               <div className="px-4 py-5 sm:p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Administration</h3>
                 <div className="space-y-3">
-                  {isTeamManager && (
+                  {isAssignmentManager && (
                     <Link
                       to="/users"
                       className="block w-full text-left px-4 py-2 bg-primary-50 text-primary-700 rounded-md hover:bg-primary-100 transition-colors"

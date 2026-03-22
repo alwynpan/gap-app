@@ -103,7 +103,7 @@ export function AuthProvider({ children }) {
     register,
     logout,
     isAdmin: user?.role === 'admin',
-    isTeamManager: user?.role === 'team_manager' || user?.role === 'admin',
+    isAssignmentManager: user?.role === 'assignment_manager' || user?.role === 'admin',
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

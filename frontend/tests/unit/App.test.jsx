@@ -44,7 +44,7 @@ describe('App', () => {
       isAuthenticated: false,
       loading: false,
       isAdmin: false,
-      isTeamManager: false,
+      isAssignmentManager: false,
       user: null,
     });
   });
@@ -61,7 +61,7 @@ describe('App', () => {
       isAuthenticated: true,
       loading: false,
       isAdmin: false,
-      isTeamManager: false,
+      isAssignmentManager: false,
       user: { username: 'member', role: 'normal_user' },
     });
 
@@ -76,8 +76,8 @@ describe('App', () => {
       isAuthenticated: true,
       loading: false,
       isAdmin: false,
-      isTeamManager: true,
-      user: { username: 'tm', role: 'team_manager' },
+      isAssignmentManager: true,
+      user: { username: 'tm', role: 'assignment_manager' },
     });
 
     window.history.pushState({}, '', '/groups');
@@ -91,7 +91,7 @@ describe('App', () => {
       isAuthenticated: true,
       loading: false,
       isAdmin: true,
-      isTeamManager: true,
+      isAssignmentManager: true,
       user: { username: 'admin', role: 'admin' },
     });
 

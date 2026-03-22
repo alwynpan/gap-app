@@ -7,7 +7,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 - 🔐 **JWT Authentication** - Secure login/logout with token-based authentication
 - 👥 **User Management** - Create, update, and manage users with different roles
 - 📁 **Group Management** - Create and manage student groups/teams
-- 🎭 **Role-Based Access Control (RBAC)** - Three-tier role system (Admin, Team Manager, User)
+- 🎭 **Role-Based Access Control (RBAC)** - Three-tier role system (Admin, Assignment Manager, User)
 - 🚀 **Kubernetes Ready** - Full K8s manifests for production deployment
 - 🐳 **Docker Support** - Local development with Docker Compose
 
@@ -121,7 +121,7 @@ npm run migrate
 - `POST /auth/logout` - Logout
 - `GET /auth/me` - Get current user
 
-### Users (Admin/Team Manager)
+### Users (Admin/Assignment Manager)
 - `GET /users` - List all users
 - `GET /users/:id` - Get user by ID
 - `POST /users` - Create user (Admin only)
@@ -142,7 +142,7 @@ npm run migrate
 | Role | Permissions |
 |------|-------------|
 | **Admin** | Full access to all features, user management, group management |
-| **Team Manager** | View all users, assign users to groups |
+| **Assignment Manager** | View all users, assign users to groups |
 | **User** | View own profile, view groups |
 
 ## Kubernetes Deployment
