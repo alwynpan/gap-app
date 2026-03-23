@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Pencil, KeyRound, UserPlus, Check, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
@@ -181,25 +182,25 @@ function Users() {
 
   const renderTable = (sectionUsers, emptyMessage) => (
     <div className="bg-white shadow overflow-x-auto rounded-lg">
-      <table className="w-full min-w-[900px] divide-y divide-gray-200 table-fixed">
+      <table className="w-full min-w-[700px] divide-y divide-gray-200 table-fixed">
         <thead className="bg-gray-50">
           <tr>
-            <th className="w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Username
             </th>
-            <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[13%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Name
             </th>
-            <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[22%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Email
             </th>
-            <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[13%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Role
             </th>
-            <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Current Group
             </th>
-            <th className="w-[23%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Actions
             </th>
           </tr>
@@ -248,7 +249,7 @@ function Users() {
                   {u.group_name || 'Not assigned'}
                 </div>
               </td>
-              <td className="px-6 py-4 text-sm">
+              <td className="px-4 py-4">
                 {selectedUser === u.id ? (
                   <div className="flex items-center gap-2">
                     <select
@@ -265,45 +266,74 @@ function Users() {
                           </option>
                         ))}
                     </select>
-                    <button onClick={handleAssignGroup} className="text-primary-600 hover:text-primary-800">
-                      Save
+                    <button
+                      onClick={handleAssignGroup}
+                      aria-label="Save"
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      <Check className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => {
                         setSelectedUser(null);
                         setSelectedGroup('');
                       }}
-                      className="text-gray-600 hover:text-gray-800"
+                      aria-label="Cancel"
+                      className="text-gray-500 hover:text-gray-700"
                     >
-                      Cancel
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
                 ) : (
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center gap-1">
                     {(isAdmin || user?.id === u.id) && (
                       <>
-                        <button onClick={() => openEditModal(u)} className="text-primary-600 hover:text-primary-800">
-                          Edit
-                        </button>
-                        <button
-                          onClick={() =>
-                            setPasswordChange({
-                              userId: u.id,
-                              username: u.username,
-                              currentPassword: '',
-                              newPassword: '',
-                              confirmPassword: '',
-                            })
-                          }
-                          className="text-primary-600 hover:text-primary-800"
-                        >
-                          Password
-                        </button>
+                        <div className="relative group">
+                          <button
+                            onClick={() => openEditModal(u)}
+                            aria-label="Edit User Profile"
+                            className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                            Edit User Profile
+                          </span>
+                        </div>
+                        <div className="relative group">
+                          <button
+                            onClick={() =>
+                              setPasswordChange({
+                                userId: u.id,
+                                username: u.username,
+                                currentPassword: '',
+                                newPassword: '',
+                                confirmPassword: '',
+                              })
+                            }
+                            aria-label="Change Password"
+                            className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+                          >
+                            <KeyRound className="h-4 w-4" />
+                          </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                            Change Password
+                          </span>
+                        </div>
                       </>
                     )}
-                    <button onClick={() => setSelectedUser(u.id)} className="text-primary-600 hover:text-primary-800">
-                      Assign Group
-                    </button>
+                    <div className="relative group">
+                      <button
+                        onClick={() => setSelectedUser(u.id)}
+                        aria-label="Assign Group"
+                        className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                      </button>
+                      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        Assign Group
+                      </span>
+                    </div>
                   </div>
                 )}
               </td>
@@ -334,7 +364,7 @@ function Users() {
       <Header pageName="User Management" />
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <main className="w-[85%] mx-auto py-6">
         <div className="px-4 py-6 sm:px-0">
           <div className="mb-6 flex justify-between items-center">
             <div>
