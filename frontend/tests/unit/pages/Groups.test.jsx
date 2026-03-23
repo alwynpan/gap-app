@@ -24,7 +24,6 @@ describe('Groups page', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useAuth.mockReturnValue({ isAssignmentManager: true });
-    jest.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -173,7 +172,36 @@ describe('Groups page', () => {
   });
 
   // ── Delete ─────────────────────────────────────────────────────────────
-  it('deletes group after confirmation', async () => {
+  it('opens delete confirmation modal when delete icon is clicked', async () => {
+    const user = userEvent.setup();
+    await setupPage();
+
+    await user.click(screen.getByRole('button', { name: /delete group/i }));
+
+    expect(screen.getByText(/delete 1 group\?/i)).toBeInTheDocument();
+    expect(screen.getByText('This action cannot be undone.')).toBeInTheDocument();
+  });
+
+  it('shows member warning in single-group delete modal when group has members', async () => {
+    const user = userEvent.setup();
+    await setupPage([makeGroup({ member_count: 3 })]);
+
+    await user.click(screen.getByRole('button', { name: /delete group/i }));
+
+    expect(screen.getByText(/will be unassigned/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 members/i)).toBeInTheDocument();
+  });
+
+  it('does not show warning in single-group delete modal when group has no members', async () => {
+    const user = userEvent.setup();
+    await setupPage([makeGroup({ member_count: 0 })]);
+
+    await user.click(screen.getByRole('button', { name: /delete group/i }));
+
+    expect(screen.queryByText(/will be unassigned/i)).not.toBeInTheDocument();
+  });
+
+  it('deletes group after modal confirmation and shows success', async () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     await setupPage();
@@ -181,23 +209,28 @@ describe('Groups page', () => {
     axios.get.mockResolvedValueOnce({ data: { groups: [] } });
 
     await user.click(screen.getByRole('button', { name: /delete group/i }));
+    await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
 
     await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalledWith('Are you sure you want to delete this group?');
       expect(axios.delete).toHaveBeenCalledWith(
         expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/)
       );
       expect(screen.getByText('Group deleted successfully')).toBeInTheDocument();
     });
+
+    jest.advanceTimersByTime(3000);
+    await waitFor(() => expect(screen.queryByText('Group deleted successfully')).not.toBeInTheDocument());
   });
 
-  it('does not delete when confirmation is canceled', async () => {
-    window.confirm.mockReturnValue(false);
+  it('cancels single-group delete modal without deleting', async () => {
     const user = userEvent.setup();
     await setupPage();
 
     await user.click(screen.getByRole('button', { name: /delete group/i }));
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+
     expect(axios.delete).not.toHaveBeenCalled();
+    expect(screen.queryByText(/delete 1 group\?/i)).not.toBeInTheDocument();
   });
 
   it('shows error when delete fails', async () => {
@@ -207,6 +240,7 @@ describe('Groups page', () => {
     axios.delete.mockRejectedValue({ response: { data: { error: 'Cannot delete' } } });
 
     await user.click(screen.getByRole('button', { name: /delete group/i }));
+    await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
 
     await waitFor(() => expect(screen.getByText('Cannot delete')).toBeInTheDocument());
   });
