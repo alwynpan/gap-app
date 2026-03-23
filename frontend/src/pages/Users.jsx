@@ -646,9 +646,12 @@ function Users() {
                 />
               </div>
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  First Name <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
+                  required
                   value={newUser.firstName}
                   onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -656,9 +659,12 @@ function Users() {
                 />
               </div>
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Last Name <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
+                  required
                   value={newUser.lastName}
                   onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -761,9 +767,12 @@ function Users() {
                 />
               </div>
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  First Name <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
+                  required
                   value={editingUser.firstName}
                   onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -771,9 +780,12 @@ function Users() {
                 />
               </div>
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Last Name <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
+                  required
                   value={editingUser.lastName}
                   onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"

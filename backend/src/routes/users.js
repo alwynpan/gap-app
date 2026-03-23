@@ -86,6 +86,11 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'Username, email, and password are required' });
         }
 
+        // Validate firstName and lastName are provided
+        if (!firstName || !lastName) {
+          return reply.code(400).send({ error: 'First name and last name are required' });
+        }
+
         // Only admins can create admin users
         if (role === 'admin' && request.user.role !== 'admin') {
           return reply.code(403).send({ error: 'Only admins can create admin users' });
