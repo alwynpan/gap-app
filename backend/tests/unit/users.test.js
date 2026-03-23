@@ -222,6 +222,34 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username, email, and password are required' });
     });
 
+    it('rejects when firstName is missing', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { body: { username: 'u1', email: 'u1@test.com', password: 'password123', lastName: 'User' } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'First name and last name are required' });
+    });
+
+    it('rejects when lastName is missing', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { body: { username: 'u1', email: 'u1@test.com', password: 'password123', firstName: 'Test' } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'First name and last name are required' });
+    });
+
     it('rejects when username already exists', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
@@ -236,7 +264,15 @@ describe('Users Routes', () => {
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { username: 'existing', email: 'new@test.com', password: 'password123' } },
+        {
+          body: {
+            username: 'existing',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 
@@ -258,7 +294,15 @@ describe('Users Routes', () => {
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { username: 'newuser', email: 'existing@test.com', password: 'password123' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'existing@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 
@@ -284,7 +328,16 @@ describe('Users Routes', () => {
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { username: 'newuser', email: 'new@test.com', password: 'password123', studentId: 'S123' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+            studentId: 'S123',
+          },
+        },
         mockReply
       );
 
@@ -292,6 +345,8 @@ describe('Users Routes', () => {
         username: 'newuser',
         email: 'new@test.com',
         password: 'password123',
+        firstName: 'Test',
+        lastName: 'User',
         studentId: 'S123',
         groupId: undefined,
         roleId: 'r0000000-0000-0000-0000-000000000003',
@@ -319,7 +374,14 @@ describe('Users Routes', () => {
       await handlers['/users_post'](
         {
           user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          body: { username: 'adminuser', email: 'admin@test.com', password: 'password123', role: 'admin' },
+          body: {
+            username: 'adminuser',
+            email: 'admin@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+            role: 'admin',
+          },
         },
         mockReply
       );
@@ -348,7 +410,14 @@ describe('Users Routes', () => {
       await handlers['/users_post'](
         {
           user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'assignment_manager' },
-          body: { username: 'newuser', email: 'new@test.com', password: 'password123', role: 'user' },
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+            role: 'user',
+          },
         },
         mockReply
       );
@@ -368,7 +437,14 @@ describe('Users Routes', () => {
       await handlers['/users_post'](
         {
           user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'assignment_manager' },
-          body: { username: 'newadmin', email: 'admin@test.com', password: 'password123', role: 'admin' },
+          body: {
+            username: 'newadmin',
+            email: 'admin@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+            role: 'admin',
+          },
         },
         mockReply
       );
@@ -396,7 +472,16 @@ describe('Users Routes', () => {
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { username: 'newuser', email: 'new@test.com', password: 'password123', role: 'unknown' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+            role: 'unknown',
+          },
+        },
         mockReply
       );
 
@@ -426,6 +511,8 @@ describe('Users Routes', () => {
             username: 'newuser',
             email: 'new@test.com',
             password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
             groupId: 'g0000000-0000-0000-0000-000000000001',
           },
         },
@@ -466,6 +553,8 @@ describe('Users Routes', () => {
             username: 'newuser',
             email: 'new@test.com',
             password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
             groupId: 'g0000000-0000-0000-0000-000000000001',
           },
         },
@@ -490,7 +579,15 @@ describe('Users Routes', () => {
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { username: 'newuser', email: 'new@test.com', password: 'password123' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 
