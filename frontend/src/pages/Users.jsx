@@ -175,6 +175,152 @@ function Users() {
     }
   };
 
+  const adminUsers = users.filter((u) => u.role_name === 'admin' || u.role_name === 'assignment_manager');
+  const ungroupedUsers = users.filter((u) => u.role_name === 'user' && !u.group_id);
+  const groupedUsers = users.filter((u) => u.role_name === 'user' && !!u.group_id);
+
+  const renderTable = (sectionUsers, emptyMessage) => (
+    <div className="bg-white shadow overflow-x-auto rounded-lg">
+      <table className="w-full min-w-[900px] divide-y divide-gray-200 table-fixed">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Username
+            </th>
+            <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Name
+            </th>
+            <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Email
+            </th>
+            <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Role
+            </th>
+            <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Current Group
+            </th>
+            <th className="w-[23%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {sectionUsers.map((u) => (
+            <tr key={u.id}>
+              <td className="px-6 py-4 overflow-hidden">
+                <div className="text-sm font-medium text-gray-900 truncate" title={u.username}>
+                  {u.username}
+                </div>
+                {u.student_id && (
+                  <div className="text-sm text-gray-500 truncate" title={u.student_id}>
+                    {u.student_id}
+                  </div>
+                )}
+              </td>
+              <td className="px-6 py-4 overflow-hidden">
+                <div
+                  className="text-sm text-gray-900 truncate"
+                  title={`${u.first_name || ''} ${u.last_name || ''}`.trim()}
+                >
+                  {u.first_name} {u.last_name}
+                </div>
+              </td>
+              <td className="px-6 py-4 overflow-hidden">
+                <div className="text-sm text-gray-900 truncate" title={u.email}>
+                  {u.email}
+                </div>
+              </td>
+              <td className="px-6 py-4">
+                <span
+                  className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full whitespace-nowrap ${
+                    u.role_name === 'admin'
+                      ? 'bg-red-100 text-red-800'
+                      : u.role_name === 'assignment_manager'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-green-100 text-green-800'
+                  }`}
+                >
+                  {formatRoleName(u.role_name)}
+                </span>
+              </td>
+              <td className="px-6 py-4 overflow-hidden">
+                <div className="text-sm text-gray-900 truncate" title={u.group_name || 'Not assigned'}>
+                  {u.group_name || 'Not assigned'}
+                </div>
+              </td>
+              <td className="px-6 py-4 text-sm">
+                {selectedUser === u.id ? (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedGroup}
+                      onChange={(e) => setSelectedGroup(e.target.value)}
+                      className="min-w-0 flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                    >
+                      <option value="">No Group</option>
+                      {groups
+                        .filter((g) => g.max_members === null || g.member_count < g.max_members)
+                        .map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                    </select>
+                    <button onClick={handleAssignGroup} className="text-primary-600 hover:text-primary-800">
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedUser(null);
+                        setSelectedGroup('');
+                      }}
+                      className="text-gray-600 hover:text-gray-800"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-3">
+                    {(isAdmin || user?.id === u.id) && (
+                      <>
+                        <button onClick={() => openEditModal(u)} className="text-primary-600 hover:text-primary-800">
+                          Edit
+                        </button>
+                        <button
+                          onClick={() =>
+                            setPasswordChange({
+                              userId: u.id,
+                              username: u.username,
+                              currentPassword: '',
+                              newPassword: '',
+                              confirmPassword: '',
+                            })
+                          }
+                          className="text-primary-600 hover:text-primary-800"
+                        >
+                          Password
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => setSelectedUser(u.id)} className="text-primary-600 hover:text-primary-800">
+                      Assign Group
+                    </button>
+                  </div>
+                )}
+              </td>
+            </tr>
+          ))}
+          {sectionUsers.length === 0 && (
+            <tr>
+              <td colSpan={6} className="px-6 py-6 text-center text-sm text-gray-500">
+                {emptyMessage}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -217,146 +363,28 @@ function Users() {
             </div>
           )}
 
-          {/* Users Table */}
-          <div className="bg-white shadow overflow-x-auto rounded-lg">
-            <table className="w-full min-w-[900px] divide-y divide-gray-200 table-fixed">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Username
-                  </th>
-                  <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Role
-                  </th>
-                  <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Current Group
-                  </th>
-                  <th className="w-[23%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {users.map((u) => (
-                  <tr key={u.id}>
-                    <td className="px-6 py-4 overflow-hidden">
-                      <div className="text-sm font-medium text-gray-900 truncate" title={u.username}>
-                        {u.username}
-                      </div>
-                      {u.student_id && (
-                        <div className="text-sm text-gray-500 truncate" title={u.student_id}>
-                          {u.student_id}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 overflow-hidden">
-                      <div
-                        className="text-sm text-gray-900 truncate"
-                        title={`${u.first_name || ''} ${u.last_name || ''}`.trim()}
-                      >
-                        {u.first_name} {u.last_name}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 overflow-hidden">
-                      <div className="text-sm text-gray-900 truncate" title={u.email}>
-                        {u.email}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full whitespace-nowrap ${
-                          u.role_name === 'admin'
-                            ? 'bg-red-100 text-red-800'
-                            : u.role_name === 'assignment_manager'
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-green-100 text-green-800'
-                        }`}
-                      >
-                        {formatRoleName(u.role_name)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 overflow-hidden">
-                      <div className="text-sm text-gray-900 truncate" title={u.group_name || 'Not assigned'}>
-                        {u.group_name || 'Not assigned'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {selectedUser === u.id ? (
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={selectedGroup}
-                            onChange={(e) => setSelectedGroup(e.target.value)}
-                            className="min-w-0 flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm"
-                          >
-                            <option value="">No Group</option>
-                            {groups
-                              .filter((g) => g.max_members === null || g.member_count < g.max_members)
-                              .map((g) => (
-                                <option key={g.id} value={g.id}>
-                                  {g.name}
-                                </option>
-                              ))}
-                          </select>
-                          <button onClick={handleAssignGroup} className="text-primary-600 hover:text-primary-800">
-                            Save
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedUser(null);
-                              setSelectedGroup('');
-                            }}
-                            className="text-gray-600 hover:text-gray-800"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center space-x-3">
-                          {(isAdmin || user?.id === u.id) && (
-                            <>
-                              <button
-                                onClick={() => openEditModal(u)}
-                                className="text-primary-600 hover:text-primary-800"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() =>
-                                  setPasswordChange({
-                                    userId: u.id,
-                                    username: u.username,
-                                    currentPassword: '',
-                                    newPassword: '',
-                                    confirmPassword: '',
-                                  })
-                                }
-                                className="text-primary-600 hover:text-primary-800"
-                              >
-                                Password
-                              </button>
-                            </>
-                          )}
-                          <button
-                            onClick={() => setSelectedUser(u.id)}
-                            className="text-primary-600 hover:text-primary-800"
-                          >
-                            Assign Group
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Section 1: Administrators */}
+          <div className="mb-8">
+            <h3 className="text-base font-semibold text-gray-700 mb-2">
+              Administrators <span className="text-sm font-normal text-gray-400">({adminUsers.length})</span>
+            </h3>
+            {renderTable(adminUsers, 'No admin or manager accounts')}
+          </div>
 
-            {users.length === 0 && <div className="text-center px-6 py-8 text-gray-500">No users found</div>}
+          {/* Section 2: Unassigned users */}
+          <div className="mb-8">
+            <h3 className="text-base font-semibold text-gray-700 mb-2">
+              Users without a group <span className="text-sm font-normal text-gray-400">({ungroupedUsers.length})</span>
+            </h3>
+            {renderTable(ungroupedUsers, 'All users are assigned to a group')}
+          </div>
+
+          {/* Section 3: Assigned users */}
+          <div className="mb-8">
+            <h3 className="text-base font-semibold text-gray-700 mb-2">
+              Users in a group <span className="text-sm font-normal text-gray-400">({groupedUsers.length})</span>
+            </h3>
+            {renderTable(groupedUsers, 'No users have been assigned to a group yet')}
           </div>
         </div>
       </main>

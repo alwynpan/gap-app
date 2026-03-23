@@ -18,7 +18,7 @@ describe('Users page', () => {
       email: 'u1@test.com',
       first_name: 'First',
       last_name: 'Last',
-      role_name: 'normal_user',
+      role_name: 'user',
       group_name: null,
       student_id: 's1',
       role_id: 3,
@@ -98,7 +98,7 @@ describe('Users page', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('No users found')).toBeInTheDocument();
+      expect(screen.getByText('No admin or manager accounts')).toBeInTheDocument();
     });
   });
 
