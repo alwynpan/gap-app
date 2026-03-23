@@ -255,6 +255,9 @@ async function groupsRoutes(fastify, _options) {
 
         // Check user is not already in a group
         const user = await User.findById(userId);
+        if (!user) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
         if (user.group_id) {
           return reply.code(400).send({ error: 'You are already in a group. Leave your current group first.' });
         }
@@ -296,6 +299,9 @@ async function groupsRoutes(fastify, _options) {
 
         // Check user is actually in this group
         const user = await User.findById(userId);
+        if (!user) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
         if (user.group_id !== groupId) {
           return reply.code(400).send({ error: 'You are not a member of this group' });
         }
