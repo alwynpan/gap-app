@@ -172,8 +172,8 @@ async function migrate() {
 
     // Insert admin user (look up role by name, not hardcoded ID)
     await client.query(
-      `INSERT INTO users (username, email, password_hash, role_id, enabled)
-       VALUES ($1, $2, $3, (SELECT id FROM roles WHERE name = 'admin'), true)`,
+      `INSERT INTO users (username, email, password_hash, first_name, last_name, role_id, enabled)
+       VALUES ($1, $2, $3, 'Admin', 'User', (SELECT id FROM roles WHERE name = 'admin'), true)`,
       [adminUsername, 'admin@gap.local', passwordHash]
     );
 
@@ -218,8 +218,8 @@ async function migrateUp() {
         const saltRounds = 10;
         const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
         await client.query(
-          `INSERT INTO users (username, email, password_hash, role_id, enabled)
-           VALUES ($1, $2, $3, (SELECT id FROM roles WHERE name = 'admin'), true)
+          `INSERT INTO users (username, email, password_hash, first_name, last_name, role_id, enabled)
+           VALUES ($1, $2, $3, 'Admin', 'User', (SELECT id FROM roles WHERE name = 'admin'), true)
            ON CONFLICT (username) DO NOTHING`,
           [adminUsername, 'admin@gap.local', passwordHash]
         );
