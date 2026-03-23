@@ -8,6 +8,8 @@ describe('Users API E2E Tests', () => {
   let adminToken = null;
   let userToken = null;
   let testUserId = null;
+  // Track all user IDs created during POST /users tests for afterAll cleanup
+  const createdUserIds = [];
 
   beforeAll(async () => {
     await waitForAPI();
@@ -25,6 +27,8 @@ describe('Users API E2E Tests', () => {
       username: userUsername,
       email: `${userUsername}@example.com`,
       password: 'password123',
+      firstName: 'Test',
+      lastName: 'User',
     });
 
     const userResponse = await axios.post(`${API_BASE}/auth/login`, {
@@ -70,12 +74,27 @@ describe('Users API E2E Tests', () => {
           username: uniqueUsername,
           email: `${uniqueUsername}@example.com`,
           password: 'password123',
+          firstName: 'Get',
+          lastName: 'User',
         },
         {
           headers: { Authorization: `Bearer ${adminToken}` },
         }
       );
       newUserId = response.data.user.id;
+    });
+
+    afterEach(async () => {
+      if (newUserId) {
+        try {
+          await axios.delete(`${API_BASE}/users/${newUserId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+          });
+        } catch (_error) {
+          // Ignore if already deleted
+        }
+        newUserId = null;
+      }
     });
 
     it('should allow admin to get user by ID', async () => {
@@ -127,6 +146,8 @@ describe('Users API E2E Tests', () => {
           username: uniqueUsername,
           email: `${uniqueUsername}@example.com`,
           password: 'password123',
+          firstName: 'Created',
+          lastName: 'User',
         },
         {
           headers: { Authorization: `Bearer ${adminToken}` },
@@ -136,6 +157,7 @@ describe('Users API E2E Tests', () => {
       expect(response.status).toBe(201);
       expect(response.data.message).toBe('User created successfully');
       expect(response.data.user.username).toBe(uniqueUsername);
+      createdUserIds.push(response.data.user.id);
     });
 
     it('should allow admin to create user with optional fields', async () => {
@@ -156,21 +178,25 @@ describe('Users API E2E Tests', () => {
       );
 
       expect(response.status).toBe(201);
+      createdUserIds.push(response.data.user.id);
     });
 
     it('should reject creation with existing username', async () => {
       const uniqueUsername = `dup_${Date.now()}`;
-      await axios.post(
+      const createResponse = await axios.post(
         `${API_BASE}/users`,
         {
           username: uniqueUsername,
           email: `${uniqueUsername}@example.com`,
           password: 'password123',
+          firstName: 'Dup',
+          lastName: 'User',
         },
         {
           headers: { Authorization: `Bearer ${adminToken}` },
         }
       );
+      createdUserIds.push(createResponse.data.user.id);
 
       await expect(
         axios.post(
@@ -179,6 +205,8 @@ describe('Users API E2E Tests', () => {
             username: uniqueUsername,
             email: `different_${Date.now()}@example.com`,
             password: 'password123',
+            firstName: 'Dup',
+            lastName: 'User',
           },
           {
             headers: { Authorization: `Bearer ${adminToken}` },
@@ -189,17 +217,20 @@ describe('Users API E2E Tests', () => {
 
     it('should reject creation with existing email', async () => {
       const uniqueUsername = `dupemail_${Date.now()}`;
-      await axios.post(
+      const createResponse = await axios.post(
         `${API_BASE}/users`,
         {
           username: uniqueUsername,
           email: `${uniqueUsername}@example.com`,
           password: 'password123',
+          firstName: 'Dup',
+          lastName: 'Email',
         },
         {
           headers: { Authorization: `Bearer ${adminToken}` },
         }
       );
+      createdUserIds.push(createResponse.data.user.id);
 
       await expect(
         axios.post(
@@ -208,6 +239,8 @@ describe('Users API E2E Tests', () => {
             username: `different_${Date.now()}`,
             email: `${uniqueUsername}@example.com`,
             password: 'password123',
+            firstName: 'Dup',
+            lastName: 'Email',
           },
           {
             headers: { Authorization: `Bearer ${adminToken}` },
@@ -224,6 +257,8 @@ describe('Users API E2E Tests', () => {
             username: 'unauthorized',
             email: 'unauthorized@example.com',
             password: 'password123',
+            firstName: 'Un',
+            lastName: 'Auth',
           },
           {
             headers: { Authorization: `Bearer ${userToken}` },
@@ -238,6 +273,8 @@ describe('Users API E2E Tests', () => {
           username: 'unauth',
           email: 'unauth@example.com',
           password: 'password123',
+          firstName: 'Un',
+          lastName: 'Auth',
         })
       ).rejects.toThrow('401');
     });
@@ -257,8 +294,6 @@ describe('Users API E2E Tests', () => {
     });
 
     it('should reject non-admin from creating admin users', async () => {
-      // First create a regular user (done above), then try to create admin
-      // Actually we need a non-admin user to try this - use userToken
       await expect(
         axios.post(
           `${API_BASE}/users`,
@@ -266,6 +301,8 @@ describe('Users API E2E Tests', () => {
             username: 'admin_attempt',
             email: 'admin_attempt@example.com',
             password: 'password123',
+            firstName: 'Admin',
+            lastName: 'Attempt',
             role: 'admin',
           },
           {
@@ -287,12 +324,27 @@ describe('Users API E2E Tests', () => {
           username: uniqueUsername,
           email: `${uniqueUsername}@example.com`,
           password: 'password123',
+          firstName: 'Edit',
+          lastName: 'User',
         },
         {
           headers: { Authorization: `Bearer ${adminToken}` },
         }
       );
       newUserId = response.data.user.id;
+    });
+
+    afterEach(async () => {
+      if (newUserId) {
+        try {
+          await axios.delete(`${API_BASE}/users/${newUserId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+          });
+        } catch (_error) {
+          // Ignore if already deleted
+        }
+        newUserId = null;
+      }
     });
 
     it('should allow admin to update any user', async () => {
@@ -366,12 +418,27 @@ describe('Users API E2E Tests', () => {
           username: newUsername,
           email: `${newUsername}@example.com`,
           password: 'password123',
+          firstName: 'Pass',
+          lastName: 'User',
         },
         {
           headers: { Authorization: `Bearer ${adminToken}` },
         }
       );
       newUserId = response.data.user.id;
+    });
+
+    afterEach(async () => {
+      if (newUserId) {
+        try {
+          await axios.delete(`${API_BASE}/users/${newUserId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+          });
+        } catch (_error) {
+          // Ignore if already deleted
+        }
+        newUserId = null;
+      }
     });
 
     it('should allow admin to change any user password', async () => {
@@ -416,6 +483,13 @@ describe('Users API E2E Tests', () => {
 
       expect(response.status).toBe(200);
       expect(response.data.message).toBe('Password updated successfully');
+
+      // Reset password for subsequent tests
+      await axios.put(
+        `${API_BASE}/users/${currentUserId}/password`,
+        { newPassword: 'password123' },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
     });
 
     it('should reject users from changing other users passwords', async () => {
@@ -435,22 +509,26 @@ describe('Users API E2E Tests', () => {
     it('should reject password change with weak password', async () => {
       await expect(
         axios.put(
-          `${API_BASE}/users/${testUserId}/password`,
+          `${API_BASE}/users/${newUserId}/password`,
           {
-            currentPassword: 'password123',
             newPassword: '123',
           },
           {
-            headers: { Authorization: `Bearer ${userToken}` },
+            headers: { Authorization: `Bearer ${adminToken}` },
           }
         )
       ).rejects.toThrow('400');
     });
 
     it('should reject non-admin password change without current password', async () => {
+      const currentUserResponse = await axios.get(`${API_BASE}/auth/me`, {
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      const currentUserId = currentUserResponse.data.user.id;
+
       await expect(
         axios.put(
-          `${API_BASE}/users/${testUserId}/password`,
+          `${API_BASE}/users/${currentUserId}/password`,
           {
             newPassword: 'newpass123',
           },
@@ -471,6 +549,8 @@ describe('Users API E2E Tests', () => {
           username: uniqueUsername,
           email: `${uniqueUsername}@example.com`,
           password: 'password123',
+          firstName: 'To',
+          lastName: 'Delete',
         },
         {
           headers: { Authorization: `Bearer ${adminToken}` },
@@ -493,5 +573,20 @@ describe('Users API E2E Tests', () => {
         })
       ).rejects.toThrow('404');
     });
+  });
+
+  afterAll(async () => {
+    // Delete testUserId and any users created in POST /users tests
+    for (const userId of [testUserId, ...createdUserIds]) {
+      if (userId) {
+        try {
+          await axios.delete(`${API_BASE}/users/${userId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+          });
+        } catch (_error) {
+          // Ignore if already deleted
+        }
+      }
+    }
   });
 });

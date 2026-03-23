@@ -9,6 +9,8 @@ describe('Groups API E2E Tests', () => {
   let userToken = null;
   let testGroupId = null;
   let testUserId = null;
+  // Track all group IDs created during POST /groups tests for afterAll cleanup
+  const createdGroupIds = [];
 
   beforeAll(async () => {
     await waitForAPI();
@@ -38,6 +40,8 @@ describe('Groups API E2E Tests', () => {
       username: userUsername,
       email: `${userUsername}@example.com`,
       password: 'password123',
+      firstName: 'Group',
+      lastName: 'User',
     });
 
     const userResponse = await axios.post(`${API_BASE}/auth/login`, {
@@ -132,6 +136,7 @@ describe('Groups API E2E Tests', () => {
       expect(response.status).toBe(201);
       expect(response.data.message).toBe('Group created successfully');
       expect(response.data.group.name).toContain('Created Group');
+      createdGroupIds.push(response.data.group.id);
     });
 
     it('should allow admin to create group with maxMembers', async () => {
@@ -148,6 +153,7 @@ describe('Groups API E2E Tests', () => {
 
       expect(response.status).toBe(201);
       expect(response.data.group.maxMembers).toBe(5);
+      createdGroupIds.push(response.data.group.id);
     });
 
     it('should allow admin to create disabled group', async () => {
@@ -164,6 +170,7 @@ describe('Groups API E2E Tests', () => {
 
       expect(response.status).toBe(201);
       expect(response.data.group.enabled).toBe(false);
+      createdGroupIds.push(response.data.group.id);
     });
 
     it('should reject creation without name', async () => {
@@ -217,13 +224,14 @@ describe('Groups API E2E Tests', () => {
 
     it('should reject duplicate group name (case-insensitive)', async () => {
       const uniqueName = `Unique Group ${Date.now()}`;
-      await axios.post(
+      const firstResponse = await axios.post(
         `${API_BASE}/groups`,
         { name: uniqueName },
         {
           headers: { Authorization: `Bearer ${adminToken}` },
         }
       );
+      createdGroupIds.push(firstResponse.data.group.id);
 
       await expect(
         axios.post(
@@ -327,11 +335,14 @@ describe('Groups API E2E Tests', () => {
     it('should reject updating maxMembers below current member count', async () => {
       // First add a member to the group
       const userUsername = `member_${Date.now()}`;
-      await axios.post(`${API_BASE}/auth/register`, {
+      const registerResponse = await axios.post(`${API_BASE}/auth/register`, {
         username: userUsername,
         email: `${userUsername}@example.com`,
         password: 'password123',
+        firstName: 'Member',
+        lastName: 'User',
       });
+      const memberId = registerResponse.data.user.id;
 
       const userResponse = await axios.post(`${API_BASE}/auth/login`, {
         username: userUsername,
@@ -349,18 +360,29 @@ describe('Groups API E2E Tests', () => {
         }
       );
 
-      // Try to set maxMembers to 0 (below current count of 1)
-      await expect(
-        axios.put(
-          `${API_BASE}/groups/${newGroupId}`,
-          {
-            maxMembers: 0,
-          },
-          {
+      try {
+        // Try to set maxMembers to 0 (below current count of 1)
+        await expect(
+          axios.put(
+            `${API_BASE}/groups/${newGroupId}`,
+            {
+              maxMembers: 0,
+            },
+            {
+              headers: { Authorization: `Bearer ${adminToken}` },
+            }
+          )
+        ).rejects.toThrow('400');
+      } finally {
+        // Clean up the member user
+        try {
+          await axios.delete(`${API_BASE}/users/${memberId || userId}`, {
             headers: { Authorization: `Bearer ${adminToken}` },
-          }
-        )
-      ).rejects.toThrow('400');
+          });
+        } catch (_error) {
+          // Ignore
+        }
+      }
     });
 
     it('should reject non-admin users from updating groups', async () => {
@@ -431,6 +453,8 @@ describe('Groups API E2E Tests', () => {
   });
 
   describe('POST /groups/:id/join', () => {
+    let disabledGroupId = null;
+
     it('should allow user to join an enabled group', async () => {
       const response = await axios.post(
         `${API_BASE}/groups/${testGroupId}/join`,
@@ -478,7 +502,8 @@ describe('Groups API E2E Tests', () => {
           headers: { Authorization: `Bearer ${adminToken}` },
         }
       );
-      const disabledGroupId = disabledResponse.data.group.id;
+      disabledGroupId = disabledResponse.data.group.id;
+      createdGroupIds.push(disabledGroupId);
 
       await expect(
         axios.post(
@@ -569,5 +594,31 @@ describe('Groups API E2E Tests', () => {
         )
       ).rejects.toThrow('404');
     });
+  });
+
+  afterAll(async () => {
+    // Delete test user
+    if (testUserId) {
+      try {
+        await axios.delete(`${API_BASE}/users/${testUserId}`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+      } catch (_error) {
+        // Ignore
+      }
+    }
+
+    // Delete test group and all groups created during POST /groups tests
+    for (const groupId of [testGroupId, ...createdGroupIds]) {
+      if (groupId) {
+        try {
+          await axios.delete(`${API_BASE}/groups/${groupId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+          });
+        } catch (_error) {
+          // Ignore if already deleted
+        }
+      }
+    }
   });
 });
