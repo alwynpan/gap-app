@@ -448,18 +448,21 @@ function Users() {
                         </div>
                       </>
                     )}
-                    <div className="relative group">
-                      <button
-                        onClick={() => setSelectedUser(u.id)}
-                        aria-label="Assign Group"
-                        className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
-                      >
-                        <UserPlus className="h-4 w-4" />
-                      </button>
-                      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        Assign Group
-                      </span>
-                    </div>
+                    {/* Assign Group button only visible for users with role 'user' */}
+                    {u.role_name === 'user' && (
+                      <div className="relative group">
+                        <button
+                          onClick={() => setSelectedUser(u.id)}
+                          aria-label="Assign Group"
+                          className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+                        >
+                          <UserPlus className="h-4 w-4" />
+                        </button>
+                        <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                          Assign Group
+                        </span>
+                      </div>
+                    )}
                     {isAdmin && u.id !== user?.id && (
                       <div className="relative group">
                         <button

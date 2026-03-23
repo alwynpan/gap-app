@@ -332,7 +332,8 @@ function Groups() {
     }
   };
 
-  const availableForGroup = () => allUsers.filter((u) => !groupMembers.some((m) => m.id === u.id));
+  const availableForGroup = () =>
+    allUsers.filter((u) => !groupMembers.some((m) => m.id === u.id) && u.role_name === 'user');
 
   // ── Derived section data ────────────────────────────────────────────────
 
