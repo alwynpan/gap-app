@@ -65,8 +65,8 @@ function Groups() {
   // Set limit modal — single or bulk ({ groupIds: string[], value: string })
   const [limitModal, setLimitModal] = useState(null);
 
-  // Bulk delete confirmation modal
-  const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
+  // Delete confirmation modal — holds the array of groups to delete (single or bulk)
+  const [deleteModal, setDeleteModal] = useState(null);
 
   // Expanded row state
   const [expandedGroup, setExpandedGroup] = useState(null);
@@ -162,25 +162,11 @@ function Groups() {
     }
   };
 
-  const handleDeleteGroup = async (e, groupId) => {
+  const handleDeleteGroup = (e, groupId) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this group?')) {
-      return;
-    }
-    try {
-      await axios.delete(`${API_BASE}/groups/${groupId}`);
-      showSuccess('Group deleted successfully');
-      if (expandedGroup === groupId) {
-        setExpandedGroup(null);
-      }
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(groupId);
-        return next;
-      });
-      fetchGroups();
-    } catch (err) {
-      showError(err.response?.data?.error || 'Failed to delete group');
+    const group = groups.find((g) => g.id === groupId);
+    if (group) {
+      setDeleteModal([group]);
     }
   };
 
@@ -226,7 +212,7 @@ function Groups() {
       await Promise.all(
         Array.from({ length: n }, (_, i) =>
           axios.post(`${API_BASE}/groups`, {
-            name: `${prefix.trim()}${String(i + 1).padStart(String(n).length, '0')}`,
+            name: `${prefix.trim()}${String(i + 1).padStart(n < 10 ? 1 : 2, '0')}`,
           })
         )
       );
@@ -247,27 +233,32 @@ function Groups() {
     if (!prefix.trim() || isNaN(n) || n < 1) {
       return [];
     }
-    const pad = String(n).length;
+    const pad = n < 10 ? 1 : 2;
     return Array.from({ length: n }, (_, i) => `${prefix.trim()}${String(i + 1).padStart(pad, '0')}`);
   };
 
-  // ── Bulk delete ─────────────────────────────────────────────────────────
+  // ── Delete (single or bulk) ──────────────────────────────────────────────
 
   const selectedGroups = groups.filter((g) => selectedIds.has(g.id));
-  const selectedWithMembers = selectedGroups.filter((g) => g.member_count > 0);
+  const deleteModalWithMembers = (deleteModal ?? []).filter((g) => g.member_count > 0);
 
-  const handleBulkDelete = async () => {
+  const handleDeleteConfirmed = async () => {
+    const toDelete = deleteModal;
     try {
-      await Promise.all(selectedGroups.map((g) => axios.delete(`${API_BASE}/groups/${g.id}`)));
-      showSuccess(`Deleted ${selectedGroups.length} group${selectedGroups.length > 1 ? 's' : ''}`);
-      setSelectedIds(new Set());
-      setBulkDeleteModal(false);
-      if (selectedIds.has(expandedGroup)) {
+      await Promise.all(toDelete.map((g) => axios.delete(`${API_BASE}/groups/${g.id}`)));
+      showSuccess(toDelete.length === 1 ? 'Group deleted successfully' : `Deleted ${toDelete.length} groups`);
+      if (toDelete.some((g) => g.id === expandedGroup)) {
         setExpandedGroup(null);
       }
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        toDelete.forEach((g) => next.delete(g.id));
+        return next;
+      });
+      setDeleteModal(null);
       fetchGroups();
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to delete groups');
+      showError(err.response?.data?.error || 'Failed to delete group');
     }
   };
 
@@ -591,7 +582,7 @@ function Groups() {
             <div className="flex items-center gap-2">
               {selectedIds.size > 0 && (
                 <button
-                  onClick={() => setBulkDeleteModal(true)}
+                  onClick={() => setDeleteModal(selectedGroups)}
                   className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -795,21 +786,21 @@ function Groups() {
         </div>
       )}
 
-      {/* Bulk Delete Confirmation Modal */}
-      {bulkDeleteModal && (
+      {/* Delete Confirmation Modal (single or bulk) */}
+      {deleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Delete {selectedGroups.length} group{selectedGroups.length > 1 ? 's' : ''}?
+              Delete {deleteModal.length} group{deleteModal.length > 1 ? 's' : ''}?
             </h3>
-            {selectedWithMembers.length > 0 && (
+            {deleteModalWithMembers.length > 0 && (
               <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
                 <p className="font-medium mb-1">
-                  {selectedWithMembers.length} group{selectedWithMembers.length > 1 ? 's have' : ' has'} members that
-                  will be unassigned:
+                  {deleteModalWithMembers.length} group{deleteModalWithMembers.length > 1 ? 's have' : ' has'} members
+                  that will be unassigned:
                 </p>
                 <ul className="list-disc list-inside space-y-0.5">
-                  {selectedWithMembers.map((g) => (
+                  {deleteModalWithMembers.map((g) => (
                     <li key={g.id}>
                       {g.name}{' '}
                       <span className="text-yellow-600">
@@ -824,17 +815,17 @@ function Groups() {
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => setBulkDeleteModal(false)}
+                onClick={() => setDeleteModal(null)}
                 className="px-4 py-2 text-gray-700 hover:text-gray-900"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleBulkDelete}
+                onClick={handleDeleteConfirmed}
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
               >
-                Delete {selectedGroups.length} group{selectedGroups.length > 1 ? 's' : ''}
+                Delete {deleteModal.length} group{deleteModal.length > 1 ? 's' : ''}
               </button>
             </div>
           </div>
