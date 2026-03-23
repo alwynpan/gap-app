@@ -625,6 +625,43 @@ describe('Groups page', () => {
 
       await waitFor(() => expect(screen.getByText('Add failed')).toBeInTheDocument());
     });
+
+    it('excludes admins and managers from the Add Member dropdown', async () => {
+      const user = userEvent.setup();
+      await setupPage();
+      const adminUser = {
+        id: 'u0000000-0000-0000-0000-000000000020',
+        username: 'adminuser',
+        email: 'admin@test.com',
+        role_name: 'admin',
+      };
+      const managerUser = {
+        id: 'u0000000-0000-0000-0000-000000000021',
+        username: 'manageruser',
+        email: 'mgr@test.com',
+        role_name: 'assignment_manager',
+      };
+      const regularUser = {
+        id: 'u0000000-0000-0000-0000-000000000022',
+        username: 'regularuser',
+        email: 'reg@test.com',
+        role_name: 'user',
+      };
+      // Group has no current members; all three users are "available" by membership,
+      // but only regularUser has role_name === 'user'
+      axios.get
+        .mockResolvedValueOnce({ data: { members: [] } })
+        .mockResolvedValueOnce({ data: { users: [adminUser, managerUser, regularUser] } });
+
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+
+      const options = screen.getAllByRole('option');
+      const optionTexts = options.map((o) => o.textContent);
+      expect(optionTexts.some((t) => t.includes('regularuser'))).toBe(true);
+      expect(optionTexts.every((t) => !t.includes('adminuser'))).toBe(true);
+      expect(optionTexts.every((t) => !t.includes('manageruser'))).toBe(true);
+    });
   });
 
   // ── Row selection ──────────────────────────────────────────────────────

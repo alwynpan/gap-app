@@ -109,12 +109,38 @@ describe('Auth Routes', () => {
       expect(mockReply.code).toHaveBeenCalledWith(400);
     });
 
+    it('rejects when firstName is missing', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/register'](
+        { body: { username: 'test', email: 'test@test.com', password: 'password123', lastName: 'User' } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'First name and last name are required' });
+    });
+
+    it('rejects when lastName is missing', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/register'](
+        { body: { username: 'test', email: 'test@test.com', password: 'password123', firstName: 'Test' } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'First name and last name are required' });
+    });
+
     it('rejects short password (less than 6 chars)', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'test@test.com', password: '12345' } },
+        { body: { username: 'test', email: 'test@test.com', password: '12345', firstName: 'Test', lastName: 'User' } },
         mockReply
       );
 
@@ -127,7 +153,15 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'invalidemail', password: 'password123' } },
+        {
+          body: {
+            username: 'test',
+            email: 'invalidemail',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 
@@ -140,7 +174,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'test@', password: 'password123' } },
+        { body: { username: 'test', email: 'test@', password: 'password123', firstName: 'Test', lastName: 'User' } },
         mockReply
       );
 
@@ -153,7 +187,15 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'test @email.com', password: 'password123' } },
+        {
+          body: {
+            username: 'test',
+            email: 'test @email.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 
@@ -176,7 +218,15 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'valid@example.com', password: 'password123' } },
+        {
+          body: {
+            username: 'test',
+            email: 'valid@example.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 
@@ -195,7 +245,15 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'existing', email: 'new@test.com', password: 'password123' } },
+        {
+          body: {
+            username: 'existing',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 
@@ -214,7 +272,15 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'newuser', email: 'existing@test.com', password: 'password123' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'existing@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 
@@ -237,7 +303,16 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'newuser', email: 'new@test.com', password: 'password123', studentId: 'S123' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+            studentId: 'S123',
+          },
+        },
         mockReply
       );
 
@@ -245,6 +320,8 @@ describe('Auth Routes', () => {
         username: 'newuser',
         email: 'new@test.com',
         password: 'password123',
+        firstName: 'Test',
+        lastName: 'User',
         studentId: 'S123',
         roleId: 'r0000000-0000-0000-0000-000000000003',
       });
@@ -275,7 +352,15 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'newuser', email: 'new@test.com', password: 'password123' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 
@@ -294,7 +379,15 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'newuser', email: 'new@test.com', password: 'password123' } },
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
         mockReply
       );
 

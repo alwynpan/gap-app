@@ -325,6 +325,8 @@ describe('Users page', () => {
       await user.type(screen.getByPlaceholderText('Enter username'), 'newuser');
       await user.type(screen.getByPlaceholderText('Enter email'), 'new@test.com');
       await user.type(screen.getByPlaceholderText('Enter password'), 'password123');
+      await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
+      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
@@ -360,6 +362,8 @@ describe('Users page', () => {
       await user.type(screen.getByPlaceholderText('Enter username'), 'existing');
       await user.type(screen.getByPlaceholderText('Enter email'), 'e@test.com');
       await user.type(screen.getByPlaceholderText('Enter password'), 'password123');
+      await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
+      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
@@ -506,6 +510,44 @@ describe('Users page', () => {
     expect(badgeTexts).toContain('Admin');
     expect(badgeTexts).toContain('Assignment Manager');
     expect(badgeTexts).toContain('User');
+  });
+
+  it('hides Assign Group button for admin-role users', async () => {
+    const adminUser = {
+      ...initialUsers[0],
+      role_name: 'admin',
+    };
+    axios.get
+      .mockResolvedValueOnce({ data: { users: [adminUser] } })
+      .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+    render(
+      <MemoryRouter>
+        <Users />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /assign group/i })).not.toBeInTheDocument();
+  });
+
+  it('hides Assign Group button for assignment_manager-role users', async () => {
+    const managerUser = {
+      ...initialUsers[0],
+      role_name: 'assignment_manager',
+    };
+    axios.get
+      .mockResolvedValueOnce({ data: { users: [managerUser] } })
+      .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+    render(
+      <MemoryRouter>
+        <Users />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /assign group/i })).not.toBeInTheDocument();
   });
 
   it('cancels group assignment inline', async () => {

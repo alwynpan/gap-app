@@ -684,4 +684,18 @@ describe('Dashboard page', () => {
       expect(screen.queryByRole('button', { name: /leave group/i })).not.toBeInTheDocument();
     });
   });
+
+  describe('Quick Actions', () => {
+    it('shows only the Change Password quick action button', () => {
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByRole('button', { name: /change password/i })).toBeInTheDocument();
+      expect(screen.queryByText(/view my progress/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/view assignments/i)).not.toBeInTheDocument();
+    });
+  });
 });
