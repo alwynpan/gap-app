@@ -77,13 +77,17 @@ function Groups() {
   };
 
   const showError = (msg) => {
-    if (errorTimeoutRef.current) {clearTimeout(errorTimeoutRef.current);}
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
     setError(msg);
     errorTimeoutRef.current = setTimeout(() => setError(''), 3000);
   };
 
   const showSuccess = (msg) => {
-    if (successTimeoutRef.current) {clearTimeout(successTimeoutRef.current);}
+    if (successTimeoutRef.current) {
+      clearTimeout(successTimeoutRef.current);
+    }
     setSuccess(msg);
     successTimeoutRef.current = setTimeout(() => setSuccess(''), 3000);
   };
@@ -197,13 +201,15 @@ function Groups() {
     const results = await Promise.allSettled(
       Array.from({ length: n }, (_, i) =>
         axios.post(`${API_BASE}/groups`, {
-          name: `${prefix.trim()}${String(i + 1).padStart(String(n).length, '0')}`,
+          name: `${prefix.trim()}${String(i + 1).padStart(n < 10 ? 1 : 2, '0')}`,
         })
       )
     );
     const succeeded = results.filter((r) => r.status === 'fulfilled').length;
     const failed = results.filter((r) => r.status === 'rejected');
-    if (succeeded > 0) {showSuccess(`Created ${succeeded} group${succeeded !== 1 ? 's' : ''}`);}
+    if (succeeded > 0) {
+      showSuccess(`Created ${succeeded} group${succeeded !== 1 ? 's' : ''}`);
+    }
     if (failed.length > 0) {
       const err = failed[0].reason;
       showError(err?.response?.data?.error || `Failed to create ${failed.length} group(s)`);
@@ -221,7 +227,7 @@ function Groups() {
     if (!prefix.trim() || isNaN(n) || n < 1) {
       return [];
     }
-    const pad = String(n).length;
+    const pad = n < 10 ? 1 : 2;
     return Array.from({ length: n }, (_, i) => `${prefix.trim()}${String(i + 1).padStart(pad, '0')}`);
   };
 
