@@ -367,6 +367,8 @@ describe('Groups page', () => {
         id: 'g0000000-0000-0000-0000-000000000001',
         name: 'Group A',
         enabled: true,
+        member_count: 2,
+        max_members: null,
         created_at: '2025-01-01T00:00:00.000Z',
       },
     ];
@@ -602,6 +604,34 @@ describe('Groups page', () => {
       });
 
       expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    });
+
+    it('hides add member dropdown when group is full', async () => {
+      const user = userEvent.setup();
+      // Override groupsData with a full group (max_members === member_count after fetch)
+      const fullGroupsData = [{ ...groupsData[0], max_members: 2, member_count: 2 }];
+      axios.get.mockResolvedValueOnce({ data: { groups: fullGroupsData } });
+
+      render(
+        <MemoryRouter>
+          <Groups />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => expect(screen.getByText('Group A')).toBeInTheDocument());
+
+      axios.get
+        .mockResolvedValueOnce({
+          data: { group: { id: 'g0000000-0000-0000-0000-000000000001' }, members: membersData },
+        })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      await user.click(screen.getByText('Group A'));
+
+      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+
+      // groupMembers.length (2) === max_members (2), so dropdown must be hidden
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     });
 

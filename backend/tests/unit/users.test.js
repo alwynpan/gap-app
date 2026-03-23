@@ -404,6 +404,78 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid role: unknown' });
     });
 
+    it('rejects creating user in a full group', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Group.findById.mockResolvedValue({
+        id: 'g0000000-0000-0000-0000-000000000001',
+        name: 'Full Group',
+        max_members: 2,
+        member_count: 2,
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            groupId: 'g0000000-0000-0000-0000-000000000001',
+          },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group is full' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('allows creating user in a group with capacity', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Group.findById.mockResolvedValue({
+        id: 'g0000000-0000-0000-0000-000000000001',
+        name: 'Group',
+        max_members: 5,
+        member_count: 4,
+      });
+      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
+      User.create.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'newuser',
+        email: 'new@test.com',
+        student_id: null,
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            groupId: 'g0000000-0000-0000-0000-000000000001',
+          },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+      expect(User.create).toHaveBeenCalled();
+    });
+
     it('handles error when creating user', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
@@ -524,6 +596,8 @@ describe('Users Routes', () => {
       Group.findById.mockResolvedValue({
         id: 'g0000000-0000-0000-0000-000000000002',
         name: 'New Group',
+        max_members: 5,
+        member_count: 3,
       });
       User.updateGroup.mockResolvedValue({
         id: 'u0000000-0000-0000-0000-000000000001',
@@ -577,6 +651,74 @@ describe('Users Routes', () => {
       expect(User.updateGroup).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', null);
     });
 
+    it('rejects assigning user to a full group', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'test',
+      });
+      Group.findById.mockResolvedValue({
+        id: 'g0000000-0000-0000-0000-000000000002',
+        name: 'Full Group',
+        max_members: 2,
+        member_count: 2,
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/group_put'](
+        {
+          params: { id: 'u0000000-0000-0000-0000-000000000001' },
+          body: { groupId: 'g0000000-0000-0000-0000-000000000002' },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group is full' });
+      expect(User.updateGroup).not.toHaveBeenCalled();
+    });
+
+    it('allows assigning user to group with unlimited capacity', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'test',
+      });
+      Group.findById.mockResolvedValue({
+        id: 'g0000000-0000-0000-0000-000000000002',
+        name: 'Unlimited Group',
+        max_members: null,
+        member_count: 999,
+      });
+      User.updateGroup.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'test',
+        group_id: 'g0000000-0000-0000-0000-000000000002',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/group_put'](
+        {
+          params: { id: 'u0000000-0000-0000-0000-000000000001' },
+          body: { groupId: 'g0000000-0000-0000-0000-000000000002' },
+        },
+        mockReply
+      );
+
+      expect(User.updateGroup).toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'User group updated successfully' })
+      );
+    });
+
     it('handles error when updating group', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
@@ -587,6 +729,8 @@ describe('Users Routes', () => {
       Group.findById.mockResolvedValue({
         id: 'g0000000-0000-0000-0000-000000000002',
         name: 'Group',
+        max_members: null,
+        member_count: 0,
       });
       User.updateGroup.mockRejectedValue(new Error('Database error'));
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();

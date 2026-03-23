@@ -102,6 +102,17 @@ async function usersRoutes(fastify, _options) {
           return reply.code(409).send({ error: 'Email already exists' });
         }
 
+        // If a group is specified, verify it exists and has capacity
+        if (groupId) {
+          const group = await Group.findById(groupId);
+          if (!group) {
+            return reply.code(404).send({ error: 'Group not found' });
+          }
+          if (group.max_members !== null && group.member_count >= group.max_members) {
+            return reply.code(400).send({ error: 'Group is full' });
+          }
+        }
+
         // Get role ID by name lookup
         const Role = require('../models/Role');
         const roleRecord = await Role.findByName(role || 'user');
@@ -166,11 +177,14 @@ async function usersRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
-        // If groupId is not null, verify group exists
+        // If groupId is not null, verify group exists and has capacity
         if (groupId !== null) {
           const group = await Group.findById(groupId);
           if (!group) {
             return reply.code(404).send({ error: 'Group not found' });
+          }
+          if (group.max_members !== null && group.member_count >= group.max_members) {
+            return reply.code(400).send({ error: 'Group is full' });
           }
         }
 

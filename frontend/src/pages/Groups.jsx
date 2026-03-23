@@ -302,28 +302,30 @@ function Groups() {
                           </ul>
                         )}
 
-                        {isAssignmentManager && availableUsers.length > 0 && (
-                          <div className="mt-3 flex items-center gap-2 min-w-0">
-                            <select
-                              value={selectedUserId}
-                              onChange={(e) => setSelectedUserId(e.target.value)}
-                              className="min-w-0 flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm"
-                            >
-                              <option value="">Select a user to add</option>
-                              {availableUsers.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.username} ({u.email})
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={handleAddMember}
-                              className="text-sm text-primary-600 hover:text-primary-800 font-medium"
-                            >
-                              Add
-                            </button>
-                          </div>
-                        )}
+                        {isAssignmentManager &&
+                          availableUsers.length > 0 &&
+                          (group.max_members === null || groupMembers.length < group.max_members) && (
+                            <div className="mt-3 flex items-center gap-2 min-w-0">
+                              <select
+                                value={selectedUserId}
+                                onChange={(e) => setSelectedUserId(e.target.value)}
+                                className="min-w-0 flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                              >
+                                <option value="">Select a user to add</option>
+                                {availableUsers.map((u) => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.username} ({u.email})
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={handleAddMember}
+                                className="text-sm text-primary-600 hover:text-primary-800 font-medium"
+                              >
+                                Add
+                              </button>
+                            </div>
+                          )}
                       </>
                     )}
                   </div>

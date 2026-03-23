@@ -25,7 +25,9 @@ describe('Users page', () => {
       enabled: true,
     },
   ];
-  const initialGroups = [{ id: 'g0000000-0000-0000-0000-000000000002', name: 'Group A' }];
+  const initialGroups = [
+    { id: 'g0000000-0000-0000-0000-000000000002', name: 'Group A', max_members: null, member_count: 3 },
+  ];
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -139,6 +141,41 @@ describe('Users page', () => {
     await waitFor(() => {
       expect(screen.queryByText('User group updated successfully')).not.toBeInTheDocument();
     });
+  });
+
+  it('hides full groups from the assign group dropdown', async () => {
+    const user = userEvent.setup();
+    const fullGroup = {
+      id: 'g0000000-0000-0000-0000-000000000003',
+      name: 'Full Group',
+      max_members: 2,
+      member_count: 2,
+    };
+    const openGroup = {
+      id: 'g0000000-0000-0000-0000-000000000004',
+      name: 'Open Group',
+      max_members: 5,
+      member_count: 2,
+    };
+
+    axios.get
+      .mockResolvedValueOnce({ data: { users: initialUsers } })
+      .mockResolvedValueOnce({ data: { groups: [fullGroup, openGroup] } });
+
+    render(
+      <MemoryRouter>
+        <Users />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /assign group/i })).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /assign group/i }));
+
+    const select = screen.getByRole('combobox');
+    expect(select).toBeInTheDocument();
+    expect(select).not.toHaveDisplayValue('Full Group');
+    expect(screen.queryByRole('option', { name: /full group/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /open group/i })).toBeInTheDocument();
   });
 
   it('removes user from group when "No Group" is selected', async () => {

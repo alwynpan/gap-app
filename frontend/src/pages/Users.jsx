@@ -311,11 +311,13 @@ function Users() {
                             className="min-w-0 flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm"
                           >
                             <option value="">No Group</option>
-                            {groups.map((g) => (
-                              <option key={g.id} value={g.id}>
-                                {g.name}
-                              </option>
-                            ))}
+                            {groups
+                              .filter((g) => g.max_members === null || g.member_count < g.max_members)
+                              .map((g) => (
+                                <option key={g.id} value={g.id}>
+                                  {g.name}
+                                </option>
+                              ))}
                           </select>
                           <button onClick={handleAssignGroup} className="text-primary-600 hover:text-primary-800">
                             Save
