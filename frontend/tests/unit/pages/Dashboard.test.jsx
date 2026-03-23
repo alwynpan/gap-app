@@ -234,7 +234,7 @@ describe('Dashboard page', () => {
   });
 
   describe('My Group (normal user)', () => {
-    it('shows current group with leave button when user is in a group', () => {
+    it('shows current group with leave button when user is in a group', async () => {
       useAuth.mockReturnValue({
         user: {
           id: 'u0000000-0000-0000-0000-000000000010',
@@ -250,6 +250,8 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
+      axios.get.mockResolvedValue({ data: { members: [] } });
+
       render(
         <MemoryRouter>
           <Dashboard />
@@ -259,6 +261,75 @@ describe('Dashboard page', () => {
       expect(screen.getByText('My Group')).toBeInTheDocument();
       expect(screen.getAllByText('Team Alpha').length).toBeGreaterThanOrEqual(1);
       expect(screen.getByRole('button', { name: /leave group/i })).toBeInTheDocument();
+    });
+
+    it('fetches and shows group members when user is in a group', async () => {
+      useAuth.mockReturnValue({
+        user: {
+          id: 'u0000000-0000-0000-0000-000000000010',
+          username: 'testuser',
+          email: 'test@example.com',
+          role: 'user',
+          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupName: 'Team Alpha',
+        },
+        logout: mockLogout,
+        refreshUser: mockRefreshUser,
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+
+      axios.get.mockResolvedValue({
+        data: {
+          members: [
+            { id: 'u0000000-0000-0000-0000-000000000010', username: 'testuser', email: 'test@example.com' },
+            { id: 'u0000000-0000-0000-0000-000000000020', username: 'alice', email: 'alice@example.com' },
+          ],
+        },
+      });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Group Members')).toBeInTheDocument();
+        expect(screen.getByText('alice')).toBeInTheDocument();
+        expect(screen.getByText('alice@example.com')).toBeInTheDocument();
+        // current user is marked with (you)
+        expect(screen.getByText('(you)')).toBeInTheDocument();
+      });
+    });
+
+    it('shows no members message when group has no members', async () => {
+      useAuth.mockReturnValue({
+        user: {
+          id: 'u0000000-0000-0000-0000-000000000010',
+          username: 'testuser',
+          email: 'test@example.com',
+          role: 'user',
+          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupName: 'Team Alpha',
+        },
+        logout: mockLogout,
+        refreshUser: mockRefreshUser,
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+
+      axios.get.mockResolvedValue({ data: { members: [] } });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('No members yet')).toBeInTheDocument();
+      });
     });
 
     it('fetches and shows available groups when user has no group', async () => {
@@ -455,6 +526,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
+      axios.get.mockResolvedValue({ data: { members: [] } });
       axios.post.mockResolvedValue({});
 
       render(
@@ -498,6 +570,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
+      axios.get.mockResolvedValue({ data: { members: [] } });
       axios.post.mockRejectedValue({ response: { data: { error: 'Not a member' } } });
 
       render(

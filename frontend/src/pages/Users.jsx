@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Pencil, KeyRound, UserPlus, Check, X } from 'lucide-react';
+import { Pencil, KeyRound, UserPlus, Check, X, Download } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
@@ -174,6 +174,31 @@ function Users() {
       setError(err.response?.data?.error || 'Failed to change password');
       setTimeout(() => setError(''), 3000);
     }
+  };
+
+  const exportToCsv = (exportUsers, filename) => {
+    const csvEscape = (val) => {
+      const str = val === null || val === undefined ? '' : String(val);
+      return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const headers = ['Username', 'First Name', 'Last Name', 'Email', 'Role', 'Group', 'Student ID'];
+    const rows = exportUsers.map((u) => [
+      csvEscape(u.username),
+      csvEscape(u.first_name),
+      csvEscape(u.last_name),
+      csvEscape(u.email),
+      csvEscape(formatRoleName(u.role_name)),
+      csvEscape(u.group_name),
+      csvEscape(u.student_id),
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const adminUsers = users.filter((u) => u.role_name === 'admin' || u.role_name === 'assignment_manager');
@@ -371,14 +396,23 @@ function Users() {
               <h2 className="text-2xl font-bold text-gray-900">Manage Users</h2>
               <p className="text-gray-600 mt-1">Assign users to groups and manage team membership</p>
             </div>
-            {isAssignmentManager && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowCreateModal(true)}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+                onClick={() => exportToCsv(users, 'all-users.csv')}
+                className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
               >
-                + Create User
+                <Download className="h-4 w-4" />
+                Export All
               </button>
-            )}
+              {isAssignmentManager && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+                >
+                  + Create User
+                </button>
+              )}
+            </div>
           </div>
 
           {error && (
@@ -395,25 +429,56 @@ function Users() {
 
           {/* Section 1: Administrators */}
           <div className="mb-8">
-            <h3 className="text-base font-semibold text-gray-700 mb-2">
-              Administrators <span className="text-sm font-normal text-gray-400">({adminUsers.length})</span>
-            </h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-base font-semibold text-gray-700">
+                Administrators <span className="text-sm font-normal text-gray-400">({adminUsers.length})</span>
+              </h3>
+              <button
+                onClick={() => exportToCsv(adminUsers, 'administrators.csv')}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                aria-label="Export Administrators"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </button>
+            </div>
             {renderTable(adminUsers, 'No admin or manager accounts')}
           </div>
 
           {/* Section 2: Unassigned users */}
           <div className="mb-8">
-            <h3 className="text-base font-semibold text-gray-700 mb-2">
-              Users without a group <span className="text-sm font-normal text-gray-400">({ungroupedUsers.length})</span>
-            </h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-base font-semibold text-gray-700">
+                Users without a group{' '}
+                <span className="text-sm font-normal text-gray-400">({ungroupedUsers.length})</span>
+              </h3>
+              <button
+                onClick={() => exportToCsv(ungroupedUsers, 'users-without-group.csv')}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                aria-label="Export Users without a group"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </button>
+            </div>
             {renderTable(ungroupedUsers, 'All users are assigned to a group')}
           </div>
 
           {/* Section 3: Assigned users */}
           <div className="mb-8">
-            <h3 className="text-base font-semibold text-gray-700 mb-2">
-              Users in a group <span className="text-sm font-normal text-gray-400">({groupedUsers.length})</span>
-            </h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-base font-semibold text-gray-700">
+                Users in a group <span className="text-sm font-normal text-gray-400">({groupedUsers.length})</span>
+              </h3>
+              <button
+                onClick={() => exportToCsv(groupedUsers, 'users-in-group.csv')}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                aria-label="Export Users in a group"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </button>
+            </div>
             {renderTable(groupedUsers, 'No users have been assigned to a group yet')}
           </div>
         </div>

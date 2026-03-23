@@ -17,13 +17,31 @@ function Dashboard() {
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [groupError, setGroupError] = useState('');
   const [groupSuccess, setGroupSuccess] = useState('');
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [membersLoading, setMembersLoading] = useState(false);
   const isNormalUser = !isAdmin && !isAssignmentManager;
 
   useEffect(() => {
     if (isNormalUser && !user?.groupId) {
       fetchAvailableGroups();
+      setGroupMembers([]);
+    }
+    if (isNormalUser && user?.groupId) {
+      fetchGroupMembers(user.groupId);
     }
   }, [isNormalUser, user?.groupId]);
+
+  const fetchGroupMembers = async (groupId) => {
+    setMembersLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE}/groups/${groupId}`);
+      setGroupMembers(response.data.members || []);
+    } catch (_err) {
+      // silently ignore — members list is supplementary info
+    } finally {
+      setMembersLoading(false);
+    }
+  };
 
   const fetchAvailableGroups = async () => {
     setGroupsLoading(true);
@@ -188,15 +206,41 @@ function Dashboard() {
                 )}
 
                 {user?.groupId ? (
-                  <div className="flex items-center justify-between bg-primary-50 rounded-md px-4 py-3">
-                    <div>
+                  <div>
+                    <div className="flex items-center justify-between bg-primary-50 rounded-md px-4 py-3 mb-4">
                       <p className="text-sm font-medium text-gray-900">
                         You are in: <span className="text-primary-700">{user.groupName}</span>
                       </p>
+                      <button
+                        onClick={handleLeaveGroup}
+                        className="text-sm text-red-600 hover:text-red-800 font-medium"
+                      >
+                        Leave Group
+                      </button>
                     </div>
-                    <button onClick={handleLeaveGroup} className="text-sm text-red-600 hover:text-red-800 font-medium">
-                      Leave Group
-                    </button>
+
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Group Members</h4>
+                    {membersLoading ? (
+                      <div className="flex justify-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
+                      </div>
+                    ) : groupMembers.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-2">No members yet</p>
+                    ) : (
+                      <ul className="divide-y divide-gray-100 border border-gray-100 rounded-md">
+                        {groupMembers.map((member) => (
+                          <li key={member.id} className="flex items-center gap-3 px-4 py-2">
+                            <div className="min-w-0 flex-1">
+                              <span className="text-sm font-medium text-gray-900">{member.username}</span>
+                              {member.id === user.id && (
+                                <span className="ml-2 text-xs text-primary-600 font-medium">(you)</span>
+                              )}
+                            </div>
+                            <span className="text-sm text-gray-500 truncate">{member.email}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 ) : (
                   <div>

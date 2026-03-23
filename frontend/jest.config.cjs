@@ -1,5 +1,9 @@
 module.exports = {
   testEnvironment: 'jsdom',
+  globals: {
+    __APP_VERSION__: '0.0.0',
+    __GIT_HASH__: 'test',
+  },
   setupFiles: ['<rootDir>/tests/polyfills.js'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
   moduleNameMapper: {

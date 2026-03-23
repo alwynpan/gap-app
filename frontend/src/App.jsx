@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import Footer from './components/Footer.jsx';
 
 // Pages
 import Login from './pages/Login.jsx';
@@ -13,47 +14,52 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+        <div className="min-h-screen flex flex-col">
+          <div className="flex-1">
+            <Routes>
+              {/* Public Routes */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
 
-          {/* Protected Routes */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
+              {/* Protected Routes */}
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
 
-          {/* Admin/Assignment Manager Routes */}
-          <Route
-            path="/users"
-            element={
-              <ProtectedRoute requireAssignmentManager>
-                <Users />
-              </ProtectedRoute>
-            }
-          />
+              {/* Admin/Assignment Manager Routes */}
+              <Route
+                path="/users"
+                element={
+                  <ProtectedRoute requireAssignmentManager>
+                    <Users />
+                  </ProtectedRoute>
+                }
+              />
 
-          {/* Admin Only Routes */}
-          <Route
-            path="/groups"
-            element={
-              <ProtectedRoute requireAdmin>
-                <Groups />
-              </ProtectedRoute>
-            }
-          />
+              {/* Admin Only Routes */}
+              <Route
+                path="/groups"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <Groups />
+                  </ProtectedRoute>
+                }
+              />
 
-          {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              {/* Default redirect */}
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-          {/* 404 - Redirect to dashboard */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+              {/* 404 - Redirect to dashboard */}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </div>
+          <Footer />
+        </div>
       </Router>
     </AuthProvider>
   );

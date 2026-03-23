@@ -875,4 +875,159 @@ describe('Users page', () => {
       });
     });
   });
+
+  describe('CSV Export', () => {
+    const multiUsers = [
+      {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'admin1',
+        first_name: 'Ad',
+        last_name: 'Min',
+        email: 'admin@test.com',
+        role_name: 'admin',
+        group_name: null,
+        student_id: null,
+        role_id: 1,
+        enabled: true,
+      },
+      {
+        id: 'u0000000-0000-0000-0000-000000000002',
+        username: 'nogroup',
+        first_name: 'No',
+        last_name: 'Group',
+        email: 'nogroup@test.com',
+        role_name: 'user',
+        group_name: null,
+        student_id: 's2',
+        group_id: null,
+        role_id: 3,
+        enabled: true,
+      },
+      {
+        id: 'u0000000-0000-0000-0000-000000000003',
+        username: 'grouped',
+        first_name: 'In',
+        last_name: 'Group',
+        email: 'grouped@test.com',
+        role_name: 'user',
+        group_name: 'Team A',
+        student_id: 's3',
+        group_id: 'g0000000-0000-0000-0000-000000000001',
+        role_id: 3,
+        enabled: true,
+      },
+    ];
+
+    let createObjectURL;
+    let revokeObjectURL;
+    let anchorClick;
+
+    const setupRenderedPage = async () => {
+      axios.get
+        .mockResolvedValueOnce({ data: { users: multiUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
+      });
+    };
+
+    beforeEach(() => {
+      createObjectURL = jest.fn(() => 'blob:mock');
+      revokeObjectURL = jest.fn();
+      anchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      global.URL.createObjectURL = createObjectURL;
+      global.URL.revokeObjectURL = revokeObjectURL;
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('shows Export All button', async () => {
+      await setupRenderedPage();
+      expect(screen.getByRole('button', { name: /export all/i })).toBeInTheDocument();
+    });
+
+    it('shows per-section export buttons', async () => {
+      await setupRenderedPage();
+      expect(screen.getByRole('button', { name: /export administrators/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /export users without a group/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /export users in a group/i })).toBeInTheDocument();
+    });
+
+    it('triggers download when Export All is clicked', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /export all/i }));
+
+      expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+      expect(anchorClick).toHaveBeenCalled();
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock');
+    });
+
+    const readBlob = (blob) =>
+      new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.readAsText(blob);
+      });
+
+    it('exports only administrators when section export is clicked', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /export administrators/i }));
+
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      const text = await readBlob(createObjectURL.mock.calls[0][0]);
+      expect(text).toContain('admin1');
+      expect(text).not.toContain('nogroup');
+      expect(text).not.toContain('grouped');
+    });
+
+    it('exports only ungrouped users when section export is clicked', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /export users without a group/i }));
+
+      const text = await readBlob(createObjectURL.mock.calls[0][0]);
+      expect(text).toContain('nogroup');
+      expect(text).not.toContain('admin1');
+      expect(text).not.toContain('grouped');
+    });
+
+    it('exports only grouped users when section export is clicked', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /export users in a group/i }));
+
+      const text = await readBlob(createObjectURL.mock.calls[0][0]);
+      expect(text).toContain('grouped');
+      expect(text).not.toContain('admin1');
+      expect(text).not.toContain('nogroup');
+    });
+
+    it('CSV includes correct headers and data', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /export all/i }));
+
+      const text = await readBlob(createObjectURL.mock.calls[0][0]);
+      const lines = text.split('\n');
+      expect(lines[0]).toBe('Username,First Name,Last Name,Email,Role,Group,Student ID');
+      expect(text).toContain('admin@test.com');
+      expect(text).toContain('Team A');
+    });
+  });
 });
