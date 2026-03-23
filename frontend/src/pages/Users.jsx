@@ -175,13 +175,17 @@ function Users() {
   };
 
   const showSuccess = (msg) => {
-    if (successTimeoutRef.current) {clearTimeout(successTimeoutRef.current);}
+    if (successTimeoutRef.current) {
+      clearTimeout(successTimeoutRef.current);
+    }
     setSuccess(msg);
     successTimeoutRef.current = setTimeout(() => setSuccess(''), 3000);
   };
 
   const showError = (msg) => {
-    if (errorTimeoutRef.current) {clearTimeout(errorTimeoutRef.current);}
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
     setError(msg);
     errorTimeoutRef.current = setTimeout(() => setError(''), 3000);
   };
