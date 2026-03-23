@@ -4,6 +4,7 @@ import { Pencil, KeyRound, UserPlus, Check, X, Download, Trash2 } from 'lucide-r
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
+import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -17,25 +18,6 @@ const emptyNewUser = {
   groupId: '',
   role: 'user',
 };
-
-function IndeterminateCheckbox({ checked, indeterminate, onChange, className, 'aria-label': ariaLabel }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.indeterminate = indeterminate ?? false;
-    }
-  }, [indeterminate]);
-  return (
-    <input
-      ref={ref}
-      type="checkbox"
-      checked={checked}
-      onChange={onChange}
-      aria-label={ariaLabel}
-      className={className}
-    />
-  );
-}
 
 function Users() {
   const { user, isAdmin, isAssignmentManager } = useAuth();
@@ -54,6 +36,9 @@ function Users() {
   // Row selection & delete
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleteModal, setDeleteModal] = useState(null); // User[] | null
+
+  const successTimeoutRef = useRef(null);
+  const errorTimeoutRef = useRef(null);
 
   useEffect(() => {
     fetchData();
@@ -77,12 +62,10 @@ function Users() {
   const handleGroupChange = async (userId, groupId) => {
     try {
       await axios.put(`${API_BASE}/users/${userId}/group`, { groupId });
-      setSuccess('User group updated successfully');
-      setTimeout(() => setSuccess(''), 3000);
+      showSuccess('User group updated successfully');
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to update group');
-      setTimeout(() => setError(''), 3000);
+      showError(err.response?.data?.error || 'Failed to update group');
     }
   };
 
@@ -114,14 +97,12 @@ function Users() {
         groupId: newUser.groupId || undefined,
         role: newUser.role,
       });
-      setSuccess('User created successfully');
+      showSuccess('User created successfully');
       setNewUser({ ...emptyNewUser });
       setShowCreateModal(false);
       fetchData();
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create user');
-      setTimeout(() => setError(''), 3000);
+      showError(err.response?.data?.error || 'Failed to create user');
     }
   };
 
@@ -143,13 +124,11 @@ function Users() {
           enabled: editingUser.enabled,
         }),
       });
-      setSuccess('User updated successfully');
+      showSuccess('User updated successfully');
       setEditingUser(null);
       fetchData();
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to update user');
-      setTimeout(() => setError(''), 3000);
+      showError(err.response?.data?.error || 'Failed to update user');
     }
   };
 
@@ -175,13 +154,11 @@ function Users() {
 
     const { userId, currentPassword, newPassword, confirmPassword } = passwordChange;
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
-      setTimeout(() => setError(''), 3000);
+      showError('New passwords do not match');
       return;
     }
     if (newPassword.length < 6) {
-      setError('New password must be at least 6 characters');
-      setTimeout(() => setError(''), 3000);
+      showError('New password must be at least 6 characters');
       return;
     }
 
@@ -190,23 +167,23 @@ function Users() {
         ...(currentPassword && { currentPassword }),
         newPassword,
       });
-      setSuccess('Password changed successfully');
+      showSuccess('Password changed successfully');
       setPasswordChange(null);
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to change password');
-      setTimeout(() => setError(''), 3000);
+      showError(err.response?.data?.error || 'Failed to change password');
     }
   };
 
   const showSuccess = (msg) => {
+    if (successTimeoutRef.current) {clearTimeout(successTimeoutRef.current);}
     setSuccess(msg);
-    setTimeout(() => setSuccess(''), 3000);
+    successTimeoutRef.current = setTimeout(() => setSuccess(''), 3000);
   };
 
   const showError = (msg) => {
+    if (errorTimeoutRef.current) {clearTimeout(errorTimeoutRef.current);}
     setError(msg);
-    setTimeout(() => setError(''), 3000);
+    errorTimeoutRef.current = setTimeout(() => setError(''), 3000);
   };
 
   // ── Selection helpers ──────────────────────────────────────────────────
@@ -247,19 +224,30 @@ function Users() {
 
   const handleDeleteConfirmed = async () => {
     const toDelete = deleteModal;
-    try {
-      await Promise.all(toDelete.map((u) => axios.delete(`${API_BASE}/users/${u.id}`)));
-      showSuccess(toDelete.length === 1 ? 'User deleted successfully' : `Deleted ${toDelete.length} users`);
+    if (!toDelete || toDelete.length === 0) {
+      setDeleteModal(null);
+      return;
+    }
+    const results = await Promise.allSettled(
+      toDelete.map((u) => axios.delete(`${API_BASE}/users/${u.id}`).then(() => u))
+    );
+    const succeeded = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+    const failed = results.filter((r) => r.status === 'rejected');
+
+    if (succeeded.length > 0) {
+      showSuccess(succeeded.length === 1 ? 'User deleted successfully' : `Deleted ${succeeded.length} users`);
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        toDelete.forEach((u) => next.delete(u.id));
+        succeeded.forEach((u) => next.delete(u.id));
         return next;
       });
-      setDeleteModal(null);
-      fetchData();
-    } catch (err) {
-      showError(err.response?.data?.error || 'Failed to delete user');
     }
+    if (failed.length > 0) {
+      const err = failed[0].reason;
+      showError(err?.response?.data?.error || `Failed to delete ${failed.length} user(s)`);
+    }
+    setDeleteModal(null);
+    fetchData();
   };
 
   const exportToCsv = (exportUsers, filename) => {
@@ -283,8 +271,12 @@ function Users() {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      a.remove();
+      URL.revokeObjectURL(url);
+    }, 0);
   };
 
   const adminUsers = users.filter((u) => u.role_name === 'admin' || u.role_name === 'assignment_manager');

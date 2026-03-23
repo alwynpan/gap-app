@@ -114,14 +114,14 @@ describe('Groups page', () => {
   // ── Action icon buttons ────────────────────────────────────────────────
   it('shows disable, set-limit, and delete icon buttons', async () => {
     await setupPage();
-    expect(screen.getByRole('button', { name: /disable group/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /set member limit/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /delete group/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Disable Group' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Set Member Limit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete Group' })).toBeInTheDocument();
   });
 
   it('shows enable button for a disabled group', async () => {
     await setupPage([makeGroup({ enabled: false })]);
-    expect(screen.getByRole('button', { name: /enable group/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enable Group' })).toBeInTheDocument();
   });
 
   it('disables a group and shows success feedback', async () => {
@@ -131,7 +131,7 @@ describe('Groups page', () => {
     axios.put.mockResolvedValueOnce({});
     axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ enabled: false })] } });
 
-    await user.click(screen.getByRole('button', { name: /disable group/i }));
+    await user.click(screen.getByRole('button', { name: 'Disable Group' }));
 
     await waitFor(() => {
       expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/), {
@@ -150,7 +150,7 @@ describe('Groups page', () => {
     axios.put.mockResolvedValueOnce({});
     axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup()] } });
 
-    await user.click(screen.getByRole('button', { name: /enable group/i }));
+    await user.click(screen.getByRole('button', { name: 'Enable Group' }));
 
     await waitFor(() => {
       expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\//), { enabled: true });
@@ -163,7 +163,7 @@ describe('Groups page', () => {
     await setupPage();
     axios.put.mockRejectedValue({ response: { data: { error: 'Cannot update group' } } });
 
-    await user.click(screen.getByRole('button', { name: /disable group/i }));
+    await user.click(screen.getByRole('button', { name: 'Disable Group' }));
 
     await waitFor(() => expect(screen.getByText('Cannot update group')).toBeInTheDocument());
 
@@ -176,7 +176,7 @@ describe('Groups page', () => {
     const user = userEvent.setup();
     await setupPage();
 
-    await user.click(screen.getByRole('button', { name: /delete group/i }));
+    await user.click(screen.getByRole('button', { name: 'Delete Group' }));
 
     expect(screen.getByText(/delete 1 group\?/i)).toBeInTheDocument();
     expect(screen.getByText('This action cannot be undone.')).toBeInTheDocument();
@@ -186,7 +186,7 @@ describe('Groups page', () => {
     const user = userEvent.setup();
     await setupPage([makeGroup({ member_count: 3 })]);
 
-    await user.click(screen.getByRole('button', { name: /delete group/i }));
+    await user.click(screen.getByRole('button', { name: 'Delete Group' }));
 
     expect(screen.getByText(/will be unassigned/i)).toBeInTheDocument();
     expect(screen.getByText(/3 members/i)).toBeInTheDocument();
@@ -196,7 +196,7 @@ describe('Groups page', () => {
     const user = userEvent.setup();
     await setupPage([makeGroup({ member_count: 0 })]);
 
-    await user.click(screen.getByRole('button', { name: /delete group/i }));
+    await user.click(screen.getByRole('button', { name: 'Delete Group' }));
 
     expect(screen.queryByText(/will be unassigned/i)).not.toBeInTheDocument();
   });
@@ -208,7 +208,7 @@ describe('Groups page', () => {
     axios.delete.mockResolvedValueOnce({});
     axios.get.mockResolvedValueOnce({ data: { groups: [] } });
 
-    await user.click(screen.getByRole('button', { name: /delete group/i }));
+    await user.click(screen.getByRole('button', { name: 'Delete Group' }));
     await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
 
     await waitFor(() => {
@@ -226,7 +226,7 @@ describe('Groups page', () => {
     const user = userEvent.setup();
     await setupPage();
 
-    await user.click(screen.getByRole('button', { name: /delete group/i }));
+    await user.click(screen.getByRole('button', { name: 'Delete Group' }));
     await user.click(screen.getByRole('button', { name: /cancel/i }));
 
     expect(axios.delete).not.toHaveBeenCalled();
@@ -239,7 +239,7 @@ describe('Groups page', () => {
     await setupPage();
     axios.delete.mockRejectedValue({ response: { data: { error: 'Cannot delete' } } });
 
-    await user.click(screen.getByRole('button', { name: /delete group/i }));
+    await user.click(screen.getByRole('button', { name: 'Delete Group' }));
     await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
 
     await waitFor(() => expect(screen.getByText('Cannot delete')).toBeInTheDocument());
@@ -250,7 +250,7 @@ describe('Groups page', () => {
     const user = userEvent.setup();
     await setupPage();
 
-    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    await user.click(screen.getByRole('button', { name: 'Set Member Limit' }));
 
     expect(screen.getByRole('heading', { name: 'Set Member Limit' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Unlimited')).toHaveValue(5);
@@ -262,7 +262,7 @@ describe('Groups page', () => {
     axios.put.mockResolvedValueOnce({});
     axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ max_members: 10 })] } });
 
-    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    await user.click(screen.getByRole('button', { name: 'Set Member Limit' }));
     const input = screen.getByPlaceholderText('Unlimited');
     await user.clear(input);
     await user.type(input, '10');
@@ -282,7 +282,7 @@ describe('Groups page', () => {
     axios.put.mockResolvedValueOnce({});
     axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ max_members: null })] } });
 
-    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    await user.click(screen.getByRole('button', { name: 'Set Member Limit' }));
     await user.clear(screen.getByPlaceholderText('Unlimited'));
     await user.click(screen.getByRole('button', { name: /save/i }));
 
@@ -296,7 +296,7 @@ describe('Groups page', () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     await setupPage();
 
-    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    await user.click(screen.getByRole('button', { name: 'Set Member Limit' }));
     const input = screen.getByPlaceholderText('Unlimited');
     await user.clear(input);
     await user.type(input, '0'); // 0 is rejected since min is 1
@@ -310,7 +310,7 @@ describe('Groups page', () => {
     const user = userEvent.setup();
     await setupPage();
 
-    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    await user.click(screen.getByRole('button', { name: 'Set Member Limit' }));
     expect(screen.getByRole('heading', { name: 'Set Member Limit' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /cancel/i }));
@@ -323,7 +323,7 @@ describe('Groups page', () => {
     await setupPage();
     axios.put.mockRejectedValue({ response: { data: { error: 'Limit too low' } } });
 
-    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    await user.click(screen.getByRole('button', { name: 'Set Member Limit' }));
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => expect(screen.getByText('Limit too low')).toBeInTheDocument());
@@ -899,6 +899,7 @@ describe('Groups page', () => {
       await user.type(countInput, '2');
 
       axios.post.mockRejectedValue({ response: { data: { error: 'Create failed' } } });
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
 
       await user.click(screen.getByRole('button', { name: /create 2 groups/i }));
 

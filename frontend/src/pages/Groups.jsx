@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
 import { Power, Gauge, Trash2, UserMinus, ChevronDown, ChevronRight, Check } from 'lucide-react';
+import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -22,25 +23,6 @@ function IconBtn({ onClick, label, className, children }) {
         {label}
       </span>
     </div>
-  );
-}
-
-function IndeterminateCheckbox({ checked, indeterminate, onChange, className, 'aria-label': ariaLabel }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.indeterminate = indeterminate ?? false;
-    }
-  }, [indeterminate]);
-  return (
-    <input
-      ref={ref}
-      type="checkbox"
-      checked={checked}
-      onChange={onChange}
-      aria-label={ariaLabel}
-      className={className}
-    />
   );
 }
 
@@ -76,6 +58,8 @@ function Groups() {
   const [selectedUserId, setSelectedUserId] = useState('');
 
   const expandedGroupRef = useRef(null);
+  const successTimeoutRef = useRef(null);
+  const errorTimeoutRef = useRef(null);
 
   useEffect(() => {
     fetchGroups();
@@ -93,13 +77,15 @@ function Groups() {
   };
 
   const showError = (msg) => {
+    if (errorTimeoutRef.current) {clearTimeout(errorTimeoutRef.current);}
     setError(msg);
-    setTimeout(() => setError(''), 3000);
+    errorTimeoutRef.current = setTimeout(() => setError(''), 3000);
   };
 
   const showSuccess = (msg) => {
+    if (successTimeoutRef.current) {clearTimeout(successTimeoutRef.current);}
     setSuccess(msg);
-    setTimeout(() => setSuccess(''), 3000);
+    successTimeoutRef.current = setTimeout(() => setSuccess(''), 3000);
   };
 
   // ── Selection helpers ───────────────────────────────────────────────────
@@ -208,20 +194,22 @@ function Groups() {
     if (isNaN(n) || n < 1) {
       return;
     }
-    try {
-      await Promise.all(
-        Array.from({ length: n }, (_, i) =>
-          axios.post(`${API_BASE}/groups`, {
-            name: `${prefix.trim()}${String(i + 1).padStart(n < 10 ? 1 : 2, '0')}`,
-          })
-        )
-      );
-      showSuccess(`Created ${n} groups`);
-      setBulkCreateModal(null);
-      fetchGroups();
-    } catch (err) {
-      showError(err.response?.data?.error || 'Failed to create groups');
+    const results = await Promise.allSettled(
+      Array.from({ length: n }, (_, i) =>
+        axios.post(`${API_BASE}/groups`, {
+          name: `${prefix.trim()}${String(i + 1).padStart(String(n).length, '0')}`,
+        })
+      )
+    );
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (succeeded > 0) {showSuccess(`Created ${succeeded} group${succeeded !== 1 ? 's' : ''}`);}
+    if (failed.length > 0) {
+      const err = failed[0].reason;
+      showError(err?.response?.data?.error || `Failed to create ${failed.length} group(s)`);
     }
+    setBulkCreateModal(null);
+    fetchGroups();
   };
 
   const bulkCreatePreview = () => {
@@ -233,7 +221,7 @@ function Groups() {
     if (!prefix.trim() || isNaN(n) || n < 1) {
       return [];
     }
-    const pad = n < 10 ? 1 : 2;
+    const pad = String(n).length;
     return Array.from({ length: n }, (_, i) => `${prefix.trim()}${String(i + 1).padStart(pad, '0')}`);
   };
 
@@ -375,7 +363,15 @@ function Groups() {
                 key={group.id}
                 onClick={() => handleExpandGroup(group.id)}
                 className={`cursor-pointer hover:bg-gray-50 transition-colors ${!group.enabled ? 'opacity-60' : ''}`}
+                role="button"
+                tabIndex={0}
                 aria-expanded={isExpanded}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                    e.preventDefault();
+                    handleExpandGroup(group.id);
+                  }
+                }}
               >
                 <td className="px-3 py-4" onClick={(e) => e.stopPropagation()}>
                   <input

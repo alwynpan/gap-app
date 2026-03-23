@@ -1,9 +1,8 @@
 import { Github } from 'lucide-react';
 
-/* eslint-disable no-undef */
+/* global __APP_VERSION__, __GIT_HASH__ */
 const version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 const gitHash = typeof __GIT_HASH__ !== 'undefined' ? __GIT_HASH__ : 'dev';
-/* eslint-enable no-undef */
 
 function Footer() {
   return (

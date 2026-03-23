@@ -33,6 +33,7 @@ function Dashboard() {
 
   const fetchGroupMembers = async (groupId) => {
     setMembersLoading(true);
+    setGroupMembers([]);
     try {
       const response = await axios.get(`${API_BASE}/groups/${groupId}`);
       setGroupMembers(response.data.members || []);

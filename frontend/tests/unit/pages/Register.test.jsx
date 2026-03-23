@@ -56,6 +56,8 @@ describe('Register page', () => {
 
     await user.type(screen.getByLabelText(/username/i), 'mismatch');
     await user.type(screen.getByLabelText(/email/i), 'mismatch@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'Test');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
     await user.type(screen.getByLabelText(/^password$/i), 'password123');
     await user.type(screen.getByLabelText(/confirm password/i), 'different123');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -75,6 +77,8 @@ describe('Register page', () => {
 
     await user.type(screen.getByLabelText(/username/i), 'shortpass');
     await user.type(screen.getByLabelText(/email/i), 'short@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'Test');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
     await user.type(screen.getByLabelText(/^password$/i), '12345');
     await user.type(screen.getByLabelText(/confirm password/i), '12345');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -95,6 +99,8 @@ describe('Register page', () => {
 
     await user.type(screen.getByLabelText(/username/i), 'newuser');
     await user.type(screen.getByLabelText(/email/i), 'new@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'New');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
     await user.type(screen.getByLabelText(/^password$/i), 'password123');
     await user.type(screen.getByLabelText(/confirm password/i), 'password123');
     await user.type(screen.getByLabelText(/student id/i), 's001');
@@ -102,8 +108,8 @@ describe('Register page', () => {
 
     await waitFor(() => {
       expect(mockRegister).toHaveBeenCalledWith('newuser', 'new@example.com', 'password123', {
-        firstName: undefined,
-        lastName: undefined,
+        firstName: 'New',
+        lastName: 'User',
         studentId: 's001',
       });
     });
@@ -121,14 +127,16 @@ describe('Register page', () => {
 
     await user.type(screen.getByLabelText(/username/i), 'nostudent');
     await user.type(screen.getByLabelText(/email/i), 'nostudent@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'No');
+    await user.type(screen.getByLabelText(/last name/i), 'Student');
     await user.type(screen.getByLabelText(/^password$/i), 'password123');
     await user.type(screen.getByLabelText(/confirm password/i), 'password123');
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() => {
       expect(mockRegister).toHaveBeenCalledWith('nostudent', 'nostudent@example.com', 'password123', {
-        firstName: undefined,
-        lastName: undefined,
+        firstName: 'No',
+        lastName: 'Student',
         studentId: undefined,
       });
     });
@@ -146,6 +154,8 @@ describe('Register page', () => {
 
     await user.type(screen.getByLabelText(/username/i), 'existing');
     await user.type(screen.getByLabelText(/email/i), 'existing@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'Existing');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
     await user.type(screen.getByLabelText(/^password$/i), 'password123');
     await user.type(screen.getByLabelText(/confirm password/i), 'password123');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -168,6 +178,8 @@ describe('Register page', () => {
 
     await user.type(screen.getByLabelText(/username/i), 'newuser');
     await user.type(screen.getByLabelText(/email/i), 'new@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'New');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
     await user.type(screen.getByLabelText(/^password$/i), 'password123');
     await user.type(screen.getByLabelText(/confirm password/i), 'password123');
     await user.click(screen.getByRole('button', { name: /create account/i }));
