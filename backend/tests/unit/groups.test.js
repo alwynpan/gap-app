@@ -715,6 +715,28 @@ describe('Groups Routes', () => {
       expect(reply.send).toHaveBeenCalledWith({ error: 'Group not found' });
     });
 
+    it('returns 404 when user not found', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue({
+        id: 'g0000000-0000-0000-0000-000000000001',
+        name: 'Team A',
+        enabled: true,
+        max_members: null,
+        member_count: 0,
+      });
+      User.findById.mockResolvedValue(undefined);
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000099' },
+          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
+    });
+
     it('rejects joining a disabled group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
@@ -851,6 +873,26 @@ describe('Groups Routes', () => {
       );
       expect(reply.code).toHaveBeenCalledWith(404);
       expect(reply.send).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
+    it('returns 404 when user not found', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue({
+        id: 'g0000000-0000-0000-0000-000000000001',
+        name: 'Team A',
+        enabled: true,
+      });
+      User.findById.mockResolvedValue(undefined);
+      const reply = mockReply();
+      await handlers['/groups/:id/leave_post'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000099' },
+          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
     });
 
     it('rejects when user is not in this group', async () => {
