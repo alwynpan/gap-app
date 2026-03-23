@@ -1,14 +1,20 @@
 const axios = require('axios');
 const { API_BASE, waitForAPI } = require('./api');
 
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change_this_in_production';
+
 describe('Authentication E2E Tests', () => {
   let authToken = null;
   let testUserId = null;
+  let fullUserId = null;
 
   const testUser = {
     username: `testuser_${Date.now()}`,
     email: `test_${Date.now()}@example.com`,
     password: 'testpass123',
+    firstName: 'Test',
+    lastName: 'User',
     studentId: `STU_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
   };
 
@@ -19,12 +25,12 @@ describe('Authentication E2E Tests', () => {
   describe('POST /auth/register', () => {
     it('should register a new user successfully', async () => {
       const response = await axios.post(`${API_BASE}/auth/register`, testUser);
-      
+
       expect(response.status).toBe(201);
       expect(response.data.message).toBe('User registered successfully');
       expect(response.data.user.username).toBe(testUser.username);
       expect(response.data.user.email).toBe(testUser.email);
-      
+
       testUserId = response.data.user.id;
     });
 
@@ -106,6 +112,7 @@ describe('Authentication E2E Tests', () => {
 
       expect(response.status).toBe(201);
       expect(response.data.user.studentId).toBe(`STU${uniqueId}`);
+      fullUserId = response.data.user.id;
     });
   });
 
@@ -201,7 +208,7 @@ describe('Authentication E2E Tests', () => {
         username: testUser.username,
         password: testUser.password,
       });
-      
+
       const token = loginResponse.data.token;
 
       const response = await axios.get(`${API_BASE}/auth/me`, {
@@ -236,7 +243,7 @@ describe('Authentication E2E Tests', () => {
         username: testUser.username,
         password: testUser.password,
       });
-      
+
       const token = loginResponse.data.token;
 
       const response = await axios.get(`${API_BASE}/auth/me`, {
@@ -259,7 +266,26 @@ describe('Authentication E2E Tests', () => {
   });
 
   afterAll(async () => {
-    // Cleanup: In a real scenario, you might want to delete the test user
-    // For now, we'll leave it as the database is ephemeral in tests
+    try {
+      const adminResponse = await axios.post(`${API_BASE}/auth/login`, {
+        username: ADMIN_USERNAME,
+        password: ADMIN_PASSWORD,
+      });
+      const adminToken = adminResponse.data.token;
+
+      for (const userId of [testUserId, fullUserId]) {
+        if (userId) {
+          try {
+            await axios.delete(`${API_BASE}/users/${userId}`, {
+              headers: { Authorization: `Bearer ${adminToken}` },
+            });
+          } catch (_error) {
+            // Ignore if already deleted
+          }
+        }
+      }
+    } catch (_error) {
+      // Ignore cleanup errors
+    }
   });
 });

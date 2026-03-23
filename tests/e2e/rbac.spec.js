@@ -8,6 +8,11 @@ describe('RBAC E2E Tests', () => {
   let adminToken = null;
   let userToken = null;
   let testGroupId = null;
+  let regularUserId = null;
+  let amUserId = null;
+  // Track all user/group IDs created during inline tests for afterAll cleanup
+  const createdUserIds = [];
+  const createdGroupIds = [];
 
   beforeAll(async () => {
     await waitForAPI();
@@ -31,17 +36,17 @@ describe('RBAC E2E Tests', () => {
       console.warn('Admin setup failed - may need to run migrations first');
     }
 
-    // Create and login as assignment manager
+    // Create assignment manager user (for later use if needed)
     try {
       const amUsername = `am_${Date.now()}`;
-      await axios.post(`${API_BASE}/auth/register`, {
+      const amResponse = await axios.post(`${API_BASE}/auth/register`, {
         username: amUsername,
         email: `${amUsername}@example.com`,
         password: 'password123',
+        firstName: 'Assignment',
+        lastName: 'Manager',
       });
-
-      // Admin updates role to assignment_manager (would need admin API for this)
-      // For now, we'll skip assignment manager tests if setup fails
+      amUserId = amResponse.data.user.id;
     } catch (error) {
       console.warn('Assignment manager setup failed');
     }
@@ -49,11 +54,14 @@ describe('RBAC E2E Tests', () => {
     // Create and login as regular user
     try {
       const userUsername = `user_${Date.now()}`;
-      await axios.post(`${API_BASE}/auth/register`, {
+      const userRegResponse = await axios.post(`${API_BASE}/auth/register`, {
         username: userUsername,
         email: `${userUsername}@example.com`,
         password: 'password123',
+        firstName: 'Regular',
+        lastName: 'User',
       });
+      regularUserId = userRegResponse.data.user.id;
 
       const userResponse = await axios.post(`${API_BASE}/auth/login`, {
         username: userUsername,
@@ -92,6 +100,7 @@ describe('RBAC E2E Tests', () => {
 
       expect(response.status).toBe(201);
       expect(response.data.group.name).toContain('Admin Created Group');
+      createdGroupIds.push(response.data.group.id);
     });
 
     it('should reject non-admin users from creating groups', async () => {
@@ -142,8 +151,23 @@ describe('RBAC E2E Tests', () => {
         username: uniqueUsername,
         email: `${uniqueUsername}@example.com`,
         password: 'password123',
+        firstName: 'Test',
+        lastName: 'User',
       });
       testUserId = response.data.user.id;
+    });
+
+    afterEach(async () => {
+      if (testUserId) {
+        try {
+          await axios.delete(`${API_BASE}/users/${testUserId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+          });
+        } catch (_error) {
+          // Ignore if already deleted
+        }
+        testUserId = null;
+      }
     });
 
     it('should allow admin to assign user to group', async () => {
@@ -216,6 +240,8 @@ describe('RBAC E2E Tests', () => {
           username: uniqueUsername,
           email: `${uniqueUsername}@example.com`,
           password: 'password123',
+          firstName: 'Admin',
+          lastName: 'Created',
         },
         {
           headers: { Authorization: `Bearer ${adminToken}` },
@@ -224,6 +250,7 @@ describe('RBAC E2E Tests', () => {
 
       expect(response.status).toBe(201);
       expect(response.data.user.username).toBe(uniqueUsername);
+      createdUserIds.push(response.data.user.id);
     });
 
     it('should reject non-admin users from creating users', async () => {
@@ -234,6 +261,8 @@ describe('RBAC E2E Tests', () => {
             username: 'unauthorized',
             email: 'unauthorized@example.com',
             password: 'password123',
+            firstName: 'Un',
+            lastName: 'Auth',
           },
           {
             headers: { Authorization: `Bearer ${userToken}` },
@@ -253,8 +282,24 @@ describe('RBAC E2E Tests', () => {
         username: uniqueUsername,
         email: `${uniqueUsername}@example.com`,
         password: 'password123',
+        firstName: 'Delete',
+        lastName: 'Test',
       });
       testUserId = response.data.user.id;
+    });
+
+    afterEach(async () => {
+      // If the user wasn't deleted by the test, clean up
+      if (testUserId) {
+        try {
+          await axios.delete(`${API_BASE}/users/${testUserId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+          });
+        } catch (_error) {
+          // Ignore if already deleted by the test
+        }
+        testUserId = null;
+      }
     });
 
     it('should allow admin to delete users', async () => {
@@ -267,6 +312,7 @@ describe('RBAC E2E Tests', () => {
 
       expect(response.status).toBe(200);
       expect(response.data.message).toBe('User deleted successfully');
+      testUserId = null; // Already deleted, skip afterEach cleanup
     });
 
     it('should prevent users from deleting their own account', async () => {
@@ -316,6 +362,30 @@ describe('RBAC E2E Tests', () => {
   });
 
   afterAll(async () => {
-    // Cleanup could be implemented here
+    // Delete test group and any groups created during inline tests
+    for (const groupId of [testGroupId, ...createdGroupIds]) {
+      if (groupId) {
+        try {
+          await axios.delete(`${API_BASE}/groups/${groupId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+          });
+        } catch (_error) {
+          // Ignore if already deleted
+        }
+      }
+    }
+
+    // Delete regular user, assignment manager user, and any users created during inline tests
+    for (const userId of [regularUserId, amUserId, ...createdUserIds]) {
+      if (userId) {
+        try {
+          await axios.delete(`${API_BASE}/users/${userId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+          });
+        } catch (_error) {
+          // Ignore if already deleted
+        }
+      }
+    }
   });
 });
