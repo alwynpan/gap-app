@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Pencil, KeyRound, UserPlus, Check, X, Download } from 'lucide-react';
+import { Pencil, KeyRound, UserPlus, Check, X, Download, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
@@ -18,6 +18,25 @@ const emptyNewUser = {
   role: 'user',
 };
 
+function IndeterminateCheckbox({ checked, indeterminate, onChange, className, 'aria-label': ariaLabel }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = indeterminate ?? false;
+    }
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      aria-label={ariaLabel}
+      className={className}
+    />
+  );
+}
+
 function Users() {
   const { user, isAdmin, isAssignmentManager } = useAuth();
   const [users, setUsers] = useState([]);
@@ -31,6 +50,10 @@ function Users() {
   const [newUser, setNewUser] = useState({ ...emptyNewUser });
   const [editingUser, setEditingUser] = useState(null);
   const [passwordChange, setPasswordChange] = useState(null);
+
+  // Row selection & delete
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deleteModal, setDeleteModal] = useState(null); // User[] | null
 
   useEffect(() => {
     fetchData();
@@ -176,6 +199,69 @@ function Users() {
     }
   };
 
+  const showSuccess = (msg) => {
+    setSuccess(msg);
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const showError = (msg) => {
+    setError(msg);
+    setTimeout(() => setError(''), 3000);
+  };
+
+  // ── Selection helpers ──────────────────────────────────────────────────
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSectionAll = (sectionUsers, allSelected) => {
+    const selectable = sectionUsers.filter((u) => u.id !== user?.id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        selectable.forEach((u) => next.delete(u.id));
+      } else {
+        selectable.forEach((u) => next.add(u.id));
+      }
+      return next;
+    });
+  };
+
+  // ── Delete ─────────────────────────────────────────────────────────────
+
+  const handleDeleteUser = (userId) => {
+    const u = users.find((u2) => u2.id === userId);
+    if (u) {
+      setDeleteModal([u]);
+    }
+  };
+
+  const handleDeleteConfirmed = async () => {
+    const toDelete = deleteModal;
+    try {
+      await Promise.all(toDelete.map((u) => axios.delete(`${API_BASE}/users/${u.id}`)));
+      showSuccess(toDelete.length === 1 ? 'User deleted successfully' : `Deleted ${toDelete.length} users`);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        toDelete.forEach((u) => next.delete(u.id));
+        return next;
+      });
+      setDeleteModal(null);
+      fetchData();
+    } catch (err) {
+      showError(err.response?.data?.error || 'Failed to delete user');
+    }
+  };
+
   const exportToCsv = (exportUsers, filename) => {
     const csvEscape = (val) => {
       const str = val === null || val === undefined ? '' : String(val);
@@ -205,27 +291,31 @@ function Users() {
   const ungroupedUsers = users.filter((u) => u.role_name === 'user' && !u.group_id);
   const groupedUsers = users.filter((u) => u.role_name === 'user' && !!u.group_id);
 
+  const selectedUsers = users.filter((u) => selectedIds.has(u.id));
+  const deleteModalWithGroup = (deleteModal ?? []).filter((u) => !!u.group_id);
+
   const renderTable = (sectionUsers, emptyMessage) => (
     <div className="bg-white shadow overflow-x-auto rounded-lg">
       <table className="w-full min-w-[700px] divide-y divide-gray-200 table-fixed">
         <thead className="bg-gray-50">
           <tr>
-            <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-8 px-3 py-3" />
+            <th className="w-[19%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Username
             </th>
-            <th className="w-[13%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Name
             </th>
-            <th className="w-[22%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[21%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Email
             </th>
-            <th className="w-[13%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Role
             </th>
-            <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Current Group
             </th>
-            <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[14%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Actions
             </th>
           </tr>
@@ -233,6 +323,17 @@ function Users() {
         <tbody className="bg-white divide-y divide-gray-200">
           {sectionUsers.map((u) => (
             <tr key={u.id}>
+              <td className="px-3 py-4">
+                {isAdmin && u.id !== user?.id && (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(u.id)}
+                    onChange={() => toggleSelect(u.id)}
+                    aria-label={`Select ${u.username}`}
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                )}
+              </td>
               <td className="px-6 py-4 overflow-hidden">
                 <div className="text-sm font-medium text-gray-900 truncate" title={u.username}>
                   {u.username}
@@ -359,6 +460,20 @@ function Users() {
                         Assign Group
                       </span>
                     </div>
+                    {isAdmin && u.id !== user?.id && (
+                      <div className="relative group">
+                        <button
+                          onClick={() => handleDeleteUser(u.id)}
+                          aria-label="Delete User"
+                          className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                          Delete User
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </td>
@@ -366,7 +481,7 @@ function Users() {
           ))}
           {sectionUsers.length === 0 && (
             <tr>
-              <td colSpan={6} className="px-6 py-6 text-center text-sm text-gray-500">
+              <td colSpan={7} className="px-6 py-6 text-center text-sm text-gray-500">
                 {emptyMessage}
               </td>
             </tr>
@@ -375,6 +490,43 @@ function Users() {
       </table>
     </div>
   );
+
+  const renderSection = (title, sectionUsers, emptyMessage, exportFn, exportLabel) => {
+    const selectable = sectionUsers.filter((u) => u.id !== user?.id);
+    const allSelected = selectable.length > 0 && selectable.every((u) => selectedIds.has(u.id));
+    const someSelected = !allSelected && selectable.some((u) => selectedIds.has(u.id));
+    return (
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            {isAdmin && selectable.length > 0 && (
+              <IndeterminateCheckbox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onChange={() => toggleSectionAll(sectionUsers, allSelected)}
+                aria-label={`Select all ${title}`}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+            )}
+            <h3 className="text-base font-semibold text-gray-700">
+              {title} <span className="text-sm font-normal text-gray-400">({sectionUsers.length})</span>
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportFn}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600 transition-colors"
+              aria-label={exportLabel}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </button>
+          </div>
+        </div>
+        {renderTable(sectionUsers, emptyMessage)}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -397,6 +549,15 @@ function Users() {
               <p className="text-gray-600 mt-1">Assign users to groups and manage team membership</p>
             </div>
             <div className="flex items-center gap-2">
+              {isAdmin && selectedIds.size > 0 && (
+                <button
+                  onClick={() => setDeleteModal(selectedUsers)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete ({selectedIds.size})
+                </button>
+              )}
               <button
                 onClick={() => exportToCsv(users, 'all-users.csv')}
                 className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
@@ -428,59 +589,31 @@ function Users() {
           )}
 
           {/* Section 1: Administrators */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-semibold text-gray-700">
-                Administrators <span className="text-sm font-normal text-gray-400">({adminUsers.length})</span>
-              </h3>
-              <button
-                onClick={() => exportToCsv(adminUsers, 'administrators.csv')}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600 transition-colors"
-                aria-label="Export Administrators"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Export
-              </button>
-            </div>
-            {renderTable(adminUsers, 'No admin or manager accounts')}
-          </div>
+          {renderSection(
+            'Administrators',
+            adminUsers,
+            'No admin or manager accounts',
+            () => exportToCsv(adminUsers, 'administrators.csv'),
+            'Export Administrators'
+          )}
 
           {/* Section 2: Unassigned users */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-semibold text-gray-700">
-                Users without a group{' '}
-                <span className="text-sm font-normal text-gray-400">({ungroupedUsers.length})</span>
-              </h3>
-              <button
-                onClick={() => exportToCsv(ungroupedUsers, 'users-without-group.csv')}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600 transition-colors"
-                aria-label="Export Users without a group"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Export
-              </button>
-            </div>
-            {renderTable(ungroupedUsers, 'All users are assigned to a group')}
-          </div>
+          {renderSection(
+            'Users without a group',
+            ungroupedUsers,
+            'All users are assigned to a group',
+            () => exportToCsv(ungroupedUsers, 'users-without-group.csv'),
+            'Export Users without a group'
+          )}
 
           {/* Section 3: Assigned users */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-semibold text-gray-700">
-                Users in a group <span className="text-sm font-normal text-gray-400">({groupedUsers.length})</span>
-              </h3>
-              <button
-                onClick={() => exportToCsv(groupedUsers, 'users-in-group.csv')}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600 transition-colors"
-                aria-label="Export Users in a group"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Export
-              </button>
-            </div>
-            {renderTable(groupedUsers, 'No users have been assigned to a group yet')}
-          </div>
+          {renderSection(
+            'Users in a group',
+            groupedUsers,
+            'No users have been assigned to a group yet',
+            () => exportToCsv(groupedUsers, 'users-in-group.csv'),
+            'Export Users in a group'
+          )}
         </div>
       </main>
 
@@ -677,6 +810,7 @@ function Users() {
                         type="checkbox"
                         checked={editingUser.enabled}
                         onChange={(e) => setEditingUser({ ...editingUser, enabled: e.target.checked })}
+                        aria-label="Enabled"
                         className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                       />
                       <span className="text-sm font-medium text-gray-700">Enabled</span>
@@ -700,6 +834,49 @@ function Users() {
           </div>
         </div>
       )}
+      {/* Delete Confirmation Modal (single or bulk) */}
+      {deleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">
+              Delete {deleteModal.length} user{deleteModal.length > 1 ? 's' : ''}?
+            </h3>
+            {deleteModalWithGroup.length > 0 && (
+              <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
+                <p className="font-medium mb-1">
+                  {deleteModalWithGroup.length} user{deleteModalWithGroup.length > 1 ? 's are' : ' is'} in a group and
+                  will be unassigned:
+                </p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  {deleteModalWithGroup.map((u) => (
+                    <li key={u.id}>
+                      {u.username} <span className="text-yellow-600">({u.group_name})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className="text-sm text-gray-600 mb-4">This action cannot be undone.</p>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setDeleteModal(null)}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirmed}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Delete {deleteModal.length} user{deleteModal.length > 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Change Password Modal */}
       {passwordChange && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
