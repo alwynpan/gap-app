@@ -300,12 +300,6 @@ function Dashboard() {
                 >
                   🔒 Change Password
                 </button>
-                <button className="block w-full text-left px-4 py-2 bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors">
-                  📊 View My Progress
-                </button>
-                <button className="block w-full text-left px-4 py-2 bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors">
-                  📝 View Assignments
-                </button>
               </div>
             </div>
           </div>
