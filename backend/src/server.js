@@ -26,6 +26,7 @@ async function buildServer() {
   await fastify.register(cors, {
     origin: config.cors.origin,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   });
 
   // Register rate limiting (enables per-route rateLimit config)

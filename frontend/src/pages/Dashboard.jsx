@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Link } from 'react-router-dom';
@@ -8,11 +8,63 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const formatRoleName = (role) => (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Dashboard() {
-  const { user, logout, isAdmin, isAssignmentManager } = useAuth();
+  const { user, logout, isAdmin, isAssignmentManager, refreshUser } = useAuth();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [availableGroups, setAvailableGroups] = useState([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [groupError, setGroupError] = useState('');
+  const [groupSuccess, setGroupSuccess] = useState('');
+  const isNormalUser = !isAdmin && !isAssignmentManager;
+
+  useEffect(() => {
+    if (isNormalUser && !user?.groupId) {
+      fetchAvailableGroups();
+    }
+  }, [isNormalUser, user?.groupId]);
+
+  const fetchAvailableGroups = async () => {
+    setGroupsLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE}/groups/enabled`);
+      const groups = response.data.groups || [];
+      setAvailableGroups(groups.filter((g) => g.max_members === null || g.member_count < g.max_members));
+    } catch (_err) {
+      setGroupError('Failed to load available groups');
+      setTimeout(() => setGroupError(''), 3000);
+    } finally {
+      setGroupsLoading(false);
+    }
+  };
+
+  const handleJoinGroup = async (groupId) => {
+    try {
+      await axios.post(`${API_BASE}/groups/${groupId}/join`);
+      setGroupSuccess('Successfully joined group');
+      await refreshUser();
+      setTimeout(() => setGroupSuccess(''), 3000);
+    } catch (err) {
+      setGroupError(err.response?.data?.error || 'Failed to join group');
+      setTimeout(() => setGroupError(''), 3000);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!user?.groupId) {
+      return;
+    }
+    try {
+      await axios.post(`${API_BASE}/groups/${user.groupId}/leave`);
+      setGroupSuccess('Successfully left group');
+      await refreshUser();
+      setTimeout(() => setGroupSuccess(''), 3000);
+    } catch (err) {
+      setGroupError(err.response?.data?.error || 'Failed to leave group');
+      setTimeout(() => setGroupError(''), 3000);
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -134,6 +186,76 @@ function Dashboard() {
                     </Link>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Normal User Group Section */}
+          {isNormalUser && (
+            <div className="bg-white overflow-hidden shadow rounded-lg mb-6">
+              <div className="px-4 py-5 sm:p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">My Group</h3>
+
+                {groupError && (
+                  <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-md text-sm">
+                    {groupError}
+                  </div>
+                )}
+
+                {groupSuccess && (
+                  <div className="mb-3 bg-green-50 border border-green-200 text-green-600 px-3 py-2 rounded-md text-sm">
+                    {groupSuccess}
+                  </div>
+                )}
+
+                {user?.groupId ? (
+                  <div className="flex items-center justify-between bg-primary-50 rounded-md px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        You are in: <span className="text-primary-700">{user.groupName}</span>
+                      </p>
+                    </div>
+                    <button onClick={handleLeaveGroup} className="text-sm text-red-600 hover:text-red-800 font-medium">
+                      Leave Group
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-3">
+                      You are not assigned to any group. Join an available group below:
+                    </p>
+                    {groupsLoading ? (
+                      <div className="flex justify-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
+                      </div>
+                    ) : availableGroups.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-2">No available groups to join</p>
+                    ) : (
+                      <ul className="divide-y divide-gray-200">
+                        {availableGroups.map((group) => (
+                          <li key={group.id} className="flex items-center justify-between py-3">
+                            <div>
+                              <span className="text-sm font-medium text-gray-900">{group.name}</span>
+                              <span className="ml-2 text-sm text-gray-500">
+                                ({group.member_count}
+                                {group.max_members !== null && group.max_members !== undefined
+                                  ? ` / ${group.max_members}`
+                                  : ''}{' '}
+                                members)
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleJoinGroup(group.id)}
+                              className="text-sm bg-primary-600 text-white px-3 py-1 rounded-md hover:bg-primary-700"
+                            >
+                              Join
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}

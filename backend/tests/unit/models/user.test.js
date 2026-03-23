@@ -24,8 +24,20 @@ describe('User Model', () => {
   describe('findAll', () => {
     it('returns all users with group and role info', async () => {
       const mockUsers = [
-        { id: 1, username: 'user1', email: 'user1@test.com', group_name: 'Team A', role_name: 'user' },
-        { id: 2, username: 'user2', email: 'user2@test.com', group_name: 'Team B', role_name: 'admin' },
+        {
+          id: 'u0000000-0000-0000-0000-000000000001',
+          username: 'user1',
+          email: 'user1@test.com',
+          group_name: 'Team A',
+          role_name: 'user',
+        },
+        {
+          id: 'u0000000-0000-0000-0000-000000000002',
+          username: 'user2',
+          email: 'user2@test.com',
+          group_name: 'Team B',
+          role_name: 'admin',
+        },
       ];
       pool.query.mockResolvedValue({ rows: mockUsers });
 
@@ -46,19 +58,27 @@ describe('User Model', () => {
 
   describe('findById', () => {
     it('returns user by id with group and role info', async () => {
-      const mockUser = { id: 1, username: 'testuser', email: 'test@test.com', group_name: 'Team A', role_name: 'user' };
+      const mockUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'testuser',
+        email: 'test@test.com',
+        group_name: 'Team A',
+        role_name: 'user',
+      };
       pool.query.mockResolvedValue({ rows: [mockUser] });
 
-      const result = await User.findById(1);
+      const result = await User.findById('u0000000-0000-0000-0000-000000000001');
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.id = $1'), [1]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.id = $1'), [
+        'u0000000-0000-0000-0000-000000000001',
+      ]);
       expect(result).toEqual(mockUser);
     });
 
     it('returns undefined when user not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await User.findById(999);
+      const result = await User.findById('u0000000-0000-0000-0000-000000000999');
 
       expect(result).toBeUndefined();
     });
@@ -67,7 +87,7 @@ describe('User Model', () => {
   describe('findByUsername', () => {
     it('returns user by username with password hash', async () => {
       const mockUser = {
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'testuser',
         password_hash: 'hashed123',
         group_name: 'Team A',
@@ -92,7 +112,11 @@ describe('User Model', () => {
 
   describe('findByEmail', () => {
     it('returns user by email', async () => {
-      const mockUser = { id: 1, email: 'test@test.com', username: 'testuser' };
+      const mockUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        email: 'test@test.com',
+        username: 'testuser',
+      };
       pool.query.mockResolvedValue({ rows: [mockUser] });
 
       const result = await User.findByEmail('test@test.com');
@@ -117,10 +141,11 @@ describe('User Model', () => {
         email: 'new@test.com',
         password: 'password123',
         studentId: 'S123',
-        groupId: 1,
+        groupId: 'g0000000-0000-0000-0000-000000000001',
+        roleId: 'r0000000-0000-0000-0000-000000000003',
       };
       const mockCreatedUser = {
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'newuser',
         email: 'new@test.com',
         student_id: 'S123',
@@ -141,8 +166,8 @@ describe('User Model', () => {
         'newuser',
         'newuser',
         'S123',
-        1,
-        3,
+        'g0000000-0000-0000-0000-000000000001',
+        'r0000000-0000-0000-0000-000000000003',
       ]);
       expect(result).toEqual(mockCreatedUser);
     });
@@ -154,9 +179,10 @@ describe('User Model', () => {
         password: 'password123',
         studentId: null,
         groupId: null,
+        roleId: 'r0000000-0000-0000-0000-000000000003',
       };
       const mockCreatedUser = {
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'newuser',
         email: 'new@test.com',
         student_id: null,
@@ -177,7 +203,7 @@ describe('User Model', () => {
         'newuser',
         null,
         null,
-        3,
+        'r0000000-0000-0000-0000-000000000003',
       ]);
       expect(result).toEqual(mockCreatedUser);
     });
@@ -189,10 +215,10 @@ describe('User Model', () => {
         password: 'password123',
         studentId: null,
         groupId: null,
-        roleId: 1,
+        roleId: 'r0000000-0000-0000-0000-000000000001',
       };
       const mockCreatedUser = {
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'adminuser',
         email: 'admin@test.com',
         student_id: null,
@@ -213,7 +239,7 @@ describe('User Model', () => {
         'adminuser',
         null,
         null,
-        1,
+        'r0000000-0000-0000-0000-000000000001',
       ]);
       expect(result).toEqual(mockCreatedUser);
     });
@@ -225,24 +251,29 @@ describe('User Model', () => {
         username: 'updateduser',
         email: 'updated@test.com',
         studentId: 'S456',
-        groupId: 2,
-        roleId: 2,
+        groupId: 'g0000000-0000-0000-0000-000000000002',
+        roleId: 'r0000000-0000-0000-0000-000000000002',
         enabled: false,
       };
-      const mockUpdatedUser = { id: 1, username: 'updateduser', email: 'updated@test.com', enabled: false };
+      const mockUpdatedUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'updateduser',
+        email: 'updated@test.com',
+        enabled: false,
+      };
 
       pool.query.mockResolvedValue({ rows: [mockUpdatedUser] });
 
-      const result = await User.update(1, updates);
+      const result = await User.update('u0000000-0000-0000-0000-000000000001', updates);
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [
         'updateduser',
         'updated@test.com',
         'S456',
-        2,
-        2,
+        'g0000000-0000-0000-0000-000000000002',
+        'r0000000-0000-0000-0000-000000000002',
         false,
-        1,
+        'u0000000-0000-0000-0000-000000000001',
       ]);
       expect(result).toEqual(mockUpdatedUser);
     });
@@ -251,21 +282,29 @@ describe('User Model', () => {
       const updates = {
         username: 'updateduser',
       };
-      const mockUpdatedUser = { id: 1, username: 'updateduser', email: 'old@test.com', enabled: true };
+      const mockUpdatedUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'updateduser',
+        email: 'old@test.com',
+        enabled: true,
+      };
 
       pool.query.mockResolvedValue({ rows: [mockUpdatedUser] });
 
-      const result = await User.update(1, updates);
+      const result = await User.update('u0000000-0000-0000-0000-000000000001', updates);
 
       // Only provided fields are included in the query (no undefined values)
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), ['updateduser', 1]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [
+        'updateduser',
+        'u0000000-0000-0000-0000-000000000001',
+      ]);
       expect(result).toEqual(mockUpdatedUser);
     });
 
     it('returns undefined when user not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await User.update(999, { username: 'newname' });
+      const result = await User.update('u0000000-0000-0000-0000-000000000999', { username: 'newname' });
 
       expect(result).toBeUndefined();
     });
@@ -273,29 +312,49 @@ describe('User Model', () => {
 
   describe('updateGroup', () => {
     it('updates user group', async () => {
-      const mockUpdatedUser = { id: 1, username: 'testuser', group_id: 2 };
+      const mockUpdatedUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'testuser',
+        group_id: 'g0000000-0000-0000-0000-000000000002',
+      };
       pool.query.mockResolvedValue({ rows: [mockUpdatedUser] });
 
-      const result = await User.updateGroup(1, 2);
+      const result = await User.updateGroup(
+        'u0000000-0000-0000-0000-000000000001',
+        'g0000000-0000-0000-0000-000000000002'
+      );
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [2, 1]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [
+        'g0000000-0000-0000-0000-000000000002',
+        'u0000000-0000-0000-0000-000000000001',
+      ]);
       expect(result).toEqual(mockUpdatedUser);
     });
 
     it('sets group to null', async () => {
-      const mockUpdatedUser = { id: 1, username: 'testuser', group_id: null };
+      const mockUpdatedUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'testuser',
+        group_id: null,
+      };
       pool.query.mockResolvedValue({ rows: [mockUpdatedUser] });
 
-      const result = await User.updateGroup(1, null);
+      const result = await User.updateGroup('u0000000-0000-0000-0000-000000000001', null);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [null, 1]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [
+        null,
+        'u0000000-0000-0000-0000-000000000001',
+      ]);
       expect(result).toEqual(mockUpdatedUser);
     });
 
     it('returns undefined when user not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await User.updateGroup(999, 1);
+      const result = await User.updateGroup(
+        'u0000000-0000-0000-0000-000000000999',
+        'g0000000-0000-0000-0000-000000000001'
+      );
 
       expect(result).toBeUndefined();
     });
@@ -303,15 +362,22 @@ describe('User Model', () => {
 
   describe('updatePassword', () => {
     it('updates password with new hash', async () => {
-      const mockUpdatedUser = { id: 1, username: 'testuser', email: 'test@test.com' };
+      const mockUpdatedUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'testuser',
+        email: 'test@test.com',
+      };
 
       bcrypt.hash.mockResolvedValue('newHashedPassword');
       pool.query.mockResolvedValue({ rows: [mockUpdatedUser] });
 
-      const result = await User.updatePassword(1, 'newpassword123');
+      const result = await User.updatePassword('u0000000-0000-0000-0000-000000000001', 'newpassword123');
 
       expect(bcrypt.hash).toHaveBeenCalledWith('newpassword123', expect.any(Number));
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), ['newHashedPassword', 1]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [
+        'newHashedPassword',
+        'u0000000-0000-0000-0000-000000000001',
+      ]);
       expect(result).toEqual(mockUpdatedUser);
     });
 
@@ -319,7 +385,7 @@ describe('User Model', () => {
       bcrypt.hash.mockResolvedValue('newHashedPassword');
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await User.updatePassword(999, 'newpassword');
+      const result = await User.updatePassword('u0000000-0000-0000-0000-000000000999', 'newpassword');
 
       expect(result).toBeUndefined();
     });
@@ -327,19 +393,25 @@ describe('User Model', () => {
 
   describe('delete', () => {
     it('deletes user and returns deleted user', async () => {
-      const mockDeletedUser = { id: 1, username: 'testuser', email: 'test@test.com' };
+      const mockDeletedUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'testuser',
+        email: 'test@test.com',
+      };
       pool.query.mockResolvedValue({ rows: [mockDeletedUser] });
 
-      const result = await User.delete(1);
+      const result = await User.delete('u0000000-0000-0000-0000-000000000001');
 
-      expect(pool.query).toHaveBeenCalledWith('DELETE FROM users WHERE id = $1 RETURNING *', [1]);
+      expect(pool.query).toHaveBeenCalledWith('DELETE FROM users WHERE id = $1 RETURNING *', [
+        'u0000000-0000-0000-0000-000000000001',
+      ]);
       expect(result).toEqual(mockDeletedUser);
     });
 
     it('returns undefined when user not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await User.delete(999);
+      const result = await User.delete('u0000000-0000-0000-0000-000000000999');
 
       expect(result).toBeUndefined();
     });

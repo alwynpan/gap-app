@@ -1,4 +1,5 @@
 const Group = require('../models/Group');
+const User = require('../models/User');
 
 async function groupsRoutes(fastify, _options) {
   // Get all groups (authenticated users)
@@ -55,7 +56,7 @@ async function groupsRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const groupId = parseInt(request.params.id, 10);
+        const groupId = request.params.id;
         const group = await Group.findById(groupId);
 
         if (!group) {
@@ -70,6 +71,8 @@ async function groupsRoutes(fastify, _options) {
             id: group.id,
             name: group.name,
             enabled: group.enabled,
+            maxMembers: group.max_members,
+            memberCount: group.member_count,
             createdAt: group.created_at,
             updatedAt: group.updated_at,
           },
@@ -98,10 +101,17 @@ async function groupsRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const { name, enabled } = request.body;
+        const { name, enabled, maxMembers } = request.body;
 
         if (!name) {
           return reply.code(400).send({ error: 'Group name is required' });
+        }
+
+        if (maxMembers !== undefined && maxMembers !== null) {
+          const parsed = parseInt(maxMembers, 10);
+          if (isNaN(parsed) || parsed < 1) {
+            return reply.code(400).send({ error: 'Max members must be a positive integer' });
+          }
         }
 
         // Check if group name already exists
@@ -111,7 +121,8 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(409).send({ error: 'Group name already exists' });
         }
 
-        const newGroup = await Group.create(name, enabled !== false);
+        const parsedMax = maxMembers !== null && maxMembers !== undefined ? parseInt(maxMembers, 10) : null;
+        const newGroup = await Group.create(name, enabled !== false, parsedMax);
 
         return reply.code(201).send({
           message: 'Group created successfully',
@@ -119,6 +130,7 @@ async function groupsRoutes(fastify, _options) {
             id: newGroup.id,
             name: newGroup.name,
             enabled: newGroup.enabled,
+            maxMembers: newGroup.max_members,
           },
         });
       } catch (error) {
@@ -144,15 +156,35 @@ async function groupsRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const groupId = parseInt(request.params.id, 10);
-        const { name, enabled } = request.body;
+        const groupId = request.params.id;
+        const { name, enabled, maxMembers } = request.body;
 
         const group = await Group.findById(groupId);
         if (!group) {
           return reply.code(404).send({ error: 'Group not found' });
         }
 
-        const updatedGroup = await Group.update(groupId, { name, enabled });
+        // Validate maxMembers if provided
+        if (maxMembers !== undefined && maxMembers !== null) {
+          const parsed = parseInt(maxMembers, 10);
+          if (isNaN(parsed) || parsed < 1) {
+            return reply.code(400).send({ error: 'Max members must be a positive integer' });
+          }
+          // Check current member count doesn't exceed new limit
+          const memberCount = await Group.getMemberCount(groupId);
+          if (memberCount > parsed) {
+            return reply
+              .code(400)
+              .send({ error: `Group already has ${memberCount} members, cannot set limit to ${parsed}` });
+          }
+        }
+
+        const updates = { name, enabled };
+        if (maxMembers !== undefined) {
+          updates.maxMembers = maxMembers !== null && maxMembers !== undefined ? parseInt(maxMembers, 10) : null;
+        }
+
+        const updatedGroup = await Group.update(groupId, updates);
 
         return reply.send({
           message: 'Group updated successfully',
@@ -181,7 +213,7 @@ async function groupsRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const groupId = parseInt(request.params.id, 10);
+        const groupId = request.params.id;
 
         const deletedGroup = await Group.delete(groupId);
 
@@ -193,6 +225,87 @@ async function groupsRoutes(fastify, _options) {
       } catch (error) {
         console.error('Delete group error:', error);
         return reply.code(500).send({ error: 'Failed to delete group' });
+      }
+    }
+  );
+
+  // Join a group (any authenticated user)
+  fastify.post(
+    '/groups/:id/join',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const groupId = request.params.id;
+        const userId = request.user.id;
+
+        const group = await Group.findById(groupId);
+        if (!group) {
+          return reply.code(404).send({ error: 'Group not found' });
+        }
+
+        if (!group.enabled) {
+          return reply.code(400).send({ error: 'Cannot join a disabled group' });
+        }
+
+        // Check user is not already in a group
+        const user = await User.findById(userId);
+        if (user.group_id) {
+          return reply.code(400).send({ error: 'You are already in a group. Leave your current group first.' });
+        }
+
+        // Check group capacity
+        if (group.max_members !== null && group.member_count >= group.max_members) {
+          return reply.code(409).send({ error: 'Group is full' });
+        }
+
+        await User.updateGroup(userId, groupId);
+
+        return reply.send({ message: 'Successfully joined group', groupId, groupName: group.name });
+      } catch (error) {
+        console.error('Join group error:', error);
+        return reply.code(500).send({ error: 'Failed to join group' });
+      }
+    }
+  );
+
+  // Leave a group (any authenticated user)
+  fastify.post(
+    '/groups/:id/leave',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const groupId = request.params.id;
+        const userId = request.user.id;
+
+        const group = await Group.findById(groupId);
+        if (!group) {
+          return reply.code(404).send({ error: 'Group not found' });
+        }
+
+        // Check user is actually in this group
+        const user = await User.findById(userId);
+        if (user.group_id !== groupId) {
+          return reply.code(400).send({ error: 'You are not a member of this group' });
+        }
+
+        await User.updateGroup(userId, null);
+
+        return reply.send({ message: 'Successfully left group' });
+      } catch (error) {
+        console.error('Leave group error:', error);
+        return reply.code(500).send({ error: 'Failed to leave group' });
       }
     }
   );

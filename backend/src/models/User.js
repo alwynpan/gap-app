@@ -49,7 +49,7 @@ class User {
   }
 
   static async create(userData) {
-    const { username, email, password, firstName, lastName, studentId, groupId, roleId = 3 } = userData;
+    const { username, email, password, firstName, lastName, studentId, groupId, roleId } = userData;
 
     // Hash password
     const passwordHash = await bcrypt.hash(password, 10);

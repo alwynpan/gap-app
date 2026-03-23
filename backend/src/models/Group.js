@@ -2,34 +2,70 @@ const { pool } = require('../db/migrate');
 
 class Group {
   static async findAll() {
-    const result = await pool.query('SELECT * FROM groups ORDER BY name');
+    const result = await pool.query(
+      `SELECT g.*, (SELECT COUNT(*) FROM users WHERE group_id = g.id)::int as member_count
+       FROM groups g ORDER BY g.name`
+    );
     return result.rows;
   }
 
   static async findById(id) {
-    const result = await pool.query('SELECT * FROM groups WHERE id = $1', [id]);
+    const result = await pool.query(
+      `SELECT g.*, (SELECT COUNT(*) FROM users WHERE group_id = g.id)::int as member_count
+       FROM groups g WHERE g.id = $1`,
+      [id]
+    );
     return result.rows[0];
   }
 
   static async findEnabled() {
-    const result = await pool.query('SELECT * FROM groups WHERE enabled = true ORDER BY name');
+    const result = await pool.query(
+      `SELECT g.*, (SELECT COUNT(*) FROM users WHERE group_id = g.id)::int as member_count
+       FROM groups g WHERE g.enabled = true ORDER BY g.name`
+    );
     return result.rows;
   }
 
-  static async create(name, enabled = true) {
-    const result = await pool.query('INSERT INTO groups (name, enabled) VALUES ($1, $2) RETURNING *', [name, enabled]);
+  static async create(name, enabled = true, maxMembers = null) {
+    const result = await pool.query('INSERT INTO groups (name, enabled, max_members) VALUES ($1, $2, $3) RETURNING *', [
+      name,
+      enabled,
+      maxMembers,
+    ]);
     return result.rows[0];
   }
 
   static async update(id, updates) {
-    const { name, enabled } = updates;
+    const fieldMap = {
+      name: 'name',
+      enabled: 'enabled',
+      maxMembers: 'max_members',
+    };
+
+    const setClauses = [];
+    const values = [];
+    let paramIndex = 1;
+
+    for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
+      // eslint-disable-next-line security/detect-object-injection
+      if (updates[jsKey] !== undefined) {
+        setClauses.push(`${dbCol} = $${paramIndex}`);
+        // eslint-disable-next-line security/detect-object-injection
+        values.push(updates[jsKey]);
+        paramIndex++;
+      }
+    }
+
+    if (setClauses.length === 0) {
+      return this.findById(id);
+    }
+
+    setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(id);
+
     const result = await pool.query(
-      `UPDATE groups 
-       SET name = COALESCE($1, name), 
-           enabled = COALESCE($2, enabled),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3 RETURNING *`,
-      [name, enabled, id]
+      `UPDATE groups SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      values
     );
     return result.rows[0];
   }
@@ -37,6 +73,11 @@ class Group {
   static async delete(id) {
     const result = await pool.query('DELETE FROM groups WHERE id = $1 RETURNING *', [id]);
     return result.rows[0];
+  }
+
+  static async getMemberCount(groupId) {
+    const result = await pool.query('SELECT COUNT(*)::int as count FROM users WHERE group_id = $1', [groupId]);
+    return result.rows[0].count;
   }
 
   static async getMembers(groupId) {

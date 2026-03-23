@@ -14,6 +14,7 @@ function Groups() {
   const [success, setSuccess] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupMaxMembers, setNewGroupMaxMembers] = useState('');
   const [expandedGroup, setExpandedGroup] = useState(null);
   const [groupMembers, setGroupMembers] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
@@ -42,9 +43,14 @@ function Groups() {
     }
 
     try {
-      await axios.post(`${API_BASE}/groups`, { name: newGroupName.trim() });
+      const body = { name: newGroupName.trim() };
+      if (newGroupMaxMembers !== '') {
+        body.maxMembers = parseInt(newGroupMaxMembers, 10);
+      }
+      await axios.post(`${API_BASE}/groups`, body);
       setSuccess('Group created successfully');
       setNewGroupName('');
+      setNewGroupMaxMembers('');
       setShowCreateModal(false);
       fetchGroups();
       setTimeout(() => setSuccess(''), 3000);
@@ -140,7 +146,7 @@ function Groups() {
       return;
     }
     try {
-      await axios.put(`${API_BASE}/users/${parseInt(selectedUserId)}/group`, { groupId: expandedGroup });
+      await axios.put(`${API_BASE}/users/${selectedUserId}/group`, { groupId: expandedGroup });
       setSuccess('Member added successfully');
       setSelectedUserId('');
       setTimeout(() => setSuccess(''), 3000);
@@ -232,7 +238,13 @@ function Groups() {
                       {group.enabled ? 'Active' : 'Disabled'}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-500 mt-2">
+                  <p className="text-sm text-gray-500 mt-1">
+                    Members: {group.member_count}
+                    {group.max_members !== null && group.max_members !== undefined
+                      ? ` / ${group.max_members}`
+                      : ' / Unlimited'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">
                     Created: {new Date(group.created_at).toLocaleDateString()}
                   </p>
                 </button>
@@ -318,6 +330,37 @@ function Groups() {
                     {group.enabled ? 'Disable' : 'Enable'}
                   </button>
                   <button
+                    onClick={() => {
+                      const input = window.prompt(
+                        'Set max members (leave blank for unlimited):',
+                        group.max_members ?? ''
+                      );
+                      if (input === null) {
+                        return;
+                      }
+                      const maxMembers = input.trim() === '' ? null : parseInt(input, 10);
+                      if (maxMembers !== null && (isNaN(maxMembers) || maxMembers < 1)) {
+                        setError('Max members must be a positive number');
+                        setTimeout(() => setError(''), 3000);
+                        return;
+                      }
+                      axios
+                        .put(`${API_BASE}/groups/${group.id}`, { maxMembers })
+                        .then(() => {
+                          setSuccess('Group limit updated');
+                          fetchGroups();
+                          setTimeout(() => setSuccess(''), 3000);
+                        })
+                        .catch((err) => {
+                          setError(err.response?.data?.error || 'Failed to update limit');
+                          setTimeout(() => setError(''), 3000);
+                        });
+                    }}
+                    className="text-sm text-primary-600 hover:text-primary-800"
+                  >
+                    Set Limit
+                  </button>
+                  <button
                     onClick={() => handleDeleteGroup(group.id)}
                     className="text-sm text-red-600 hover:text-red-800"
                   >
@@ -359,12 +402,24 @@ function Groups() {
                   autoFocus
                 />
               </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Max Members (optional)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={newGroupMaxMembers}
+                  onChange={(e) => setNewGroupMaxMembers(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Leave blank for unlimited"
+                />
+              </div>
               <div className="flex justify-end space-x-3">
                 <button
                   type="button"
                   onClick={() => {
                     setShowCreateModal(false);
                     setNewGroupName('');
+                    setNewGroupMaxMembers('');
                   }}
                   className="px-4 py-2 text-gray-700 hover:text-gray-900"
                 >

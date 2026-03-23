@@ -96,6 +96,18 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const refreshUser = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/auth/me`);
+      setUser(response.data.user);
+    } catch (_error) {
+      // If refresh fails, clear auth state
+      localStorage.removeItem('token');
+      setToken(null);
+      setUser(null);
+    }
+  };
+
   const value = {
     user,
     loading,
@@ -104,6 +116,7 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    refreshUser,
     isAdmin: user?.role === 'admin',
     isAssignmentManager: user?.role === 'assignment_manager' || user?.role === 'admin',
   };

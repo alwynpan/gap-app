@@ -164,9 +164,9 @@ describe('Auth Routes', () => {
     it('accepts valid email format', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue({ id: 3, name: 'user' });
+      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
       User.create.mockResolvedValue({
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'testuser',
         email: 'valid@example.com',
         student_id: null,
@@ -188,7 +188,7 @@ describe('Auth Routes', () => {
     });
 
     it('rejects when username already exists', async () => {
-      User.findByUsername.mockResolvedValue({ id: 1, username: 'existing' });
+      User.findByUsername.mockResolvedValue({ id: 'u0000000-0000-0000-0000-000000000001', username: 'existing' });
       User.findByEmail.mockResolvedValue(null);
 
       const authRoutes = require('../../src/routes/auth');
@@ -205,7 +205,10 @@ describe('Auth Routes', () => {
 
     it('rejects when email already exists', async () => {
       User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue({ id: 1, email: 'existing@test.com' });
+      User.findByEmail.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        email: 'existing@test.com',
+      });
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
@@ -222,9 +225,9 @@ describe('Auth Routes', () => {
     it('successfully creates user with default role', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue({ id: 3, name: 'user' });
+      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
       User.create.mockResolvedValue({
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'newuser',
         email: 'new@test.com',
         student_id: 'S123',
@@ -243,13 +246,13 @@ describe('Auth Routes', () => {
         email: 'new@test.com',
         password: 'password123',
         studentId: 'S123',
-        roleId: 3,
+        roleId: 'r0000000-0000-0000-0000-000000000003',
       });
       expect(mockReply.code).toHaveBeenCalledWith(201);
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'User registered successfully',
         user: {
-          id: 1,
+          id: 'u0000000-0000-0000-0000-000000000001',
           username: 'newuser',
           email: 'new@test.com',
           studentId: 'S123',
@@ -260,9 +263,9 @@ describe('Auth Routes', () => {
     it('successfully creates user without studentId', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue({ id: 3, name: 'user' });
+      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
       User.create.mockResolvedValue({
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'newuser',
         email: 'new@test.com',
         student_id: null,
@@ -282,7 +285,7 @@ describe('Auth Routes', () => {
     it('handles registration error', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue({ id: 3, name: 'user' });
+      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
       User.create.mockRejectedValue(new Error('Database error'));
 
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
@@ -336,7 +339,12 @@ describe('Auth Routes', () => {
     });
 
     it('rejects when user is disabled', async () => {
-      User.findByUsername.mockResolvedValue({ id: 1, username: 'test', enabled: false, password_hash: 'hash' });
+      User.findByUsername.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'test',
+        enabled: false,
+        password_hash: 'hash',
+      });
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
@@ -349,7 +357,7 @@ describe('Auth Routes', () => {
 
     it('rejects when password is incorrect', async () => {
       User.findByUsername.mockResolvedValue({
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'test',
         enabled: true,
         password_hash: 'hash',
@@ -371,13 +379,13 @@ describe('Auth Routes', () => {
 
     it('successfully logs in user', async () => {
       const mockUser = {
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
         enabled: true,
         password_hash: 'hash',
         role_name: 'admin',
-        group_id: 1,
+        group_id: 'g0000000-0000-0000-0000-000000000001',
         group_name: 'Team A',
         student_id: 'S123',
       };
@@ -391,22 +399,22 @@ describe('Auth Routes', () => {
       await capturedHandlers['/auth/login']({ body: { username: 'testuser', password: 'correctpassword' } }, mockReply);
 
       expect(mockFastify.generateToken).toHaveBeenCalledWith({
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
         role: 'admin',
-        groupId: 1,
+        groupId: 'g0000000-0000-0000-0000-000000000001',
         groupName: 'Team A',
       });
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'Login successful',
         token: 'jwt-token-123',
         user: {
-          id: 1,
+          id: 'u0000000-0000-0000-0000-000000000001',
           username: 'testuser',
           email: 'test@test.com',
           role: 'admin',
-          groupId: 1,
+          groupId: 'g0000000-0000-0000-0000-000000000001',
           groupName: 'Team A',
           studentId: 'S123',
         },
@@ -458,7 +466,14 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       const request = {
-        user: { id: 1, username: 'test', email: 'test@test.com', role: 'user', groupId: 1, groupName: 'Team' },
+        user: {
+          id: 'u0000000-0000-0000-0000-000000000001',
+          username: 'test',
+          email: 'test@test.com',
+          role: 'user',
+          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupName: 'Team',
+        },
       };
 
       const result = await capturedHandlers['/auth/me_pre'](request, mockReply);
@@ -471,29 +486,36 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       User.findById.mockResolvedValue({
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
         role_name: 'admin',
-        group_id: 1,
+        group_id: 'g0000000-0000-0000-0000-000000000001',
         group_name: 'Team A',
         student_id: null,
       });
 
       const request = {
-        user: { id: 1, username: 'testuser', email: 'test@test.com', role: 'admin', groupId: 1, groupName: 'Team A' },
+        user: {
+          id: 'u0000000-0000-0000-0000-000000000001',
+          username: 'testuser',
+          email: 'test@test.com',
+          role: 'admin',
+          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupName: 'Team A',
+        },
       };
 
       await capturedHandlers['/auth/me'](request, mockReply);
 
-      expect(User.findById).toHaveBeenCalledWith(1);
+      expect(User.findById).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001');
       expect(mockReply.send).toHaveBeenCalledWith({
         user: {
-          id: 1,
+          id: 'u0000000-0000-0000-0000-000000000001',
           username: 'testuser',
           email: 'test@test.com',
           role: 'admin',
-          groupId: 1,
+          groupId: 'g0000000-0000-0000-0000-000000000001',
           groupName: 'Team A',
           studentId: null,
         },

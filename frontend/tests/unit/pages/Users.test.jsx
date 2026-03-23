@@ -13,7 +13,7 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
 describe('Users page', () => {
   const initialUsers = [
     {
-      id: 1,
+      id: 'u0000000-0000-0000-0000-000000000001',
       username: 'u1',
       email: 'u1@test.com',
       first_name: 'First',
@@ -25,12 +25,12 @@ describe('Users page', () => {
       enabled: true,
     },
   ];
-  const initialGroups = [{ id: 2, name: 'Group A' }];
+  const initialGroups = [{ id: 'g0000000-0000-0000-0000-000000000002', name: 'Group A' }];
 
   beforeEach(() => {
     jest.clearAllMocks();
     useAuth.mockReturnValue({
-      user: { id: 99, username: 'admin', role: 'admin' },
+      user: { id: 'u0000000-0000-0000-0000-000000000099', username: 'admin', role: 'admin' },
       isAdmin: true,
       isAssignmentManager: true,
     });
@@ -124,11 +124,14 @@ describe('Users page', () => {
     });
 
     await user.click(screen.getByRole('button', { name: /assign group/i }));
-    await user.selectOptions(screen.getByRole('combobox'), '2');
+    await user.selectOptions(screen.getByRole('combobox'), 'g0000000-0000-0000-0000-000000000002');
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
     await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/users\/1\/group$/), { groupId: 2 });
+      expect(axios.put).toHaveBeenCalledWith(
+        expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/group$/),
+        { groupId: 'g0000000-0000-0000-0000-000000000002' }
+      );
       expect(screen.getByText('User group updated successfully')).toBeInTheDocument();
     });
 
@@ -142,7 +145,9 @@ describe('Users page', () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-    const usersInGroup = [{ ...initialUsers[0], group_name: 'Group A', group_id: 2 }];
+    const usersInGroup = [
+      { ...initialUsers[0], group_name: 'Group A', group_id: 'g0000000-0000-0000-0000-000000000002' },
+    ];
 
     axios.get
       .mockResolvedValueOnce({ data: { users: usersInGroup } })
@@ -166,9 +171,12 @@ describe('Users page', () => {
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
     await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/users\/1\/group$/), {
-        groupId: null,
-      });
+      expect(axios.put).toHaveBeenCalledWith(
+        expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/group$/),
+        {
+          groupId: null,
+        }
+      );
       expect(screen.getByText('User group updated successfully')).toBeInTheDocument();
     });
 
@@ -198,7 +206,7 @@ describe('Users page', () => {
     });
 
     await user.click(screen.getByRole('button', { name: /assign group/i }));
-    await user.selectOptions(screen.getByRole('combobox'), '2');
+    await user.selectOptions(screen.getByRole('combobox'), 'g0000000-0000-0000-0000-000000000002');
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
     await waitFor(() => {
@@ -344,10 +352,12 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
 
-      const groupSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="2"]'));
+      const groupSelect = screen
+        .getAllByRole('combobox')
+        .find((el) => el.querySelector('option[value="g0000000-0000-0000-0000-000000000002"]'));
       expect(groupSelect).toBeTruthy();
-      await user.selectOptions(groupSelect, '2');
-      expect(groupSelect.value).toBe('2');
+      await user.selectOptions(groupSelect, 'g0000000-0000-0000-0000-000000000002');
+      expect(groupSelect.value).toBe('g0000000-0000-0000-0000-000000000002');
     });
 
     it('sends firstName and lastName when creating a user', async () => {
@@ -405,7 +415,7 @@ describe('Users page', () => {
   it('displays formatted role names instead of raw values', async () => {
     const usersWithRoles = [
       {
-        id: 1,
+        id: 'u0000000-0000-0000-0000-000000000001',
         username: 'u1',
         email: 'u1@test.com',
         role_name: 'admin',
@@ -415,7 +425,7 @@ describe('Users page', () => {
         enabled: true,
       },
       {
-        id: 2,
+        id: 'u0000000-0000-0000-0000-000000000010',
         username: 'u2',
         email: 'u2@test.com',
         role_name: 'assignment_manager',
@@ -425,7 +435,7 @@ describe('Users page', () => {
         enabled: true,
       },
       {
-        id: 3,
+        id: 'u0000000-0000-0000-0000-000000000011',
         username: 'u3',
         email: 'u3@test.com',
         role_name: 'user',
@@ -509,7 +519,7 @@ describe('Users page', () => {
 
     it('shows Edit button for user on their own row only', async () => {
       useAuth.mockReturnValue({
-        user: { id: 1, username: 'u1', role: 'user' },
+        user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
         isAdmin: false,
         isAssignmentManager: false,
       });
@@ -519,7 +529,7 @@ describe('Users page', () => {
 
     it('hides Edit button for user on other users rows', async () => {
       useAuth.mockReturnValue({
-        user: { id: 999, username: 'other', role: 'user' },
+        user: { id: 'u0000000-0000-0000-0000-000000000099', username: 'other', role: 'user' },
         isAdmin: false,
         isAssignmentManager: false,
       });
@@ -568,7 +578,7 @@ describe('Users page', () => {
 
       await waitFor(() => {
         expect(axios.put).toHaveBeenCalledWith(
-          expect.stringMatching(/\/users\/1$/),
+          expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/),
           expect.objectContaining({ username: 'updated_u1', firstName: 'NewFirst', lastName: 'NewLast' })
         );
         expect(screen.getByText('User updated successfully')).toBeInTheDocument();
@@ -617,11 +627,11 @@ describe('Users page', () => {
 
       await waitFor(() => {
         expect(axios.put).toHaveBeenCalledWith(
-          expect.stringMatching(/\/users\/1$/),
+          expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/),
           expect.objectContaining({
             email: 'new@test.com',
             studentId: 's999',
-            roleId: 2,
+            roleId: '2',
             enabled: false,
           })
         );
@@ -643,7 +653,7 @@ describe('Users page', () => {
 
     it('non-admin does not see role and enabled fields in edit modal', async () => {
       useAuth.mockReturnValue({
-        user: { id: 1, username: 'u1', role: 'user' },
+        user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
         isAdmin: false,
         isAssignmentManager: false,
       });
@@ -701,7 +711,7 @@ describe('Users page', () => {
 
     it('shows Password button for user on their own row', async () => {
       useAuth.mockReturnValue({
-        user: { id: 1, username: 'u1', role: 'user' },
+        user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
         isAdmin: false,
         isAssignmentManager: false,
       });
@@ -711,7 +721,7 @@ describe('Users page', () => {
 
     it('hides Password button for user on other users rows', async () => {
       useAuth.mockReturnValue({
-        user: { id: 999, username: 'other', role: 'user' },
+        user: { id: 'u0000000-0000-0000-0000-000000000099', username: 'other', role: 'user' },
         isAdmin: false,
         isAssignmentManager: false,
       });
@@ -741,7 +751,7 @@ describe('Users page', () => {
 
     it('non-admin sees and can type into current password field', async () => {
       useAuth.mockReturnValue({
-        user: { id: 1, username: 'u1', role: 'user' },
+        user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
         isAdmin: false,
         isAssignmentManager: false,
       });
@@ -796,9 +806,12 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /^change password$/i }));
 
       await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/users\/1\/password$/), {
-          newPassword: 'newpass123',
-        });
+        expect(axios.put).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/password$/),
+          {
+            newPassword: 'newpass123',
+          }
+        );
         expect(screen.getByText('Password changed successfully')).toBeInTheDocument();
       });
 

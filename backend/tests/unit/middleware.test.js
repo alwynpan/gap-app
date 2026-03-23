@@ -23,7 +23,7 @@ describe('Auth Middleware', () => {
     jest.resetModules();
     mockJwt = {
       sign: jest.fn().mockResolvedValue('signed-token'),
-      verify: jest.fn().mockResolvedValue({ id: 1, username: 'test' }),
+      verify: jest.fn().mockResolvedValue({ id: 'u0000000-0000-0000-0000-000000000001', username: 'test' }),
     };
 
     fastify = {
@@ -62,9 +62,9 @@ describe('Auth Middleware', () => {
     await authPlugin(fastify, {});
 
     const generateToken = fastify.decorate.mock.calls.find((call) => call[0] === 'generateToken')[1];
-    const token = await generateToken({ id: 1 });
+    const token = await generateToken({ id: 'u0000000-0000-0000-0000-000000000001' });
 
-    expect(mockJwt.sign).toHaveBeenCalledWith({ id: 1 });
+    expect(mockJwt.sign).toHaveBeenCalledWith({ id: 'u0000000-0000-0000-0000-000000000001' });
     expect(token).toBe('signed-token');
   });
 
@@ -76,7 +76,7 @@ describe('Auth Middleware', () => {
     const result = await verifyToken('test-token');
 
     expect(mockJwt.verify).toHaveBeenCalledWith('test-token');
-    expect(result).toEqual({ id: 1, username: 'test' });
+    expect(result).toEqual({ id: 'u0000000-0000-0000-0000-000000000001', username: 'test' });
   });
 });
 

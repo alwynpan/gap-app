@@ -17,9 +17,9 @@ describe('Role Model', () => {
   describe('findAll', () => {
     it('returns all roles ordered by id', async () => {
       const mockRoles = [
-        { id: 1, name: 'admin', created_at: new Date() },
-        { id: 2, name: 'assignment_manager', created_at: new Date() },
-        { id: 3, name: 'user', created_at: new Date() },
+        { id: 'r0000000-0000-0000-0000-000000000001', name: 'admin', created_at: new Date() },
+        { id: 'r0000000-0000-0000-0000-000000000002', name: 'assignment_manager', created_at: new Date() },
+        { id: 'r0000000-0000-0000-0000-000000000003', name: 'user', created_at: new Date() },
       ];
       pool.query.mockResolvedValue({ rows: mockRoles });
 
@@ -40,19 +40,21 @@ describe('Role Model', () => {
 
   describe('findById', () => {
     it('returns role by id', async () => {
-      const mockRole = { id: 1, name: 'admin', created_at: new Date() };
+      const mockRole = { id: 'r0000000-0000-0000-0000-000000000001', name: 'admin', created_at: new Date() };
       pool.query.mockResolvedValue({ rows: [mockRole] });
 
-      const result = await Role.findById(1);
+      const result = await Role.findById('r0000000-0000-0000-0000-000000000001');
 
-      expect(pool.query).toHaveBeenCalledWith('SELECT * FROM roles WHERE id = $1', [1]);
+      expect(pool.query).toHaveBeenCalledWith('SELECT * FROM roles WHERE id = $1', [
+        'r0000000-0000-0000-0000-000000000001',
+      ]);
       expect(result).toEqual(mockRole);
     });
 
     it('returns undefined when role not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await Role.findById(999);
+      const result = await Role.findById('r0000000-0000-0000-0000-000000000999');
 
       expect(result).toBeUndefined();
     });
@@ -60,7 +62,7 @@ describe('Role Model', () => {
 
   describe('findByName', () => {
     it('returns role by name', async () => {
-      const mockRole = { id: 1, name: 'admin', created_at: new Date() };
+      const mockRole = { id: 'r0000000-0000-0000-0000-000000000001', name: 'admin', created_at: new Date() };
       pool.query.mockResolvedValue({ rows: [mockRole] });
 
       const result = await Role.findByName('admin');
@@ -78,7 +80,7 @@ describe('Role Model', () => {
     });
 
     it('finds user role', async () => {
-      const mockRole = { id: 3, name: 'user', created_at: new Date() };
+      const mockRole = { id: 'r0000000-0000-0000-0000-000000000003', name: 'user', created_at: new Date() };
       pool.query.mockResolvedValue({ rows: [mockRole] });
 
       const result = await Role.findByName('user');
@@ -87,7 +89,11 @@ describe('Role Model', () => {
     });
 
     it('finds assignment_manager role', async () => {
-      const mockRole = { id: 2, name: 'assignment_manager', created_at: new Date() };
+      const mockRole = {
+        id: 'r0000000-0000-0000-0000-000000000002',
+        name: 'assignment_manager',
+        created_at: new Date(),
+      };
       pool.query.mockResolvedValue({ rows: [mockRole] });
 
       const result = await Role.findByName('assignment_manager');
@@ -98,7 +104,7 @@ describe('Role Model', () => {
 
   describe('create', () => {
     it('creates new role', async () => {
-      const mockRole = { id: 4, name: 'moderator', created_at: new Date() };
+      const mockRole = { id: 'r0000000-0000-0000-0000-000000000004', name: 'moderator', created_at: new Date() };
       pool.query.mockResolvedValue({ rows: [mockRole] });
 
       const result = await Role.create('moderator');
@@ -108,7 +114,7 @@ describe('Role Model', () => {
     });
 
     it('creates admin role', async () => {
-      const mockRole = { id: 1, name: 'admin', created_at: new Date() };
+      const mockRole = { id: 'r0000000-0000-0000-0000-000000000001', name: 'admin', created_at: new Date() };
       pool.query.mockResolvedValue({ rows: [mockRole] });
 
       const result = await Role.create('admin');

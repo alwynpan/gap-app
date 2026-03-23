@@ -67,7 +67,7 @@ function Users() {
       return;
     }
 
-    const groupId = selectedGroup === '' ? null : parseInt(selectedGroup);
+    const groupId = selectedGroup === '' ? null : selectedGroup;
     await handleGroupChange(selectedUser, groupId);
     setSelectedUser(null);
     setSelectedGroup('');
@@ -87,7 +87,7 @@ function Users() {
         firstName: newUser.firstName.trim() || undefined,
         lastName: newUser.lastName.trim() || undefined,
         studentId: newUser.studentId.trim() || undefined,
-        groupId: newUser.groupId ? parseInt(newUser.groupId) : undefined,
+        groupId: newUser.groupId || undefined,
         role: newUser.role,
       });
       setSuccess('User created successfully');
@@ -115,7 +115,7 @@ function Users() {
         lastName: editingUser.lastName?.trim() || null,
         studentId: editingUser.studentId?.trim() || null,
         ...(isAdmin && {
-          roleId: editingUser.roleId ? parseInt(editingUser.roleId) : undefined,
+          roleId: editingUser.roleId || undefined,
           enabled: editingUser.enabled,
         }),
       });

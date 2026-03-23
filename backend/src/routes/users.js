@@ -36,7 +36,7 @@ async function usersRoutes(fastify, _options) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
         // Users can view their own profile, admin/assignment_manager can view all
-        const userId = parseInt(request.params.id, 10);
+        const userId = request.params.id;
         if (request.user.id !== userId) {
           const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
           if (!allowed) {
@@ -47,7 +47,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const userId = parseInt(request.params.id, 10);
+        const userId = request.params.id;
         const user = await User.findById(userId);
 
         if (!user) {
@@ -102,15 +102,13 @@ async function usersRoutes(fastify, _options) {
           return reply.code(409).send({ error: 'Email already exists' });
         }
 
-        // Get role ID
-        let roleId = 3; // default to 'user'
-        if (role) {
-          const Role = require('../models/Role');
-          const roleRecord = await Role.findByName(role);
-          if (roleRecord) {
-            roleId = roleRecord.id;
-          }
+        // Get role ID by name lookup
+        const Role = require('../models/Role');
+        const roleRecord = await Role.findByName(role || 'user');
+        if (!roleRecord) {
+          return reply.code(400).send({ error: `Invalid role: ${role}` });
         }
+        const roleId = roleRecord.id;
 
         const newUser = await User.create({
           username,
@@ -155,7 +153,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const userId = parseInt(request.params.id, 10);
+        const userId = request.params.id;
         const { groupId } = request.body;
 
         if (groupId === undefined) {
@@ -201,7 +199,7 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const userId = parseInt(request.params.id, 10);
+        const userId = request.params.id;
         // Non-admin users can only edit themselves
         if (request.user.id !== userId && request.user.role !== 'admin') {
           return reply.code(403).send({ error: 'Forbidden: You can only edit your own profile' });
@@ -210,7 +208,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const userId = parseInt(request.params.id, 10);
+        const userId = request.params.id;
         const { username, email, firstName, lastName, studentId, groupId, roleId, enabled } = request.body;
 
         const user = await User.findById(userId);
@@ -248,7 +246,7 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const userId = parseInt(request.params.id, 10);
+        const userId = request.params.id;
         if (request.user.id !== userId && request.user.role !== 'admin') {
           return reply.code(403).send({ error: 'Forbidden: You can only change your own password' });
         }
@@ -256,7 +254,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const userId = parseInt(request.params.id, 10);
+        const userId = request.params.id;
         const { currentPassword, newPassword } = request.body;
 
         if (!newPassword || newPassword.length < 6) {
@@ -307,7 +305,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const userId = parseInt(request.params.id, 10);
+        const userId = request.params.id;
 
         // Prevent deleting yourself
         if (userId === request.user.id) {

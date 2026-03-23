@@ -6,7 +6,8 @@ import { AuthProvider, useAuth } from '../../../src/context/AuthContext.jsx';
 jest.mock('axios');
 
 function TestHarness() {
-  const { user, loading, token, isAuthenticated, isAdmin, isAssignmentManager, login, register, logout } = useAuth();
+  const { user, loading, token, isAuthenticated, isAdmin, isAssignmentManager, login, register, logout, refreshUser } =
+    useAuth();
 
   const handleLogin = async () => {
     const result = await login('demo', 'password');
@@ -29,6 +30,7 @@ function TestHarness() {
       <button onClick={handleLogin}>Login</button>
       <button onClick={handleRegister}>Register</button>
       <button onClick={logout}>Logout</button>
+      <button onClick={refreshUser}>Refresh</button>
     </div>
   );
 }
@@ -185,6 +187,62 @@ describe('AuthContext', () => {
     });
 
     expect(window.__authResult).toEqual({ success: false, error: 'Registration failed' });
+  });
+
+  it('refreshUser updates user data from /auth/me', async () => {
+    localStorage.setItem('token', 'existing-token');
+    axios.get
+      .mockResolvedValueOnce({ data: { user: { username: 'alice', role: 'user', groupId: null } } })
+      .mockResolvedValueOnce({
+        data: {
+          user: {
+            username: 'alice',
+            role: 'user',
+            groupId: 'g0000000-0000-0000-0000-000000000001',
+            groupName: 'Team A',
+          },
+        },
+      });
+
+    render(
+      <AuthProvider>
+        <TestHarness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth')).toHaveTextContent('yes');
+    });
+
+    await userEvent.click(screen.getByText('Refresh'));
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('refreshUser clears auth on failure', async () => {
+    localStorage.setItem('token', 'existing-token');
+    axios.get
+      .mockResolvedValueOnce({ data: { user: { username: 'alice', role: 'user' } } })
+      .mockRejectedValueOnce(new Error('unauthorized'));
+
+    render(
+      <AuthProvider>
+        <TestHarness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth')).toHaveTextContent('yes');
+    });
+
+    await userEvent.click(screen.getByText('Refresh'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth')).toHaveTextContent('no');
+      expect(localStorage.removeItem).toHaveBeenCalledWith('token');
+    });
   });
 
   it('logout clears local state and storage', async () => {
