@@ -4,8 +4,12 @@ const { API_BASE, waitForAPI } = require('./api');
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change_this_in_production';
 
+// These tests require REGISTRATION_ENABLED=true on the server.
+// When registration is disabled, all tests are skipped gracefully.
+
 describe('Registration E2E Tests', () => {
   let adminToken = null;
+  let registrationEnabled = false;
   // Track all user IDs created during tests for afterAll cleanup
   const createdUserIds = [];
 
@@ -22,10 +26,23 @@ describe('Registration E2E Tests', () => {
     } catch (error) {
       console.warn('Admin login failed - may need to run migrations first');
     }
+
+    // Check if registration is enabled
+    try {
+      const configResp = await axios.get(`${API_BASE}/auth/config`);
+      registrationEnabled = configResp.data.registrationEnabled;
+    } catch (_error) {
+      registrationEnabled = false;
+    }
+
+    if (!registrationEnabled) {
+      console.warn('Registration is disabled on this server — registration tests will be skipped');
+    }
   });
 
   describe('Registration Validation', () => {
     it('should require username field', async () => {
+      if (!registrationEnabled) return;
       await expect(
         axios.post(`${API_BASE}/auth/register`, {
           email: 'test@example.com',
@@ -35,6 +52,7 @@ describe('Registration E2E Tests', () => {
     });
 
     it('should require email field', async () => {
+      if (!registrationEnabled) return;
       await expect(
         axios.post(`${API_BASE}/auth/register`, {
           username: 'testuser',
@@ -44,6 +62,7 @@ describe('Registration E2E Tests', () => {
     });
 
     it('should require password field', async () => {
+      if (!registrationEnabled) return;
       await expect(
         axios.post(`${API_BASE}/auth/register`, {
           username: 'testuser',
@@ -53,6 +72,7 @@ describe('Registration E2E Tests', () => {
     });
 
     it('should validate email format', async () => {
+      if (!registrationEnabled) return;
       const response = await axios.post(`${API_BASE}/auth/register`, {
         username: `testuser_${Date.now()}`,
         email: 'invalid-email',
@@ -64,6 +84,7 @@ describe('Registration E2E Tests', () => {
     });
 
     it('should accept optional studentId field', async () => {
+      if (!registrationEnabled) return;
       const uniqueId = Date.now();
       const studentId = `STU${uniqueId}`;
       const response = await axios.post(`${API_BASE}/auth/register`, {
@@ -81,6 +102,7 @@ describe('Registration E2E Tests', () => {
     });
 
     it('should assign default role (user) to new registrations', async () => {
+      if (!registrationEnabled) return;
       const uniqueId = Date.now();
       const response = await axios.post(`${API_BASE}/auth/register`, {
         username: `roleuser_${uniqueId}`,
@@ -105,9 +127,7 @@ describe('Registration E2E Tests', () => {
 
   describe('Registration Enabled/Disabled Toggle', () => {
     it('should respect REGISTRATION_ENABLED environment variable', async () => {
-      // This test assumes REGISTRATION_ENABLED=true (default)
-      // To test disabled state, you'd need to restart the server with REGISTRATION_ENABLED=false
-
+      if (!registrationEnabled) return;
       const uniqueId = Date.now();
       const response = await axios.post(`${API_BASE}/auth/register`, {
         username: `toggle_${uniqueId}`,
@@ -138,6 +158,7 @@ describe('Registration E2E Tests', () => {
     });
 
     it('should enforce unique username (exact match)', async () => {
+      if (!registrationEnabled) return;
       const firstResponse = await axios.post(`${API_BASE}/auth/register`, uniqueUser);
       createdUserIds.push(firstResponse.data.user.id);
 
@@ -150,6 +171,7 @@ describe('Registration E2E Tests', () => {
     });
 
     it('should enforce unique email', async () => {
+      if (!registrationEnabled) return;
       // Create first user
       const firstResponse = await axios.post(`${API_BASE}/auth/register`, uniqueUser);
       createdUserIds.push(firstResponse.data.user.id);
@@ -169,6 +191,7 @@ describe('Registration E2E Tests', () => {
 
   describe('Password Security', () => {
     it('should require minimum password length', async () => {
+      if (!registrationEnabled) return;
       await expect(
         axios.post(`${API_BASE}/auth/register`, {
           username: `shortpass_${Date.now()}`,
@@ -179,6 +202,7 @@ describe('Registration E2E Tests', () => {
     });
 
     it('should accept password with exactly 6 characters', async () => {
+      if (!registrationEnabled) return;
       const uniqueId = Date.now();
       const response = await axios.post(`${API_BASE}/auth/register`, {
         username: `minpass_${uniqueId}`,

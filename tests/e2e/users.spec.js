@@ -23,20 +23,24 @@ describe('Users API E2E Tests', () => {
 
     // Create a test user for group operations
     const userUsername = `testuser_${Date.now()}`;
-    await axios.post(`${API_BASE}/auth/register`, {
-      username: userUsername,
-      email: `${userUsername}@example.com`,
-      password: 'password123',
-      firstName: 'Test',
-      lastName: 'User',
-    });
+    const createResponse = await axios.post(
+      `${API_BASE}/users`,
+      {
+        username: userUsername,
+        email: `${userUsername}@example.com`,
+        password: 'password123',
+        firstName: 'Test',
+        lastName: 'User',
+      },
+      { headers: { Authorization: `Bearer ${adminToken}` } }
+    );
+    testUserId = createResponse.data.user.id;
 
     const userResponse = await axios.post(`${API_BASE}/auth/login`, {
       username: userUsername,
       password: 'password123',
     });
     userToken = userResponse.data.token;
-    testUserId = userResponse.data.user.id;
   });
 
   describe('GET /users (Admin/Assignment Manager Only)', () => {

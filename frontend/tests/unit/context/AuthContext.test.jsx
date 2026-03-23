@@ -40,6 +40,8 @@ describe('AuthContext', () => {
     localStorage.clear();
     delete axios.defaults.headers.common.Authorization;
     delete window.__authResult;
+    // Provide a default mock for the /auth/config fetch that fires on mount
+    axios.get.mockResolvedValue({ data: { registrationEnabled: false } });
   });
 
   it('starts unauthenticated with no token', async () => {
@@ -55,7 +57,8 @@ describe('AuthContext', () => {
 
     expect(screen.getByTestId('auth')).toHaveTextContent('no');
     expect(screen.getByTestId('user')).toHaveTextContent('none');
-    expect(axios.get).not.toHaveBeenCalled();
+    // /auth/config is always fetched on mount; /auth/me is only called when a token exists
+    expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining('/auth/me'));
   });
 
   it('hydrates user from token via /auth/me', async () => {
@@ -192,6 +195,7 @@ describe('AuthContext', () => {
   it('refreshUser updates user data from /auth/me', async () => {
     localStorage.setItem('token', 'existing-token');
     axios.get
+      .mockResolvedValueOnce({ data: { registrationEnabled: false } }) // /auth/config on mount
       .mockResolvedValueOnce({ data: { user: { username: 'alice', role: 'user', groupId: null } } })
       .mockResolvedValueOnce({
         data: {
@@ -217,13 +221,14 @@ describe('AuthContext', () => {
     await userEvent.click(screen.getByText('Refresh'));
 
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get).toHaveBeenCalledTimes(3); // config + /auth/me on mount + refreshUser
     });
   });
 
   it('refreshUser clears auth on failure', async () => {
     localStorage.setItem('token', 'existing-token');
     axios.get
+      .mockResolvedValueOnce({ data: { registrationEnabled: false } }) // /auth/config on mount
       .mockResolvedValueOnce({ data: { user: { username: 'alice', role: 'user' } } })
       .mockRejectedValueOnce(new Error('unauthorized'));
 

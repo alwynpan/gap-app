@@ -36,20 +36,24 @@ describe('Groups API E2E Tests', () => {
 
     // Create and login as regular user
     const userUsername = `groupuser_${Date.now()}`;
-    await axios.post(`${API_BASE}/auth/register`, {
-      username: userUsername,
-      email: `${userUsername}@example.com`,
-      password: 'password123',
-      firstName: 'Group',
-      lastName: 'User',
-    });
+    const createUserResponse = await axios.post(
+      `${API_BASE}/users`,
+      {
+        username: userUsername,
+        email: `${userUsername}@example.com`,
+        password: 'password123',
+        firstName: 'Group',
+        lastName: 'User',
+      },
+      { headers: { Authorization: `Bearer ${adminToken}` } }
+    );
+    testUserId = createUserResponse.data.user.id;
 
     const userResponse = await axios.post(`${API_BASE}/auth/login`, {
       username: userUsername,
       password: 'password123',
     });
     userToken = userResponse.data.token;
-    testUserId = userResponse.data.user.id;
   });
 
   describe('GET /groups', () => {
@@ -335,21 +339,18 @@ describe('Groups API E2E Tests', () => {
     it('should reject updating maxMembers below current member count', async () => {
       // First add a member to the group
       const userUsername = `member_${Date.now()}`;
-      const registerResponse = await axios.post(`${API_BASE}/auth/register`, {
-        username: userUsername,
-        email: `${userUsername}@example.com`,
-        password: 'password123',
-        firstName: 'Member',
-        lastName: 'User',
-      });
-      const memberId = registerResponse.data.user.id;
-
-      const userResponse = await axios.post(`${API_BASE}/auth/login`, {
-        username: userUsername,
-        password: 'password123',
-      });
-
-      const userId = userResponse.data.user.id;
+      const memberResponse = await axios.post(
+        `${API_BASE}/users`,
+        {
+          username: userUsername,
+          email: `${userUsername}@example.com`,
+          password: 'password123',
+          firstName: 'Member',
+          lastName: 'User',
+        },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
+      const userId = memberResponse.data.user.id;
 
       // Assign user to group
       await axios.put(
@@ -376,7 +377,7 @@ describe('Groups API E2E Tests', () => {
       } finally {
         // Clean up the member user
         try {
-          await axios.delete(`${API_BASE}/users/${memberId || userId}`, {
+          await axios.delete(`${API_BASE}/users/${userId}`, {
             headers: { Authorization: `Bearer ${adminToken}` },
           });
         } catch (_error) {

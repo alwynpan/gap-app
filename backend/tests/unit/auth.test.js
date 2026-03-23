@@ -543,6 +543,28 @@ describe('Auth Routes', () => {
     });
   });
 
+  describe('GET /auth/config', () => {
+    it('returns registrationEnabled true when enabled', async () => {
+      config.app.registrationEnabled = true;
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/config']({}, mockReply);
+
+      expect(mockReply.send).toHaveBeenCalledWith({ registrationEnabled: true });
+    });
+
+    it('returns registrationEnabled false when disabled', async () => {
+      config.app.registrationEnabled = false;
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/config']({}, mockReply);
+
+      expect(mockReply.send).toHaveBeenCalledWith({ registrationEnabled: false });
+    });
+  });
+
   describe('GET /auth/me', () => {
     it('rejects unauthenticated request', async () => {
       const authRoutes = require('../../src/routes/auth');

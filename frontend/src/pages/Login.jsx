@@ -7,7 +7,7 @@ function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, registrationEnabled } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -81,11 +81,13 @@ function Login() {
             </button>
           </div>
 
-          <div className="text-center">
-            <Link to="/register" className="font-medium text-primary-600 hover:text-primary-500 text-sm">
-              Don&apos;t have an account? Register here
-            </Link>
-          </div>
+          {registrationEnabled && (
+            <div className="text-center">
+              <Link to="/register" className="font-medium text-primary-600 hover:text-primary-500 text-sm">
+                Don&apos;t have an account? Register here
+              </Link>
+            </div>
+          )}
         </form>
       </div>
     </div>
