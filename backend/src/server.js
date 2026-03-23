@@ -85,8 +85,8 @@ async function buildServer() {
         users: {
           list: 'GET /users (admin/assignment_manager)',
           get: 'GET /users/:id',
-          create: 'POST /users (admin)',
-          update: 'PUT /users/:id (admin)',
+          create: 'POST /users (admin/assignment_manager)',
+          update: 'PUT /users/:id (admin, or self)',
           updateGroup: 'PUT /users/:id/group (admin/assignment_manager)',
           delete: 'DELETE /users/:id (admin)',
         },

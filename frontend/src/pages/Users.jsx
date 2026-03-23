@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
+import { formatRoleName } from '../utils/formatting.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -14,8 +15,6 @@ const emptyNewUser = {
   groupId: '',
   role: 'user',
 };
-
-const formatRoleName = (role) => (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Users() {
   const { user, isAdmin, isAssignmentManager } = useAuth();

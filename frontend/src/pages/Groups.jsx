@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
+import { formatRoleName } from '../utils/formatting.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-const formatRoleName = (role) => (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Groups() {
   const { user, isAssignmentManager } = useAuth();
@@ -88,7 +87,7 @@ function Groups() {
     }
   };
 
-  const expandedGroupRef = { current: null };
+  const expandedGroupRef = useRef(null);
 
   const fetchGroupMembers = async (groupId) => {
     expandedGroupRef.current = groupId;
@@ -130,11 +129,12 @@ function Groups() {
   };
 
   const handleRemoveMember = async (userId) => {
+    const groupId = expandedGroup;
     try {
       await axios.put(`${API_BASE}/users/${userId}/group`, { groupId: null });
       setSuccess('Member removed successfully');
       setTimeout(() => setSuccess(''), 3000);
-      fetchGroupMembers(expandedGroup);
+      if (groupId) {fetchGroupMembers(groupId);}
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to remove member');
       setTimeout(() => setError(''), 3000);
@@ -145,12 +145,13 @@ function Groups() {
     if (!selectedUserId) {
       return;
     }
+    const groupId = expandedGroup;
     try {
-      await axios.put(`${API_BASE}/users/${selectedUserId}/group`, { groupId: expandedGroup });
+      await axios.put(`${API_BASE}/users/${selectedUserId}/group`, { groupId });
       setSuccess('Member added successfully');
       setSelectedUserId('');
       setTimeout(() => setSuccess(''), 3000);
-      fetchGroupMembers(expandedGroup);
+      if (groupId) {fetchGroupMembers(groupId);}
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to add member');
       setTimeout(() => setError(''), 3000);

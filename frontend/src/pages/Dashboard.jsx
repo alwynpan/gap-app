@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Link } from 'react-router-dom';
+import { formatRoleName } from '../utils/formatting.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-const formatRoleName = (role) => (role || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Dashboard() {
   const { user, logout, isAdmin, isAssignmentManager, refreshUser } = useAuth();

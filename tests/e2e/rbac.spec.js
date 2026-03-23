@@ -6,7 +6,6 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change_this_in_production'
 
 describe('RBAC E2E Tests', () => {
   let adminToken = null;
-  let assignmentManagerToken = null;
   let userToken = null;
   let testGroupId = null;
 
