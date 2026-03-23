@@ -652,7 +652,7 @@ describe('Users page', () => {
       await user.selectOptions(roleSelect, '2');
 
       // Toggle enabled
-      const enabledCheckbox = screen.getByRole('checkbox');
+      const enabledCheckbox = screen.getByRole('checkbox', { name: /enabled/i });
       await user.click(enabledCheckbox);
 
       axios.put.mockResolvedValue({});
@@ -1028,6 +1028,194 @@ describe('Users page', () => {
       expect(lines[0]).toBe('Username,First Name,Last Name,Email,Role,Group,Student ID');
       expect(text).toContain('admin@test.com');
       expect(text).toContain('Team A');
+    });
+  });
+
+  // ── Delete user ────────────────────────────────────────────────────────
+  describe('Delete user', () => {
+    const setupDeletePage = async (users = initialUsers) => {
+      axios.get.mockResolvedValueOnce({ data: { users } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+      await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
+    };
+
+    it('shows Delete User button for other users when admin', async () => {
+      await setupDeletePage();
+      expect(screen.getByRole('button', { name: /delete user/i })).toBeInTheDocument();
+    });
+
+    it('does not show Delete User button for the current logged-in user', async () => {
+      const usersWithSelf = [
+        ...initialUsers,
+        { ...initialUsers[0], id: 'u0000000-0000-0000-0000-000000000099', username: 'myself', email: 'm@t.com' },
+      ];
+      await setupDeletePage(usersWithSelf);
+      // only u1 (not myself) should have the button
+      expect(screen.getAllByRole('button', { name: /delete user/i })).toHaveLength(1);
+    });
+
+    it('does not show Delete User button when not admin', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 'u0000000-0000-0000-0000-000000000099' },
+        isAdmin: false,
+        isAssignmentManager: true,
+      });
+      await setupDeletePage();
+      expect(screen.queryByRole('button', { name: /delete user/i })).not.toBeInTheDocument();
+    });
+
+    it('opens delete confirmation modal when delete icon is clicked', async () => {
+      const user = userEvent.setup();
+      await setupDeletePage();
+
+      await user.click(screen.getByRole('button', { name: /delete user/i }));
+
+      expect(screen.getByText(/delete 1 user\?/i)).toBeInTheDocument();
+      expect(screen.getByText('This action cannot be undone.')).toBeInTheDocument();
+    });
+
+    it('shows group warning when user being deleted is in a group', async () => {
+      const userInGroup = {
+        ...initialUsers[0],
+        group_id: 'g0000000-0000-0000-0000-000000000002',
+        group_name: 'Group A',
+      };
+      const user = userEvent.setup();
+      await setupDeletePage([userInGroup]);
+
+      await user.click(screen.getByRole('button', { name: /delete user/i }));
+
+      const modal = screen.getByText(/will be unassigned/i).closest('.bg-white');
+      expect(modal).toHaveTextContent(/group a/i);
+    });
+
+    it('does not show warning when user is not in a group', async () => {
+      const user = userEvent.setup();
+      await setupDeletePage([{ ...initialUsers[0], group_id: null, group_name: null }]);
+
+      await user.click(screen.getByRole('button', { name: /delete user/i }));
+
+      expect(screen.queryByText(/will be unassigned/i)).not.toBeInTheDocument();
+    });
+
+    it('deletes user after confirmation and shows success', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupDeletePage();
+      axios.delete.mockResolvedValueOnce({});
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /delete user/i }));
+      await user.click(screen.getByRole('button', { name: /delete 1 user$/i }));
+
+      await waitFor(() => {
+        expect(axios.delete).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/)
+        );
+        expect(screen.getByText('User deleted successfully')).toBeInTheDocument();
+      });
+    });
+
+    it('cancels delete modal without deleting', async () => {
+      const user = userEvent.setup();
+      await setupDeletePage();
+
+      await user.click(screen.getByRole('button', { name: /delete user/i }));
+      await user.click(screen.getByRole('button', { name: /cancel/i }));
+
+      expect(axios.delete).not.toHaveBeenCalled();
+      expect(screen.queryByText(/delete 1 user\?/i)).not.toBeInTheDocument();
+    });
+
+    it('shows error when delete fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupDeletePage();
+      axios.delete.mockRejectedValue({ response: { data: { error: 'Cannot delete user' } } });
+
+      await user.click(screen.getByRole('button', { name: /delete user/i }));
+      await user.click(screen.getByRole('button', { name: /delete 1 user$/i }));
+
+      await waitFor(() => expect(screen.getByText('Cannot delete user')).toBeInTheDocument());
+    });
+
+    it('shows toolbar Delete (N) button when rows are selected', async () => {
+      const user = userEvent.setup();
+      await setupDeletePage();
+
+      await user.click(screen.getByRole('checkbox', { name: /select u1/i }));
+
+      expect(screen.getByRole('button', { name: /delete \(1\)/i })).toBeInTheDocument();
+    });
+
+    it('hides toolbar Delete button when selection is cleared', async () => {
+      const user = userEvent.setup();
+      await setupDeletePage();
+
+      const cb = screen.getByRole('checkbox', { name: /select u1/i });
+      await user.click(cb);
+      expect(screen.getByRole('button', { name: /delete \(1\)/i })).toBeInTheDocument();
+
+      await user.click(cb);
+      expect(screen.queryByRole('button', { name: /delete \(1\)/i })).not.toBeInTheDocument();
+    });
+
+    it('section select-all selects all selectable users in that section', async () => {
+      const user = userEvent.setup();
+      const twoUsers = [
+        { ...initialUsers[0], id: 'u1', username: 'user1', email: 'u1@t.com' },
+        { ...initialUsers[0], id: 'u2', username: 'user2', email: 'u2@t.com' },
+      ];
+      await setupDeletePage(twoUsers);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+
+      expect(screen.getByRole('button', { name: /delete \(2\)/i })).toBeInTheDocument();
+    });
+
+    it('section select-all does not select the current logged-in user', async () => {
+      const user = userEvent.setup();
+      const usersWithSelf = [
+        { ...initialUsers[0], id: 'u1', username: 'other', email: 'o@t.com' },
+        { ...initialUsers[0], id: 'u0000000-0000-0000-0000-000000000099', username: 'me', email: 'm@t.com' },
+      ];
+      await setupDeletePage(usersWithSelf);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+
+      // 'me' is the current user and must be excluded — only 1 user selected
+      expect(screen.getByRole('button', { name: /delete \(1\)/i })).toBeInTheDocument();
+    });
+
+    it('bulk deletes all selected users and shows success', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const twoUsers = [
+        { ...initialUsers[0], id: 'u1', username: 'user1', email: 'u1@t.com' },
+        { ...initialUsers[0], id: 'u2', username: 'user2', email: 'u2@t.com' },
+      ];
+      await setupDeletePage(twoUsers);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
+
+      axios.delete.mockResolvedValue({});
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
+
+      await waitFor(() => {
+        expect(axios.delete).toHaveBeenCalledTimes(2);
+        expect(screen.getByText('Deleted 2 users')).toBeInTheDocument();
+      });
     });
   });
 });
