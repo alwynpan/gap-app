@@ -9,6 +9,15 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(localStorage.getItem('token'));
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
+
+  // Fetch server config on mount
+  useEffect(() => {
+    axios
+      .get(`${API_BASE}/auth/config`)
+      .then((res) => setRegistrationEnabled(res.data.registrationEnabled))
+      .catch(() => setRegistrationEnabled(false));
+  }, []);
 
   // Configure axios defaults
   useEffect(() => {
@@ -119,6 +128,7 @@ export function AuthProvider({ children }) {
     refreshUser,
     isAdmin: user?.role === 'admin',
     isAssignmentManager: user?.role === 'assignment_manager' || user?.role === 'admin',
+    registrationEnabled,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

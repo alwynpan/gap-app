@@ -87,6 +87,11 @@ async function authRoutes(fastify, _options) {
     }
   );
 
+  // Config route (public) - exposes server-side feature flags to the frontend
+  fastify.get('/auth/config', {}, async (_request, reply) => {
+    return reply.send({ registrationEnabled: config.app.registrationEnabled });
+  });
+
   // Login route (strict limit by default; relaxed only in dev for e2e tests)
   fastify.post(
     '/auth/login',

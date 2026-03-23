@@ -39,13 +39,17 @@ describe('RBAC E2E Tests', () => {
     // Create assignment manager user (for later use if needed)
     try {
       const amUsername = `am_${Date.now()}`;
-      const amResponse = await axios.post(`${API_BASE}/auth/register`, {
-        username: amUsername,
-        email: `${amUsername}@example.com`,
-        password: 'password123',
-        firstName: 'Assignment',
-        lastName: 'Manager',
-      });
+      const amResponse = await axios.post(
+        `${API_BASE}/users`,
+        {
+          username: amUsername,
+          email: `${amUsername}@example.com`,
+          password: 'password123',
+          firstName: 'Assignment',
+          lastName: 'Manager',
+        },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
       amUserId = amResponse.data.user.id;
     } catch (error) {
       console.warn('Assignment manager setup failed');
@@ -54,14 +58,18 @@ describe('RBAC E2E Tests', () => {
     // Create and login as regular user
     try {
       const userUsername = `user_${Date.now()}`;
-      const userRegResponse = await axios.post(`${API_BASE}/auth/register`, {
-        username: userUsername,
-        email: `${userUsername}@example.com`,
-        password: 'password123',
-        firstName: 'Regular',
-        lastName: 'User',
-      });
-      regularUserId = userRegResponse.data.user.id;
+      const userCreateResponse = await axios.post(
+        `${API_BASE}/users`,
+        {
+          username: userUsername,
+          email: `${userUsername}@example.com`,
+          password: 'password123',
+          firstName: 'Regular',
+          lastName: 'User',
+        },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
+      regularUserId = userCreateResponse.data.user.id;
 
       const userResponse = await axios.post(`${API_BASE}/auth/login`, {
         username: userUsername,
@@ -147,13 +155,17 @@ describe('RBAC E2E Tests', () => {
     beforeEach(async () => {
       // Create a test user
       const uniqueUsername = `testuser_${Date.now()}`;
-      const response = await axios.post(`${API_BASE}/auth/register`, {
-        username: uniqueUsername,
-        email: `${uniqueUsername}@example.com`,
-        password: 'password123',
-        firstName: 'Test',
-        lastName: 'User',
-      });
+      const response = await axios.post(
+        `${API_BASE}/users`,
+        {
+          username: uniqueUsername,
+          email: `${uniqueUsername}@example.com`,
+          password: 'password123',
+          firstName: 'Test',
+          lastName: 'User',
+        },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
       testUserId = response.data.user.id;
     });
 
@@ -278,13 +290,17 @@ describe('RBAC E2E Tests', () => {
     beforeEach(async () => {
       // Create a test user
       const uniqueUsername = `deletetest_${Date.now()}`;
-      const response = await axios.post(`${API_BASE}/auth/register`, {
-        username: uniqueUsername,
-        email: `${uniqueUsername}@example.com`,
-        password: 'password123',
-        firstName: 'Delete',
-        lastName: 'Test',
-      });
+      const response = await axios.post(
+        `${API_BASE}/users`,
+        {
+          username: uniqueUsername,
+          email: `${uniqueUsername}@example.com`,
+          password: 'password123',
+          firstName: 'Delete',
+          lastName: 'Test',
+        },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
       testUserId = response.data.user.id;
     });
 

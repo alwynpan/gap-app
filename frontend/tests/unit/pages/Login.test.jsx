@@ -24,6 +24,7 @@ describe('Login page', () => {
       isAuthenticated: false,
       loading: false,
       user: null,
+      registrationEnabled: true,
     });
   });
 
@@ -76,7 +77,7 @@ describe('Login page', () => {
     });
   });
 
-  it('renders link to register page', () => {
+  it('renders link to register page when registration is enabled', () => {
     render(
       <MemoryRouter>
         <Login />
@@ -84,5 +85,23 @@ describe('Login page', () => {
     );
 
     expect(screen.getByRole('link', { name: /register here/i })).toHaveAttribute('href', '/register');
+  });
+
+  it('hides register link when registration is disabled', () => {
+    useAuth.mockReturnValue({
+      login: mockLogin,
+      isAuthenticated: false,
+      loading: false,
+      user: null,
+      registrationEnabled: false,
+    });
+
+    render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>
+    );
+
+    expect(screen.queryByRole('link', { name: /register here/i })).not.toBeInTheDocument();
   });
 });
