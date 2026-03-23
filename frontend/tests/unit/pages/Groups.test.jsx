@@ -10,238 +10,177 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(),
 }));
 
-describe('Groups page', () => {
-  const groupsData = [
-    {
-      id: 'g0000000-0000-0000-0000-000000000001',
-      name: 'Group A',
-      enabled: true,
-      member_count: 3,
-      max_members: 5,
-      created_at: '2025-01-01T00:00:00.000Z',
-    },
-  ];
+const makeGroup = (overrides = {}) => ({
+  id: 'g0000000-0000-0000-0000-000000000001',
+  name: 'Group A',
+  enabled: true,
+  member_count: 3,
+  max_members: 5,
+  created_at: '2025-01-01T00:00:00.000Z',
+  ...overrides,
+});
 
+describe('Groups page', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    useAuth.mockReturnValue({ user: { username: 'admin', role: 'admin' }, isAdmin: true, isAssignmentManager: true });
+    useAuth.mockReturnValue({ isAssignmentManager: true });
     jest.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
   });
 
+  const setupPage = async (groups = [makeGroup()]) => {
+    axios.get.mockResolvedValueOnce({ data: { groups } });
+    render(
+      <MemoryRouter>
+        <Groups />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByText(/manage groups/i)).toBeInTheDocument());
+  };
+
+  // ── Loading / fetch ────────────────────────────────────────────────────
   it('shows loading spinner before data resolves', () => {
     axios.get.mockImplementation(() => new Promise(() => {}));
-
     const { container } = render(
       <MemoryRouter>
         <Groups />
       </MemoryRouter>
     );
-
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
     expect(screen.queryByText(/manage groups/i)).not.toBeInTheDocument();
   });
 
-  it('renders groups after successful fetch', async () => {
-    axios.get.mockResolvedValue({ data: { groups: groupsData } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/manage groups/i)).toBeInTheDocument();
-      expect(screen.getByText('Group A')).toBeInTheDocument();
-      expect(screen.getByText('Disable')).toBeInTheDocument();
-    });
+  it('shows empty-state text when there are no groups', async () => {
+    await setupPage([]);
+    expect(screen.getByText('No groups created yet')).toBeInTheDocument();
   });
 
   it('shows fetch error state', async () => {
     axios.get.mockRejectedValue(new Error('boom'));
-
     render(
       <MemoryRouter>
         <Groups />
       </MemoryRouter>
     );
-
-    await waitFor(() => {
-      expect(screen.getByText('Failed to load groups')).toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.getByText('Failed to load groups')).toBeInTheDocument());
   });
 
-  it('shows empty-state text when there are no groups', async () => {
-    axios.get.mockResolvedValue({ data: { groups: [] } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('No groups created yet')).toBeInTheDocument();
-    });
+  it('renders group name and member count after successful fetch', async () => {
+    await setupPage();
+    expect(screen.getByText('Group A')).toBeInTheDocument();
+    expect(screen.getByText('3 / 5')).toBeInTheDocument();
   });
 
-  it('opens create-group modal', async () => {
-    axios.get.mockResolvedValue({ data: { groups: [] } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /create group/i })).toBeInTheDocument();
-    });
-
-    await userEvent.click(screen.getByRole('button', { name: /create group/i }));
-
-    expect(screen.getByText('Create New Group')).toBeInTheDocument();
+  it('shows ∞ when max_members is null', async () => {
+    await setupPage([makeGroup({ max_members: null })]);
+    expect(screen.getByText('3 / ∞')).toBeInTheDocument();
   });
 
-  it('creates a group and shows success feedback', async () => {
+  // ── Three sections ─────────────────────────────────────────────────────
+  it('places open group in "Groups with space" section', async () => {
+    await setupPage([makeGroup({ member_count: 2, max_members: 5 })]);
+    expect(screen.getByText(/groups with space/i)).toBeInTheDocument();
+  });
+
+  it('places unlimited group in "Groups with space" section', async () => {
+    await setupPage([makeGroup({ member_count: 10, max_members: null })]);
+    expect(screen.getByText(/groups with space/i)).toBeInTheDocument();
+  });
+
+  it('places full group in "Groups full" section', async () => {
+    await setupPage([makeGroup({ member_count: 5, max_members: 5 })]);
+    expect(screen.getByText(/groups full/i)).toBeInTheDocument();
+  });
+
+  it('places disabled group in "Disabled groups" section', async () => {
+    await setupPage([makeGroup({ enabled: false })]);
+    expect(screen.getByText(/disabled groups/i)).toBeInTheDocument();
+  });
+
+  it('shows correct counts in section headings', async () => {
+    await setupPage([
+      makeGroup({ id: 'g1', name: 'Open', member_count: 1, max_members: 5 }),
+      makeGroup({ id: 'g2', name: 'Full', member_count: 3, max_members: 3 }),
+      makeGroup({ id: 'g3', name: 'Disabled', enabled: false }),
+    ]);
+    expect(screen.getByText(/groups with space/i).closest('h3')).toHaveTextContent('(1)');
+    expect(screen.getByText(/groups full/i).closest('h3')).toHaveTextContent('(1)');
+    expect(screen.getByText(/disabled groups/i).closest('h3')).toHaveTextContent('(1)');
+  });
+
+  // ── Action icon buttons ────────────────────────────────────────────────
+  it('shows disable, set-limit, and delete icon buttons', async () => {
+    await setupPage();
+    expect(screen.getByRole('button', { name: /disable group/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /set member limit/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /delete group/i })).toBeInTheDocument();
+  });
+
+  it('shows enable button for a disabled group', async () => {
+    await setupPage([makeGroup({ enabled: false })]);
+    expect(screen.getByRole('button', { name: /enable group/i })).toBeInTheDocument();
+  });
+
+  it('disables a group and shows success feedback', async () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await setupPage();
+    axios.put.mockResolvedValueOnce({});
+    axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ enabled: false })] } });
 
-    axios.get.mockResolvedValueOnce({ data: { groups: [] } }).mockResolvedValueOnce({
-      data: {
-        groups: [...groupsData, { ...groupsData[0], id: 'g0000000-0000-0000-0000-000000000002', name: 'New Team' }],
-      },
-    });
-    axios.post.mockResolvedValue({});
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /^\+ create group$/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
-    await user.type(screen.getByPlaceholderText(/enter group name/i), ' New Team ');
-    await user.click(screen.getByRole('button', { name: /^create$/i }));
-
-    await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'New Team' });
-      expect(screen.getByText('Group created successfully')).toBeInTheDocument();
-    });
-
-    jest.advanceTimersByTime(3000);
-    await waitFor(() => {
-      expect(screen.queryByText('Group created successfully')).not.toBeInTheDocument();
-    });
-  });
-
-  it('does not create a group when name is blank', async () => {
-    const user = userEvent.setup();
-    axios.get.mockResolvedValue({ data: { groups: [] } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /^\+ create group$/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
-    await user.type(screen.getByPlaceholderText(/enter group name/i), '   ');
-    await user.click(screen.getByRole('button', { name: /^create$/i }));
-
-    expect(axios.post).not.toHaveBeenCalled();
-  });
-
-  it('shows fallback error when create group fails without API message', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    axios.get.mockResolvedValue({ data: { groups: [] } });
-    axios.post.mockRejectedValue(new Error('network'));
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /^\+ create group$/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
-    await user.type(screen.getByPlaceholderText(/enter group name/i), 'Team X');
-    await user.click(screen.getByRole('button', { name: /^create$/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText('Failed to create group')).toBeInTheDocument();
-    });
-
-    jest.advanceTimersByTime(3000);
-    await waitFor(() => {
-      expect(screen.queryByText('Failed to create group')).not.toBeInTheDocument();
-    });
-  });
-
-  it('toggles group enabled state', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    axios.get
-      .mockResolvedValueOnce({ data: { groups: groupsData } })
-      .mockResolvedValueOnce({ data: { groups: [{ ...groupsData[0], enabled: false }] } });
-    axios.put.mockResolvedValue({});
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /disable/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /disable/i }));
+    await user.click(screen.getByRole('button', { name: /disable group/i }));
 
     await waitFor(() => {
       expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/), {
         enabled: false,
       });
-      expect(screen.getByText('Group updated successfully')).toBeInTheDocument();
+      expect(screen.getByText('Group disabled successfully')).toBeInTheDocument();
+    });
+
+    jest.advanceTimersByTime(3000);
+    await waitFor(() => expect(screen.queryByText('Group disabled successfully')).not.toBeInTheDocument());
+  });
+
+  it('enables a disabled group', async () => {
+    const user = userEvent.setup();
+    await setupPage([makeGroup({ enabled: false })]);
+    axios.put.mockResolvedValueOnce({});
+    axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup()] } });
+
+    await user.click(screen.getByRole('button', { name: /enable group/i }));
+
+    await waitFor(() => {
+      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\//), { enabled: true });
     });
   });
 
+  it('shows API error when toggle fails', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await setupPage();
+    axios.put.mockRejectedValue({ response: { data: { error: 'Cannot update group' } } });
+
+    await user.click(screen.getByRole('button', { name: /disable group/i }));
+
+    await waitFor(() => expect(screen.getByText('Cannot update group')).toBeInTheDocument());
+
+    jest.advanceTimersByTime(3000);
+    await waitFor(() => expect(screen.queryByText('Cannot update group')).not.toBeInTheDocument());
+  });
+
+  // ── Delete ─────────────────────────────────────────────────────────────
   it('deletes group after confirmation', async () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await setupPage();
+    axios.delete.mockResolvedValueOnce({});
+    axios.get.mockResolvedValueOnce({ data: { groups: [] } });
 
-    axios.get.mockResolvedValueOnce({ data: { groups: groupsData } }).mockResolvedValueOnce({ data: { groups: [] } });
-    axios.delete.mockResolvedValue({});
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /delete/i }));
+    await user.click(screen.getByRole('button', { name: /delete group/i }));
 
     await waitFor(() => {
       expect(window.confirm).toHaveBeenCalledWith('Are you sure you want to delete this group?');
@@ -253,72 +192,141 @@ describe('Groups page', () => {
   });
 
   it('does not delete when confirmation is canceled', async () => {
-    const user = userEvent.setup();
     window.confirm.mockReturnValue(false);
-    axios.get.mockResolvedValue({ data: { groups: groupsData } });
+    const user = userEvent.setup();
+    await setupPage();
 
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /delete/i }));
+    await user.click(screen.getByRole('button', { name: /delete group/i }));
     expect(axios.delete).not.toHaveBeenCalled();
   });
 
-  it('displays member count with max members', async () => {
-    axios.get.mockResolvedValue({ data: { groups: groupsData } });
+  it('shows error when delete fails', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await setupPage();
+    axios.delete.mockRejectedValue({ response: { data: { error: 'Cannot delete' } } });
 
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
+    await user.click(screen.getByRole('button', { name: /delete group/i }));
+
+    await waitFor(() => expect(screen.getByText('Cannot delete')).toBeInTheDocument());
+  });
+
+  // ── Set Limit modal ────────────────────────────────────────────────────
+  it('opens set limit modal with current value pre-filled', async () => {
+    const user = userEvent.setup();
+    await setupPage();
+
+    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+
+    expect(screen.getByRole('heading', { name: 'Set Member Limit' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Unlimited')).toHaveValue(5);
+  });
+
+  it('saves a numeric limit via modal', async () => {
+    const user = userEvent.setup();
+    await setupPage();
+    axios.put.mockResolvedValueOnce({});
+    axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ max_members: 10 })] } });
+
+    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    const input = screen.getByPlaceholderText('Unlimited');
+    await user.clear(input);
+    await user.type(input, '10');
+    await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Members: 3 \/ 5/)).toBeInTheDocument();
+      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/), {
+        maxMembers: 10,
+      });
+      expect(screen.getByText('Group limit updated')).toBeInTheDocument();
     });
   });
 
-  it('displays unlimited when max_members is null', async () => {
-    axios.get.mockResolvedValue({
-      data: {
-        groups: [{ ...groupsData[0], max_members: null }],
-      },
-    });
+  it('saves unlimited (blank) limit via modal', async () => {
+    const user = userEvent.setup();
+    await setupPage();
+    axios.put.mockResolvedValueOnce({});
+    axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ max_members: null })] } });
 
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
+    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    await user.clear(screen.getByPlaceholderText('Unlimited'));
+    await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Members: 3 \/ Unlimited/)).toBeInTheDocument();
+      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\//), { maxMembers: null });
     });
+  });
+
+  it('rejects invalid limit input', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await setupPage();
+
+    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    const input = screen.getByPlaceholderText('Unlimited');
+    await user.clear(input);
+    await user.type(input, '0'); // 0 is rejected since min is 1
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(screen.getByText('Max members must be a positive number')).toBeInTheDocument());
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('cancels the set limit modal', async () => {
+    const user = userEvent.setup();
+    await setupPage();
+
+    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    expect(screen.getByRole('heading', { name: 'Set Member Limit' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.queryByRole('heading', { name: 'Set Member Limit' })).not.toBeInTheDocument();
+  });
+
+  it('shows error when set limit API fails', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await setupPage();
+    axios.put.mockRejectedValue({ response: { data: { error: 'Limit too low' } } });
+
+    await user.click(screen.getByRole('button', { name: /set member limit/i }));
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(screen.getByText('Limit too low')).toBeInTheDocument());
+  });
+
+  // ── Create group modal ─────────────────────────────────────────────────
+  it('opens create-group modal', async () => {
+    await setupPage([]);
+    await userEvent.click(screen.getByRole('button', { name: /create group/i }));
+    expect(screen.getByText('Create New Group')).toBeInTheDocument();
+  });
+
+  it('creates a group and shows success feedback', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await setupPage([]);
+    axios.post.mockResolvedValueOnce({});
+    axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup()] } });
+
+    await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
+    await user.type(screen.getByPlaceholderText(/enter group name/i), ' New Team ');
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'New Team' });
+      expect(screen.getByText('Group created successfully')).toBeInTheDocument();
+    });
+
+    jest.advanceTimersByTime(3000);
+    await waitFor(() => expect(screen.queryByText('Group created successfully')).not.toBeInTheDocument());
   });
 
   it('creates a group with maxMembers', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    axios.get.mockResolvedValueOnce({ data: { groups: [] } }).mockResolvedValueOnce({ data: { groups: groupsData } });
-    axios.post.mockResolvedValue({});
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /^\+ create group$/i })).toBeInTheDocument();
-    });
+    const user = userEvent.setup();
+    await setupPage([]);
+    axios.post.mockResolvedValueOnce({});
+    axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup()] } });
 
     await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
     await user.type(screen.getByPlaceholderText(/enter group name/i), 'Limited Team');
@@ -333,64 +341,47 @@ describe('Groups page', () => {
     });
   });
 
-  it('creates a group without maxMembers', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    axios.get.mockResolvedValueOnce({ data: { groups: [] } }).mockResolvedValueOnce({ data: { groups: groupsData } });
-    axios.post.mockResolvedValue({});
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /^\+ create group$/i })).toBeInTheDocument();
-    });
+  it('does not create a group when name is blank', async () => {
+    const user = userEvent.setup();
+    await setupPage([]);
 
     await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
-    await user.type(screen.getByPlaceholderText(/enter group name/i), 'Unlimited Team');
+    await user.type(screen.getByPlaceholderText(/enter group name/i), '   ');
     await user.click(screen.getByRole('button', { name: /^create$/i }));
 
-    await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), {
-        name: 'Unlimited Team',
-      });
-    });
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
+  it('shows error when create group fails', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await setupPage([]);
+    axios.post.mockRejectedValue(new Error('network'));
+
+    await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
+    await user.type(screen.getByPlaceholderText(/enter group name/i), 'Team X');
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() => expect(screen.getByText('Failed to create group')).toBeInTheDocument());
+
+    jest.advanceTimersByTime(3000);
+    await waitFor(() => expect(screen.queryByText('Failed to create group')).not.toBeInTheDocument());
+  });
+
+  it('cancels create modal and resets fields', async () => {
+    const user = userEvent.setup();
+    await setupPage([]);
+
+    await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
+    await user.type(screen.getByPlaceholderText(/enter group name/i), 'Test');
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+
+    expect(screen.queryByText('Create New Group')).not.toBeInTheDocument();
+  });
+
+  // ── Expand row / members ───────────────────────────────────────────────
   describe('Group Members', () => {
-    const groupsData = [
-      {
-        id: 'g0000000-0000-0000-0000-000000000001',
-        name: 'Group A',
-        enabled: true,
-        member_count: 2,
-        max_members: null,
-        created_at: '2025-01-01T00:00:00.000Z',
-      },
-    ];
     const membersData = [
-      {
-        id: 'u0000000-0000-0000-0000-000000000010',
-        username: 'alice',
-        email: 'alice@test.com',
-        role_name: 'user',
-        student_id: 's1',
-        enabled: true,
-      },
-      {
-        id: 'u0000000-0000-0000-0000-000000000011',
-        username: 'bob',
-        email: 'bob@test.com',
-        role_name: 'assignment_manager',
-        student_id: null,
-        enabled: true,
-      },
-    ];
-    const allUsersData = [
       { id: 'u0000000-0000-0000-0000-000000000010', username: 'alice', email: 'alice@test.com', role_name: 'user' },
       {
         id: 'u0000000-0000-0000-0000-000000000011',
@@ -398,35 +389,24 @@ describe('Groups page', () => {
         email: 'bob@test.com',
         role_name: 'assignment_manager',
       },
+    ];
+    const allUsersData = [
+      ...membersData,
       { id: 'u0000000-0000-0000-0000-000000000012', username: 'charlie', email: 'charlie@test.com', role_name: 'user' },
     ];
 
-    const setupWithGroups = async () => {
-      axios.get.mockResolvedValueOnce({ data: { groups: groupsData } });
-
-      render(
-        <MemoryRouter>
-          <Groups />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('Group A')).toBeInTheDocument();
-      });
+    const expandGroup = async (user) => {
+      await user.click(screen.getByText('Group A'));
     };
 
-    it('expands group card to show members', async () => {
+    it('expands group row to show members', async () => {
       const user = userEvent.setup();
-      await setupWithGroups();
-
-      // Mock the expand fetch
+      await setupPage();
       axios.get
-        .mockResolvedValueOnce({
-          data: { group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' }, members: membersData },
-        })
+        .mockResolvedValueOnce({ data: { members: membersData } })
         .mockResolvedValueOnce({ data: { users: allUsersData } });
 
-      await user.click(screen.getByText('Group A'));
+      await expandGroup(user);
 
       await waitFor(() => {
         expect(screen.getByText('alice')).toBeInTheDocument();
@@ -435,50 +415,47 @@ describe('Groups page', () => {
       });
     });
 
-    it('shows empty members message when group has no members', async () => {
+    it('shows "No members in this group" when group is empty', async () => {
       const user = userEvent.setup();
-      await setupWithGroups();
+      await setupPage();
+      axios.get.mockResolvedValueOnce({ data: { members: [] } }).mockResolvedValueOnce({ data: { users: [] } });
 
+      await expandGroup(user);
+
+      await waitFor(() => expect(screen.getByText('No members in this group')).toBeInTheDocument());
+    });
+
+    it('collapses row on second click', async () => {
+      const user = userEvent.setup();
+      await setupPage();
       axios.get
-        .mockResolvedValueOnce({
-          data: { group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' }, members: [] },
-        })
-        .mockResolvedValueOnce({ data: { users: [] } });
+        .mockResolvedValueOnce({ data: { members: membersData } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
 
-      await user.click(screen.getByText('Group A'));
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-      await waitFor(() => {
-        expect(screen.getByText('No members in this group')).toBeInTheDocument();
-      });
+      await expandGroup(user);
+      await waitFor(() => expect(screen.queryByText('alice')).not.toBeInTheDocument());
     });
 
     it('removes a member from the group', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupWithGroups();
-
+      await setupPage();
       axios.get
-        .mockResolvedValueOnce({
-          data: { group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' }, members: membersData },
-        })
+        .mockResolvedValueOnce({ data: { members: membersData } })
         .mockResolvedValueOnce({ data: { users: allUsersData } });
 
-      await user.click(screen.getByText('Group A'));
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-      await waitFor(() => {
-        expect(screen.getByText('alice')).toBeInTheDocument();
-      });
-
-      axios.put.mockResolvedValue({});
-      // Mock refetch after remove
+      axios.put.mockResolvedValueOnce({});
       axios.get
-        .mockResolvedValueOnce({
-          data: { group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' }, members: [membersData[1]] },
-        })
+        .mockResolvedValueOnce({ data: { members: [membersData[1]] } })
         .mockResolvedValueOnce({ data: { users: allUsersData } });
 
-      const removeButtons = screen.getAllByRole('button', { name: /remove/i });
-      await user.click(removeButtons[0]);
+      await user.click(screen.getByRole('button', { name: /remove alice/i }));
 
       await waitFor(() => {
         expect(axios.put).toHaveBeenCalledWith(
@@ -489,41 +466,26 @@ describe('Groups page', () => {
       });
 
       jest.advanceTimersByTime(3000);
-      await waitFor(() => {
-        expect(screen.queryByText('Member removed successfully')).not.toBeInTheDocument();
-      });
+      await waitFor(() => expect(screen.queryByText('Member removed successfully')).not.toBeInTheDocument());
     });
 
     it('adds a member to the group', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupWithGroups();
-
+      await setupPage();
       axios.get
-        .mockResolvedValueOnce({
-          data: { group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' }, members: membersData },
-        })
+        .mockResolvedValueOnce({ data: { members: membersData } })
         .mockResolvedValueOnce({ data: { users: allUsersData } });
 
-      await user.click(screen.getByText('Group A'));
-
-      await waitFor(() => {
-        expect(screen.getByText('alice')).toBeInTheDocument();
-      });
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
       // charlie is the only user not in the group
-      const addSelect = screen.getByRole('combobox');
-      await user.selectOptions(addSelect, 'u0000000-0000-0000-0000-000000000012');
+      await user.selectOptions(screen.getByRole('combobox'), 'u0000000-0000-0000-0000-000000000012');
 
-      axios.put.mockResolvedValue({});
-      // Mock refetch after add
+      axios.put.mockResolvedValueOnce({});
       axios.get
-        .mockResolvedValueOnce({
-          data: {
-            group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' },
-            members: [...membersData, allUsersData[2]],
-          },
-        })
+        .mockResolvedValueOnce({ data: { members: [...membersData, allUsersData[2]] } })
         .mockResolvedValueOnce({ data: { users: allUsersData } });
 
       await user.click(screen.getByRole('button', { name: /^add$/i }));
@@ -537,426 +499,387 @@ describe('Groups page', () => {
       });
 
       jest.advanceTimersByTime(3000);
-      await waitFor(() => {
-        expect(screen.queryByText('Member added successfully')).not.toBeInTheDocument();
-      });
+      await waitFor(() => expect(screen.queryByText('Member added successfully')).not.toBeInTheDocument());
     });
 
     it('does not submit add when no user selected', async () => {
       const user = userEvent.setup();
-      await setupWithGroups();
-
+      await setupPage();
       axios.get
-        .mockResolvedValueOnce({
-          data: { group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' }, members: membersData },
-        })
+        .mockResolvedValueOnce({ data: { members: membersData } })
         .mockResolvedValueOnce({ data: { users: allUsersData } });
 
-      await user.click(screen.getByText('Group A'));
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /^add$/i })).toBeInTheDocument();
-      });
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByRole('button', { name: /^add$/i })).toBeInTheDocument());
 
       await user.click(screen.getByRole('button', { name: /^add$/i }));
-
-      // Only the initial GET calls + expand calls, no PUT
       expect(axios.put).not.toHaveBeenCalled();
     });
 
-    it('shows error when fetching members fails', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupWithGroups();
-
-      axios.get.mockRejectedValueOnce(new Error('network'));
-
-      await user.click(screen.getByText('Group A'));
-
-      await waitFor(() => {
-        expect(screen.getByText('Failed to load group members')).toBeInTheDocument();
-      });
-
-      jest.advanceTimersByTime(3000);
-      await waitFor(() => {
-        expect(screen.queryByText('Failed to load group members')).not.toBeInTheDocument();
-      });
-    });
-
-    it('hides add/remove controls for regular users', async () => {
-      useAuth.mockReturnValue({
-        user: { username: 'regular', role: 'user' },
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
+    it('hides add/remove controls for non-assignment-managers', async () => {
+      useAuth.mockReturnValue({ isAssignmentManager: false });
       const user = userEvent.setup();
-      await setupWithGroups();
+      await setupPage();
+      axios.get.mockResolvedValueOnce({ data: { members: membersData } });
 
-      // Regular user doesn't fetch /users, only group members
-      axios.get.mockResolvedValueOnce({
-        data: { group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' }, members: membersData },
-      });
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-      await user.click(screen.getByText('Group A'));
-
-      await waitFor(() => {
-        expect(screen.getByText('alice')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /remove alice/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     });
 
     it('hides add member dropdown when group is full', async () => {
       const user = userEvent.setup();
-      // Override groupsData with a full group (max_members === member_count after fetch)
-      const fullGroupsData = [{ ...groupsData[0], max_members: 2, member_count: 2 }];
-      axios.get.mockResolvedValueOnce({ data: { groups: fullGroupsData } });
-
-      render(
-        <MemoryRouter>
-          <Groups />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => expect(screen.getByText('Group A')).toBeInTheDocument());
-
+      await setupPage([makeGroup({ member_count: 2, max_members: 2 })]);
       axios.get
-        .mockResolvedValueOnce({
-          data: { group: { id: 'g0000000-0000-0000-0000-000000000001' }, members: membersData },
-        })
+        .mockResolvedValueOnce({ data: { members: membersData } })
         .mockResolvedValueOnce({ data: { users: allUsersData } });
 
-      await user.click(screen.getByText('Group A'));
-
+      await expandGroup(user);
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
       // groupMembers.length (2) === max_members (2), so dropdown must be hidden
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     });
 
-    it('collapses group on second click', async () => {
-      const user = userEvent.setup();
-      await setupWithGroups();
+    it('shows error when fetching members fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage();
+      axios.get.mockRejectedValueOnce(new Error('network'));
 
+      await expandGroup(user);
+
+      await waitFor(() => expect(screen.getByText('Failed to load group members')).toBeInTheDocument());
+
+      jest.advanceTimersByTime(3000);
+      await waitFor(() => expect(screen.queryByText('Failed to load group members')).not.toBeInTheDocument());
+    });
+
+    it('shows error when remove member fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage();
       axios.get
-        .mockResolvedValueOnce({
-          data: { group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' }, members: membersData },
-        })
+        .mockResolvedValueOnce({ data: { members: membersData } })
         .mockResolvedValueOnce({ data: { users: allUsersData } });
 
-      await user.click(screen.getByText('Group A'));
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+
+      axios.put.mockRejectedValue({ response: { data: { error: 'Remove failed' } } });
+      await user.click(screen.getByRole('button', { name: /remove alice/i }));
+
+      await waitFor(() => expect(screen.getByText('Remove failed')).toBeInTheDocument());
+    });
+
+    it('shows error when add member fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage();
+      axios.get
+        .mockResolvedValueOnce({ data: { members: membersData } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+
+      await user.selectOptions(screen.getByRole('combobox'), 'u0000000-0000-0000-0000-000000000012');
+      axios.put.mockRejectedValue({ response: { data: { error: 'Add failed' } } });
+      await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+      await waitFor(() => expect(screen.getByText('Add failed')).toBeInTheDocument());
+    });
+  });
+
+  // ── Row selection ──────────────────────────────────────────────────────
+  describe('Row selection', () => {
+    it('shows bulk delete button when a row is selected', async () => {
+      const user = userEvent.setup();
+      await setupPage();
+
+      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
+
+      expect(screen.getByRole('button', { name: /delete \(1\)/i })).toBeInTheDocument();
+    });
+
+    it('hides bulk delete button when row is deselected', async () => {
+      const user = userEvent.setup();
+      await setupPage();
+
+      const cb = screen.getByRole('checkbox', { name: /select group a/i });
+      await user.click(cb);
+      expect(screen.getByRole('button', { name: /delete \(1\)/i })).toBeInTheDocument();
+
+      await user.click(cb);
+      expect(screen.queryByRole('button', { name: /delete \(1\)/i })).not.toBeInTheDocument();
+    });
+
+    it('section select-all selects all groups in that section', async () => {
+      const user = userEvent.setup();
+      await setupPage([
+        makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
+        makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
+      ]);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
+
+      expect(screen.getByRole('button', { name: /delete \(2\)/i })).toBeInTheDocument();
+    });
+
+    it('section select-all deselects all when all already selected', async () => {
+      const user = userEvent.setup();
+      await setupPage([
+        makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
+        makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
+      ]);
+
+      const sectionCb = screen.getByRole('checkbox', { name: /select all groups with space/i });
+      await user.click(sectionCb);
+      expect(screen.getByRole('button', { name: /delete \(2\)/i })).toBeInTheDocument();
+
+      await user.click(sectionCb);
+      expect(screen.queryByRole('button', { name: /delete \(\d+\)/i })).not.toBeInTheDocument();
+    });
+
+    it('shows bulk set limit button for section when rows are selected', async () => {
+      const user = userEvent.setup();
+      await setupPage();
+
+      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
+
+      expect(screen.getByRole('button', { name: /set limit \(1\)/i })).toBeInTheDocument();
+    });
+  });
+
+  // ── Bulk delete ────────────────────────────────────────────────────────
+  describe('Bulk delete', () => {
+    it('opens bulk delete confirmation modal', async () => {
+      const user = userEvent.setup();
+      await setupPage();
+
+      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
+
+      expect(screen.getByText(/delete 1 group\?/i)).toBeInTheDocument();
+    });
+
+    it('cancels bulk delete modal', async () => {
+      const user = userEvent.setup();
+      await setupPage();
+
+      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
+      await user.click(screen.getByRole('button', { name: /cancel/i }));
+
+      expect(screen.queryByText(/delete 1 group\?/i)).not.toBeInTheDocument();
+    });
+
+    it('shows warning when selected groups have members', async () => {
+      const user = userEvent.setup();
+      await setupPage([makeGroup({ member_count: 3 })]);
+
+      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
+
+      expect(screen.getByText(/will be unassigned/i)).toBeInTheDocument();
+    });
+
+    it('does not show warning when selected groups have no members', async () => {
+      const user = userEvent.setup();
+      await setupPage([makeGroup({ member_count: 0 })]);
+
+      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
+
+      expect(screen.queryByText(/will be unassigned/i)).not.toBeInTheDocument();
+    });
+
+    it('deletes all selected groups and shows success', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([
+        makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
+        makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
+      ]);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
+
+      axios.delete.mockResolvedValue({});
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
+
+      await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
 
       await waitFor(() => {
-        expect(screen.getByText('alice')).toBeInTheDocument();
+        expect(axios.delete).toHaveBeenCalledTimes(2);
+        expect(screen.getByText('Deleted 2 groups')).toBeInTheDocument();
       });
+    });
 
-      await user.click(screen.getByText('Group A'));
+    it('shows error when bulk delete fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([makeGroup({ member_count: 0 })]);
+
+      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
+      axios.delete.mockRejectedValue({ response: { data: { error: 'Delete failed' } } });
+
+      await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
+
+      await waitFor(() => expect(screen.getByText('Delete failed')).toBeInTheDocument());
+    });
+  });
+
+  // ── Bulk create ────────────────────────────────────────────────────────
+  describe('Bulk create', () => {
+    it('opens bulk create modal', async () => {
+      const user = userEvent.setup();
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+
+      expect(screen.getByText('Bulk Create Groups')).toBeInTheDocument();
+    });
+
+    it('cancels bulk create modal', async () => {
+      const user = userEvent.setup();
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.click(screen.getByRole('button', { name: /cancel/i }));
+
+      expect(screen.queryByText('Bulk Create Groups')).not.toBeInTheDocument();
+    });
+
+    it('disables submit button when prefix is empty', async () => {
+      const user = userEvent.setup();
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+
+      // no prefix typed, preview is empty → submit disabled
+      expect(screen.getByRole('button', { name: /create.*groups/i })).toBeDisabled();
+    });
+
+    it('shows inline preview when prefix and count are set (<=5 groups)', async () => {
+      const user = userEvent.setup();
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '3');
+
+      expect(screen.getByText('Team1, Team2, Team3')).toBeInTheDocument();
+    });
+
+    it('shows truncated preview for more than 5 groups', async () => {
+      const user = userEvent.setup();
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '6');
+
+      expect(screen.getByText(/team6/i)).toBeInTheDocument();
+      expect(screen.getByText(/\(6 groups\)/i)).toBeInTheDocument();
+    });
+
+    it('creates groups and shows success', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '3');
+
+      axios.post.mockResolvedValue({});
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
+
+      await user.click(screen.getByRole('button', { name: /create 3 groups/i }));
 
       await waitFor(() => {
-        expect(screen.queryByText('alice')).not.toBeInTheDocument();
-      });
-    });
-  });
-
-  it('closes create modal with cancel button and resets fields', async () => {
-    const user = userEvent.setup();
-
-    axios.get.mockResolvedValue({ data: { groups: [] } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /^\+ create group$/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
-    await user.type(screen.getByPlaceholderText(/enter group name/i), 'Test');
-    await user.type(screen.getByPlaceholderText(/leave blank for unlimited/i), '5');
-
-    await user.click(screen.getByRole('button', { name: /cancel/i }));
-    expect(screen.queryByText('Create New Group')).not.toBeInTheDocument();
-  });
-
-  it('sets group limit via prompt', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    jest.spyOn(window, 'prompt').mockReturnValue('10');
-    axios.get
-      .mockResolvedValueOnce({ data: { groups: groupsData } })
-      .mockResolvedValueOnce({ data: { groups: groupsData } });
-    axios.put.mockResolvedValue({});
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /set limit/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /set limit/i }));
-
-    await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/), {
-        maxMembers: 10,
-      });
-      expect(screen.getByText('Group limit updated')).toBeInTheDocument();
-    });
-
-    window.prompt.mockRestore();
-  });
-
-  it('sets group limit to unlimited via empty prompt', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    jest.spyOn(window, 'prompt').mockReturnValue('');
-    axios.get
-      .mockResolvedValueOnce({ data: { groups: groupsData } })
-      .mockResolvedValueOnce({ data: { groups: groupsData } });
-    axios.put.mockResolvedValue({});
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /set limit/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /set limit/i }));
-
-    await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/), {
-        maxMembers: null,
+        expect(axios.post).toHaveBeenCalledTimes(3);
+        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'Team1' });
+        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'Team2' });
+        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'Team3' });
+        expect(screen.getByText('Created 3 groups')).toBeInTheDocument();
       });
     });
 
-    window.prompt.mockRestore();
-  });
+    it('shows error when bulk create fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([]);
 
-  it('cancels set limit when prompt returns null', async () => {
-    const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '2');
 
-    jest.spyOn(window, 'prompt').mockReturnValue(null);
-    axios.get.mockResolvedValue({ data: { groups: groupsData } });
+      axios.post.mockRejectedValue({ response: { data: { error: 'Create failed' } } });
 
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
+      await user.click(screen.getByRole('button', { name: /create 2 groups/i }));
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /set limit/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /set limit/i }));
-    expect(axios.put).not.toHaveBeenCalled();
-
-    window.prompt.mockRestore();
-  });
-
-  it('rejects invalid set limit input', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    jest.spyOn(window, 'prompt').mockReturnValue('abc');
-    axios.get.mockResolvedValue({ data: { groups: groupsData } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /set limit/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /set limit/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText('Max members must be a positive number')).toBeInTheDocument();
-    });
-    expect(axios.put).not.toHaveBeenCalled();
-
-    window.prompt.mockRestore();
-  });
-
-  it('shows error when set limit API fails', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    jest.spyOn(window, 'prompt').mockReturnValue('10');
-    axios.get.mockResolvedValue({ data: { groups: groupsData } });
-    axios.put.mockRejectedValue({ response: { data: { error: 'Limit too low' } } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /set limit/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /set limit/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText('Limit too low')).toBeInTheDocument();
-    });
-
-    window.prompt.mockRestore();
-  });
-
-  it('shows error when delete fails', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    axios.get.mockResolvedValue({ data: { groups: groupsData } });
-    axios.delete.mockRejectedValue({ response: { data: { error: 'Cannot delete' } } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /delete/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText('Cannot delete')).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText('Create failed')).toBeInTheDocument());
     });
   });
 
-  it('shows error when remove member fails', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  // ── Bulk set limit ─────────────────────────────────────────────────────
+  describe('Bulk set limit', () => {
+    it('opens limit modal with multi-group text when bulk set limit is clicked', async () => {
+      const user = userEvent.setup();
+      await setupPage([
+        makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
+        makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
+      ]);
 
-    axios.get.mockResolvedValueOnce({ data: { groups: groupsData } });
+      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
+      await user.click(screen.getByRole('checkbox', { name: /select group b/i }));
+      await user.click(screen.getByRole('button', { name: /set limit \(2\)/i }));
 
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Group A')).toBeInTheDocument();
+      const heading = screen.getByRole('heading', { name: 'Set Member Limit' });
+      expect(heading).toBeInTheDocument();
+      // "Applies to N selected groups." paragraph is only shown for bulk (>1) operations
+      expect(heading.parentElement).toHaveTextContent(/applies to.*selected groups/i);
     });
 
-    axios.get
-      .mockResolvedValueOnce({
-        data: {
-          group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' },
-          members: [
-            { id: 'u0000000-0000-0000-0000-000000000010', username: 'alice', email: 'a@t.com', role_name: 'user' },
-          ],
-        },
-      })
-      .mockResolvedValueOnce({ data: { users: [] } });
+    it('saves limit for all selected groups and shows success', async () => {
+      const user = userEvent.setup();
+      await setupPage([
+        makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
+        makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
+      ]);
 
-    await user.click(screen.getByText('Group A'));
+      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
+      await user.click(screen.getByRole('checkbox', { name: /select group b/i }));
+      await user.click(screen.getByRole('button', { name: /set limit \(2\)/i }));
 
-    await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument();
-    });
+      const input = screen.getByPlaceholderText('Unlimited');
+      await user.clear(input);
+      await user.type(input, '8');
 
-    axios.put.mockRejectedValue({ response: { data: { error: 'Remove failed' } } });
-    await user.click(screen.getByRole('button', { name: /remove/i }));
+      axios.put.mockResolvedValue({});
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
 
-    await waitFor(() => {
-      expect(screen.getByText('Remove failed')).toBeInTheDocument();
-    });
-  });
+      await user.click(screen.getByRole('button', { name: /save/i }));
 
-  it('shows error when add member fails', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    axios.get.mockResolvedValueOnce({ data: { groups: groupsData } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Group A')).toBeInTheDocument();
-    });
-
-    const membersData = [
-      { id: 'u0000000-0000-0000-0000-000000000010', username: 'alice', email: 'a@t.com', role_name: 'user' },
-    ];
-    const allUsersData = [
-      { id: 'u0000000-0000-0000-0000-000000000010', username: 'alice', email: 'a@t.com' },
-      { id: 'u0000000-0000-0000-0000-000000000012', username: 'charlie', email: 'c@t.com' },
-    ];
-
-    axios.get
-      .mockResolvedValueOnce({
-        data: { group: { id: 'g0000000-0000-0000-0000-000000000001', name: 'Group A' }, members: membersData },
-      })
-      .mockResolvedValueOnce({ data: { users: allUsersData } });
-
-    await user.click(screen.getByText('Group A'));
-
-    await waitFor(() => {
-      expect(screen.getByRole('combobox')).toBeInTheDocument();
-    });
-
-    await user.selectOptions(screen.getByRole('combobox'), 'u0000000-0000-0000-0000-000000000012');
-    axios.put.mockRejectedValue({ response: { data: { error: 'Add failed' } } });
-    await user.click(screen.getByRole('button', { name: /^add$/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText('Add failed')).toBeInTheDocument();
-    });
-  });
-
-  it('shows API error when toggle fails', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    axios.get.mockResolvedValue({ data: { groups: groupsData } });
-    axios.put.mockRejectedValue({ response: { data: { error: 'Cannot update group' } } });
-
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /disable/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /disable/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText('Cannot update group')).toBeInTheDocument();
-    });
-
-    jest.advanceTimersByTime(3000);
-    await waitFor(() => {
-      expect(screen.queryByText('Cannot update group')).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(axios.put).toHaveBeenCalledTimes(2);
+        expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g1$/), { maxMembers: 8 });
+        expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g2$/), { maxMembers: 8 });
+        expect(screen.getByText('Updated limit for 2 groups')).toBeInTheDocument();
+      });
     });
   });
 });
