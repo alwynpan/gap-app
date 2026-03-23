@@ -127,7 +127,7 @@ describe('Users page', () => {
 
     await user.click(screen.getByRole('button', { name: /assign group/i }));
     await user.selectOptions(screen.getByRole('combobox'), 'g0000000-0000-0000-0000-000000000002');
-    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
       expect(axios.put).toHaveBeenCalledWith(
@@ -205,7 +205,7 @@ describe('Users page', () => {
 
     await user.click(screen.getByRole('button', { name: /assign group/i }));
     // "No Group" (value="") is already the default selection
-    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
       expect(axios.put).toHaveBeenCalledWith(
@@ -244,7 +244,7 @@ describe('Users page', () => {
 
     await user.click(screen.getByRole('button', { name: /assign group/i }));
     await user.selectOptions(screen.getByRole('combobox'), 'g0000000-0000-0000-0000-000000000002');
-    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Update denied')).toBeInTheDocument();
@@ -551,7 +551,7 @@ describe('Users page', () => {
 
     it('shows Edit button for admin on all users', async () => {
       await setupRenderedPage();
-      expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /edit user profile/i })).toBeInTheDocument();
     });
 
     it('shows Edit button for user on their own row only', async () => {
@@ -561,7 +561,7 @@ describe('Users page', () => {
         isAssignmentManager: false,
       });
       await setupRenderedPage();
-      expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /edit user profile/i })).toBeInTheDocument();
     });
 
     it('hides Edit button for user on other users rows', async () => {
@@ -571,14 +571,14 @@ describe('Users page', () => {
         isAssignmentManager: false,
       });
       await setupRenderedPage();
-      expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /edit user profile/i })).not.toBeInTheDocument();
     });
 
     it('opens and closes edit modal', async () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
       expect(screen.getByText('Edit User')).toBeInTheDocument();
       expect(screen.getByDisplayValue('u1')).toBeInTheDocument();
       expect(screen.getByDisplayValue('u1@test.com')).toBeInTheDocument();
@@ -592,7 +592,7 @@ describe('Users page', () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
       const usernameInput = screen.getByDisplayValue('u1');
       await user.clear(usernameInput);
@@ -611,7 +611,7 @@ describe('Users page', () => {
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
-      await user.click(screen.getByRole('button', { name: /^save$/i }));
+      await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
         expect(axios.put).toHaveBeenCalledWith(
@@ -635,7 +635,7 @@ describe('Users page', () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
       // Edit email
       const emailInput = screen.getByDisplayValue('u1@test.com');
@@ -660,7 +660,7 @@ describe('Users page', () => {
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
-      await user.click(screen.getByRole('button', { name: /^save$/i }));
+      await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
         expect(axios.put).toHaveBeenCalledWith(
@@ -679,7 +679,7 @@ describe('Users page', () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
       // Admin should see role dropdown and enabled checkbox
       expect(screen.getByText('Enabled')).toBeInTheDocument();
@@ -697,7 +697,7 @@ describe('Users page', () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
       expect(screen.queryByText('Enabled')).not.toBeInTheDocument();
     });
@@ -707,11 +707,11 @@ describe('Users page', () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^edit$/i }));
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
       axios.put.mockRejectedValue({ response: { data: { error: 'Username taken' } } });
 
-      await user.click(screen.getByRole('button', { name: /^save$/i }));
+      await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
         expect(screen.getByText('Username taken')).toBeInTheDocument();
@@ -743,7 +743,7 @@ describe('Users page', () => {
 
     it('shows Password button for admin on all users', async () => {
       await setupRenderedPage();
-      expect(screen.getByRole('button', { name: /^password$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /change password/i })).toBeInTheDocument();
     });
 
     it('shows Password button for user on their own row', async () => {
@@ -753,7 +753,7 @@ describe('Users page', () => {
         isAssignmentManager: false,
       });
       await setupRenderedPage();
-      expect(screen.getByRole('button', { name: /^password$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /change password/i })).toBeInTheDocument();
     });
 
     it('hides Password button for user on other users rows', async () => {
@@ -763,14 +763,14 @@ describe('Users page', () => {
         isAssignmentManager: false,
       });
       await setupRenderedPage();
-      expect(screen.queryByRole('button', { name: /^password$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /change password/i })).not.toBeInTheDocument();
     });
 
     it('opens and closes password change modal', async () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.click(screen.getByRole('button', { name: /change password/i }));
       expect(screen.getByText(/change password for/i)).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: /cancel/i }));
@@ -781,7 +781,7 @@ describe('Users page', () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.click(screen.getByRole('button', { name: /change password/i }));
       expect(screen.queryByPlaceholderText('Enter current password')).not.toBeInTheDocument();
       expect(screen.getByPlaceholderText('Enter new password')).toBeInTheDocument();
     });
@@ -795,7 +795,7 @@ describe('Users page', () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.click(screen.getByRole('button', { name: /change password/i }));
       const currentPwInput = screen.getByPlaceholderText('Enter current password');
       expect(currentPwInput).toBeInTheDocument();
       await user.type(currentPwInput, 'myoldpass');
@@ -806,10 +806,10 @@ describe('Users page', () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.click(screen.getByRole('button', { name: /change password/i }));
       await user.type(screen.getByPlaceholderText('Enter new password'), 'newpass1');
       await user.type(screen.getByPlaceholderText('Confirm new password'), 'newpass2');
-      await user.click(screen.getByRole('button', { name: /^change password$/i }));
+      await user.click(screen.getByText('Change Password', { selector: 'button[type="submit"]' }));
 
       await waitFor(() => {
         expect(screen.getByText('New passwords do not match')).toBeInTheDocument();
@@ -820,10 +820,10 @@ describe('Users page', () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.click(screen.getByRole('button', { name: /change password/i }));
       await user.type(screen.getByPlaceholderText('Enter new password'), '12345');
       await user.type(screen.getByPlaceholderText('Confirm new password'), '12345');
-      await user.click(screen.getByRole('button', { name: /^change password$/i }));
+      await user.click(screen.getByText('Change Password', { selector: 'button[type="submit"]' }));
 
       await waitFor(() => {
         expect(screen.getByText('New password must be at least 6 characters')).toBeInTheDocument();
@@ -837,10 +837,10 @@ describe('Users page', () => {
 
       axios.put.mockResolvedValue({});
 
-      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.click(screen.getByRole('button', { name: /change password/i }));
       await user.type(screen.getByPlaceholderText('Enter new password'), 'newpass123');
       await user.type(screen.getByPlaceholderText('Confirm new password'), 'newpass123');
-      await user.click(screen.getByRole('button', { name: /^change password$/i }));
+      await user.click(screen.getByText('Change Password', { selector: 'button[type="submit"]' }));
 
       await waitFor(() => {
         expect(axios.put).toHaveBeenCalledWith(
@@ -865,10 +865,10 @@ describe('Users page', () => {
 
       axios.put.mockRejectedValue({ response: { data: { error: 'Current password is incorrect' } } });
 
-      await user.click(screen.getByRole('button', { name: /^password$/i }));
+      await user.click(screen.getByRole('button', { name: /change password/i }));
       await user.type(screen.getByPlaceholderText('Enter new password'), 'newpass123');
       await user.type(screen.getByPlaceholderText('Confirm new password'), 'newpass123');
-      await user.click(screen.getByRole('button', { name: /^change password$/i }));
+      await user.click(screen.getByText('Change Password', { selector: 'button[type="submit"]' }));
 
       await waitFor(() => {
         expect(screen.getByText('Current password is incorrect')).toBeInTheDocument();
