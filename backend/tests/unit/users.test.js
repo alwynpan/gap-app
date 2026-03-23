@@ -2,10 +2,23 @@
 jest.mock('../../src/models/User');
 jest.mock('../../src/models/Group');
 jest.mock('../../src/models/Role');
+jest.mock('../../src/models/PasswordResetToken', () => ({
+  create: jest.fn(),
+  findByToken: jest.fn(),
+  markUsed: jest.fn(),
+  deleteStaleForUser: jest.fn(),
+}));
+jest.mock('../../src/services/email', () => ({
+  sendPasswordResetEmail: jest.fn(),
+  sendPasswordSetupEmail: jest.fn(),
+  sendEmail: jest.fn(),
+}));
 
 const User = require('../../src/models/User');
 const Group = require('../../src/models/Group');
 const Role = require('../../src/models/Role');
+const PasswordResetToken = require('../../src/models/PasswordResetToken');
+const { sendPasswordResetEmail, sendPasswordSetupEmail } = require('../../src/services/email');
 
 describe('Users Routes', () => {
   beforeEach(() => {
@@ -217,9 +230,9 @@ describe('Users Routes', () => {
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users_post']({ body: { username: 'u1', email: 'u1@test.com' } }, mockReply);
+      await handlers['/users_post']({ body: { username: 'u1' } }, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username, email, and password are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username and email are required' });
     });
 
     it('rejects when firstName is missing', async () => {
@@ -1464,6 +1477,100 @@ describe('Users Routes', () => {
       );
 
       expect(consoleSpy).toHaveBeenCalled();
+      expect(mockReply.code).toHaveBeenCalledWith(500);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('POST /users/:id/reset-password', () => {
+    it('rejects unauthenticated request', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/:id/reset-password_post_pre']({ user: null }, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(401);
+    });
+
+    it('rejects user without admin/assignment_manager role', async () => {
+      const mockFastify = createMockFastify({ checkRoleResult: false });
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/:id/reset-password_post_pre']({ user: { role: 'user' } }, mockReply);
+
+      expect(mockFastify.checkRole).toHaveBeenCalledWith({ user: { role: 'user' } }, mockReply, [
+        'admin',
+        'assignment_manager',
+      ]);
+    });
+
+    it('returns 404 when user not found', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue(null);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/:id/reset-password_post'](
+        { user: { role: 'admin' }, params: { id: 'u0000000-0000-0000-0000-000000000999' } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'User not found' });
+    });
+
+    it('sends reset email and returns success', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const mockUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        email: 'user@test.com',
+        username: 'testuser',
+        first_name: 'Test',
+      };
+      User.findById.mockResolvedValue(mockUser);
+      PasswordResetToken.deleteStaleForUser.mockResolvedValue();
+      PasswordResetToken.create.mockResolvedValue({ token: 'resettoken', id: 't1' });
+      sendPasswordResetEmail.mockResolvedValue();
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/:id/reset-password_post'](
+        { user: { role: 'admin' }, params: { id: 'u0000000-0000-0000-0000-000000000001' } },
+        mockReply
+      );
+
+      expect(PasswordResetToken.deleteStaleForUser).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001');
+      expect(PasswordResetToken.create).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', 'reset', 24);
+      expect(sendPasswordResetEmail).toHaveBeenCalledWith(mockUser, 'resettoken');
+      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password reset email sent' });
+    });
+
+    it('returns 500 on unexpected error', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockRejectedValue(new Error('DB error'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/:id/reset-password_post'](
+        { user: { role: 'admin' }, params: { id: 'u0000000-0000-0000-0000-000000000001' } },
+        mockReply
+      );
+
       expect(mockReply.code).toHaveBeenCalledWith(500);
       consoleSpy.mockRestore();
     });

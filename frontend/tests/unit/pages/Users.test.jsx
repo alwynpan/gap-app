@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
@@ -126,7 +126,10 @@ describe('Users page', () => {
     });
 
     await user.click(screen.getByRole('button', { name: /assign group/i }));
-    await user.selectOptions(screen.getByRole('combobox'), 'g0000000-0000-0000-0000-000000000002');
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /assign to group/i }),
+      'g0000000-0000-0000-0000-000000000002'
+    );
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
@@ -171,11 +174,11 @@ describe('Users page', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /assign group/i })).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /assign group/i }));
 
-    const select = screen.getByRole('combobox');
+    const select = screen.getByRole('combobox', { name: /assign to group/i });
     expect(select).toBeInTheDocument();
     expect(select).not.toHaveDisplayValue('Full Group');
-    expect(screen.queryByRole('option', { name: /full group/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /open group/i })).toBeInTheDocument();
+    expect(within(select).queryByRole('option', { name: /full group/i })).not.toBeInTheDocument();
+    expect(within(select).getByRole('option', { name: /open group/i })).toBeInTheDocument();
   });
 
   it('removes user from group when "No Group" is selected', async () => {
@@ -243,7 +246,10 @@ describe('Users page', () => {
     });
 
     await user.click(screen.getByRole('button', { name: /assign group/i }));
-    await user.selectOptions(screen.getByRole('combobox'), 'g0000000-0000-0000-0000-000000000002');
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /assign to group/i }),
+      'g0000000-0000-0000-0000-000000000002'
+    );
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
@@ -324,7 +330,6 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /create user/i }));
       await user.type(screen.getByPlaceholderText('Enter username'), 'newuser');
       await user.type(screen.getByPlaceholderText('Enter email'), 'new@test.com');
-      await user.type(screen.getByPlaceholderText('Enter password'), 'password123');
       await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
       await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
       await user.click(screen.getByRole('button', { name: /^create$/i }));
@@ -335,7 +340,6 @@ describe('Users page', () => {
           expect.objectContaining({
             username: 'newuser',
             email: 'new@test.com',
-            password: 'password123',
             role: 'user',
           })
         );
@@ -361,7 +365,6 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /create user/i }));
       await user.type(screen.getByPlaceholderText('Enter username'), 'existing');
       await user.type(screen.getByPlaceholderText('Enter email'), 'e@test.com');
-      await user.type(screen.getByPlaceholderText('Enter password'), 'password123');
       await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
       await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
       await user.click(screen.getByRole('button', { name: /^create$/i }));
@@ -382,7 +385,9 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
 
-      const roleSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="user"]'));
+      const roleSelect = screen
+        .getAllByRole('combobox')
+        .find((el) => el.querySelector('option[value="user"]') && !el.querySelector('option[value=""]'));
       const options = Array.from(roleSelect.querySelectorAll('option')).map((o) => o.value);
       expect(options).toEqual(['user', 'assignment_manager', 'admin']);
     });
@@ -416,7 +421,6 @@ describe('Users page', () => {
       await user.type(screen.getByPlaceholderText('Enter email'), 'j@test.com');
       await user.type(screen.getByPlaceholderText('Enter first name'), 'John');
       await user.type(screen.getByPlaceholderText('Enter last name'), 'Doe');
-      await user.type(screen.getByPlaceholderText('Enter password'), 'pass123');
       await user.type(screen.getByPlaceholderText('Enter student ID'), 'ST99');
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
@@ -428,7 +432,6 @@ describe('Users page', () => {
             email: 'j@test.com',
             firstName: 'John',
             lastName: 'Doe',
-            password: 'pass123',
             studentId: 'ST99',
           })
         );
@@ -446,7 +449,9 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
 
-      const roleSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="user"]'));
+      const roleSelect = screen
+        .getAllByRole('combobox')
+        .find((el) => el.querySelector('option[value="user"]') && !el.querySelector('option[value=""]'));
       const options = Array.from(roleSelect.querySelectorAll('option')).map((o) => o.value);
       expect(options).toEqual(['user', 'assignment_manager']);
       expect(options).not.toContain('admin');
@@ -498,8 +503,8 @@ describe('Users page', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Admin')).toBeInTheDocument();
-      expect(screen.getByText('Assignment Manager')).toBeInTheDocument();
+      expect(screen.getAllByText('Admin').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Assignment Manager').length).toBeGreaterThan(0);
     });
 
     // Verify raw role values don't appear in role badge spans
@@ -568,10 +573,10 @@ describe('Users page', () => {
     });
 
     await user.click(screen.getByRole('button', { name: /assign group/i }));
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /assign to group/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /cancel/i }));
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /assign to group/i })).not.toBeInTheDocument();
   });
 
   describe('Edit User', () => {

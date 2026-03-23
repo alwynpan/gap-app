@@ -32,4 +32,17 @@ module.exports = {
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     credentials: true,
   },
+
+  // SMTP / Email Configuration (optional — email is skipped if SMTP_HOST is not set)
+  smtp: {
+    host: process.env.SMTP_HOST || '',
+    port: parseInt(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.SMTP_FROM || 'no-reply@gap-app.local',
+  },
+
+  // Public URL of the frontend application (used in email links)
+  appUrl: process.env.APP_URL || 'http://localhost:3000',
 };

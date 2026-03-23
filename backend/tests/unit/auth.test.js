@@ -8,6 +8,7 @@ jest.mock('../../src/models/User', () => ({
   update: jest.fn(),
   updateGroup: jest.fn(),
   updatePassword: jest.fn(),
+  activate: jest.fn(),
   delete: jest.fn(),
   verifyPassword: jest.fn(),
 }));
@@ -19,6 +20,19 @@ jest.mock('../../src/models/Role', () => ({
   create: jest.fn(),
 }));
 
+jest.mock('../../src/models/PasswordResetToken', () => ({
+  create: jest.fn(),
+  findByToken: jest.fn(),
+  markUsed: jest.fn(),
+  deleteStaleForUser: jest.fn(),
+}));
+
+jest.mock('../../src/services/email', () => ({
+  sendPasswordResetEmail: jest.fn(),
+  sendPasswordSetupEmail: jest.fn(),
+  sendEmail: jest.fn(),
+}));
+
 jest.mock('../../src/config/index', () => ({
   app: {
     registrationEnabled: true,
@@ -27,6 +41,8 @@ jest.mock('../../src/config/index', () => ({
 
 const User = require('../../src/models/User');
 const Role = require('../../src/models/Role');
+const PasswordResetToken = require('../../src/models/PasswordResetToken');
+const { sendPasswordResetEmail } = require('../../src/services/email');
 const config = require('../../src/config/index');
 
 describe('Auth Routes', () => {
@@ -635,6 +651,198 @@ describe('Auth Routes', () => {
           studentId: null,
         },
       });
+    });
+  });
+
+  describe('POST /auth/forgot-password', () => {
+    it('returns 400 when email is missing', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/forgot-password']({ body: {} }, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Email is required' });
+    });
+
+    it('returns 200 and sends reset email when user found with active status', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      const mockUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        email: 'user@test.com',
+        username: 'testuser',
+        status: 'active',
+      };
+      User.findByEmail.mockResolvedValue(mockUser);
+      PasswordResetToken.deleteStaleForUser.mockResolvedValue();
+      PasswordResetToken.create.mockResolvedValue({ token: 'resettoken123', id: 't1' });
+      sendPasswordResetEmail.mockResolvedValue();
+
+      await capturedHandlers['/auth/forgot-password']({ body: { email: 'user@test.com' } }, mockReply);
+
+      expect(User.findByEmail).toHaveBeenCalledWith('user@test.com');
+      expect(PasswordResetToken.deleteStaleForUser).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001');
+      expect(PasswordResetToken.create).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', 'reset', 1);
+      expect(sendPasswordResetEmail).toHaveBeenCalledWith(mockUser, 'resettoken123');
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'If that email is registered, a reset link has been sent.',
+      });
+    });
+
+    it('returns 200 without sending email when user not found (enumeration prevention)', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      User.findByEmail.mockResolvedValue(null);
+
+      await capturedHandlers['/auth/forgot-password']({ body: { email: 'unknown@test.com' } }, mockReply);
+
+      expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'If that email is registered, a reset link has been sent.',
+      });
+    });
+
+    it('returns 200 without sending email when user has pending status', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      User.findByEmail.mockResolvedValue({
+        id: 'u1',
+        email: 'pending@test.com',
+        status: 'pending',
+      });
+
+      await capturedHandlers['/auth/forgot-password']({ body: { email: 'pending@test.com' } }, mockReply);
+
+      expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'If that email is registered, a reset link has been sent.',
+      });
+    });
+
+    it('returns 200 even when an internal error occurs', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      User.findByEmail.mockRejectedValue(new Error('DB error'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      await capturedHandlers['/auth/forgot-password']({ body: { email: 'user@test.com' } }, mockReply);
+
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'If that email is registered, a reset link has been sent.',
+      });
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('POST /auth/set-password', () => {
+    it('returns 400 when token or password is missing', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/set-password']({ body: { token: 'tok' } }, mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Token and password are required' });
+    });
+
+    it('returns 400 when password is too short', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/set-password']({ body: { token: 'tok', password: 'abc' } }, mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Password must be at least 6 characters' });
+    });
+
+    it('returns 400 when token is invalid or expired', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      PasswordResetToken.findByToken.mockResolvedValue(null);
+
+      await capturedHandlers['/auth/set-password']({ body: { token: 'badtoken', password: 'newpass1' } }, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
+    });
+
+    it('returns 400 when token is already used', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      PasswordResetToken.findByToken.mockResolvedValue({
+        id: 't1',
+        user_id: 'u1',
+        token_type: 'reset',
+        used: true,
+        expires_at: new Date(Date.now() + 3600000),
+      });
+
+      await capturedHandlers['/auth/set-password']({ body: { token: 'usedtoken', password: 'newpass1' } }, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
+    });
+
+    it('sets password and returns success for reset token', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      PasswordResetToken.findByToken.mockResolvedValue({
+        id: 't1',
+        user_id: 'u0000000-0000-0000-0000-000000000001',
+        token_type: 'reset',
+        used: false,
+        expires_at: new Date(Date.now() + 3600000),
+      });
+      User.updatePassword.mockResolvedValue();
+      PasswordResetToken.markUsed.mockResolvedValue();
+
+      await capturedHandlers['/auth/set-password']({ body: { token: 'validtoken', password: 'newpass1' } }, mockReply);
+
+      expect(User.updatePassword).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', 'newpass1');
+      expect(User.activate).not.toHaveBeenCalled();
+      expect(PasswordResetToken.markUsed).toHaveBeenCalledWith('t1');
+      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
+    });
+
+    it('activates user when token type is setup', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      PasswordResetToken.findByToken.mockResolvedValue({
+        id: 't2',
+        user_id: 'u0000000-0000-0000-0000-000000000002',
+        token_type: 'setup',
+        used: false,
+        expires_at: new Date(Date.now() + 3600000),
+      });
+      User.updatePassword.mockResolvedValue();
+      User.activate.mockResolvedValue();
+      PasswordResetToken.markUsed.mockResolvedValue();
+
+      await capturedHandlers['/auth/set-password']({ body: { token: 'setuptoken', password: 'newpass1' } }, mockReply);
+
+      expect(User.activate).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000002');
+      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
+    });
+
+    it('returns 500 on unexpected error', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      PasswordResetToken.findByToken.mockRejectedValue(new Error('DB error'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      await capturedHandlers['/auth/set-password']({ body: { token: 'sometoken', password: 'newpass1' } }, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(500);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Failed to set password' });
+      consoleSpy.mockRestore();
     });
   });
 });

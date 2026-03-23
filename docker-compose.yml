@@ -20,6 +20,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    env_file:
+      - .env
     container_name: gap-backend
     environment:
       NODE_ENV: development
@@ -31,10 +33,18 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-gap_password_dev}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       JWT_EXPIRES_IN: 24h
-      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED}
       CORS_ORIGIN: http://localhost:3000
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change_this_in_production}
+      # SMTP settings — leave SMTP_HOST blank to disable email (links are logged to console instead)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@gap-app.local}
+      APP_URL: ${APP_URL:-http://localhost:3000}
     ports:
       - "3001:3001"
     depends_on:

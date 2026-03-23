@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Pencil, KeyRound, UserPlus, Check, X, Download, Trash2 } from 'lucide-react';
+import { Pencil, KeyRound, UserPlus, Check, X, Download, Trash2, MailOpen } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
@@ -13,7 +13,6 @@ const emptyNewUser = {
   firstName: '',
   lastName: '',
   email: '',
-  password: '',
   studentId: '',
   groupId: '',
   role: 'user',
@@ -36,6 +35,11 @@ function Users() {
   // Row selection & delete
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleteModal, setDeleteModal] = useState(null); // User[] | null
+
+  // Filters
+  const [filterRole, setFilterRole] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterGroup, setFilterGroup] = useState('');
 
   const successTimeoutRef = useRef(null);
   const errorTimeoutRef = useRef(null);
@@ -82,7 +86,7 @@ function Users() {
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
-    if (!newUser.username.trim() || !newUser.email.trim() || !newUser.password) {
+    if (!newUser.username.trim() || !newUser.email.trim()) {
       return;
     }
 
@@ -90,7 +94,6 @@ function Users() {
       await axios.post(`${API_BASE}/users`, {
         username: newUser.username.trim(),
         email: newUser.email.trim(),
-        password: newUser.password,
         firstName: newUser.firstName.trim() || undefined,
         lastName: newUser.lastName.trim() || undefined,
         studentId: newUser.studentId.trim() || undefined,
@@ -171,6 +174,15 @@ function Users() {
       setPasswordChange(null);
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to change password');
+    }
+  };
+
+  const handleResetPassword = async (userId, username) => {
+    try {
+      await axios.post(`${API_BASE}/users/${userId}/reset-password`);
+      showSuccess(`Password reset email sent to ${username}`);
+    } catch (err) {
+      showError(err.response?.data?.error || 'Failed to send reset email');
     }
   };
 
@@ -283,9 +295,18 @@ function Users() {
     }, 0);
   };
 
-  const adminUsers = users.filter((u) => u.role_name === 'admin' || u.role_name === 'assignment_manager');
-  const ungroupedUsers = users.filter((u) => u.role_name === 'user' && !u.group_id);
-  const groupedUsers = users.filter((u) => u.role_name === 'user' && !!u.group_id);
+  // Apply filters
+  const filteredUsers = users.filter((u) => {
+    if (filterRole && u.role_name !== filterRole) {return false;}
+    if (filterStatus && u.status !== filterStatus) {return false;}
+    if (filterGroup === 'none' && u.group_id) {return false;}
+    if (filterGroup && filterGroup !== 'none' && u.group_id !== filterGroup) {return false;}
+    return true;
+  });
+
+  const adminUsers = filteredUsers.filter((u) => u.role_name === 'admin' || u.role_name === 'assignment_manager');
+  const ungroupedUsers = filteredUsers.filter((u) => u.role_name === 'user' && !u.group_id);
+  const groupedUsers = filteredUsers.filter((u) => u.role_name === 'user' && !!u.group_id);
 
   const selectedUsers = users.filter((u) => selectedIds.has(u.id));
   const deleteModalWithGroup = (deleteModal ?? []).filter((u) => !!u.group_id);
@@ -311,7 +332,10 @@ function Users() {
             <th className="w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Current Group
             </th>
-            <th className="w-[14%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Status
+            </th>
+            <th className="w-[14%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Actions
             </th>
           </tr>
@@ -372,12 +396,22 @@ function Users() {
                 </div>
               </td>
               <td className="px-4 py-4">
+                <span
+                  className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full whitespace-nowrap ${
+                    u.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
+                  }`}
+                >
+                  {u.status === 'pending' ? 'Pending' : 'Active'}
+                </span>
+              </td>
+              <td className="px-4 py-4">
                 {selectedUser === u.id ? (
                   <div className="flex items-center gap-2">
                     <select
                       value={selectedGroup}
                       onChange={(e) => setSelectedGroup(e.target.value)}
                       className="min-w-0 flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                      aria-label="Assign to group"
                     >
                       <option value="">No Group</option>
                       {groups
@@ -444,6 +478,20 @@ function Users() {
                         </div>
                       </>
                     )}
+                    {isAssignmentManager && (
+                      <div className="relative group">
+                        <button
+                          onClick={() => handleResetPassword(u.id, u.username)}
+                          aria-label="Send Password Reset"
+                          className="p-1.5 rounded text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                        >
+                          <MailOpen className="h-4 w-4" />
+                        </button>
+                        <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                          Send Password Reset
+                        </span>
+                      </div>
+                    )}
                     {/* Assign Group button only visible for users with role 'user' */}
                     {u.role_name === 'user' && (
                       <div className="relative group">
@@ -480,7 +528,7 @@ function Users() {
           ))}
           {sectionUsers.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-6 py-6 text-center text-sm text-gray-500">
+              <td colSpan={8} className="px-6 py-6 text-center text-sm text-gray-500">
                 {emptyMessage}
               </td>
             </tr>
@@ -587,6 +635,58 @@ function Users() {
             </div>
           )}
 
+          {/* Filters */}
+          <div className="mb-6 flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium text-gray-600">Filter:</span>
+            <select
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+              aria-label="Filter by role"
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">All Roles</option>
+              <option value="admin">Admin</option>
+              <option value="assignment_manager">Assignment Manager</option>
+              <option value="user">User</option>
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              aria-label="Filter by status"
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="pending">Pending</option>
+            </select>
+            <select
+              value={filterGroup}
+              onChange={(e) => setFilterGroup(e.target.value)}
+              aria-label="Filter by group"
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">All Groups</option>
+              <option value="none">Unassigned</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+            {(filterRole || filterStatus || filterGroup) && (
+              <button
+                onClick={() => {
+                  setFilterRole('');
+                  setFilterStatus('');
+                  setFilterGroup('');
+                }}
+                className="text-sm text-gray-500 hover:text-primary-600 underline"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+
           {/* Section 1: Administrators */}
           {renderSection(
             'Administrators',
@@ -670,16 +770,8 @@ function Users() {
                   placeholder="Enter last name"
                 />
               </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input
-                  type="password"
-                  required
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter password"
-                />
+              <div className="mb-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                The user will receive an email to set their own password.
               </div>
               <div className="mb-3">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Student ID (Optional)</label>

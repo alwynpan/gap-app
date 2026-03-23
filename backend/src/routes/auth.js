@@ -1,5 +1,7 @@
 const User = require('../models/User');
 const Role = require('../models/Role');
+const PasswordResetToken = require('../models/PasswordResetToken');
+const { sendPasswordResetEmail } = require('../services/email');
 const config = require('../config/index');
 
 async function authRoutes(fastify, _options) {
@@ -57,10 +59,10 @@ async function authRoutes(fastify, _options) {
           return reply.code(409).send({ error: 'Email already exists' });
         }
 
-        // Get default user role (id=3 is 'user')
+        // Get default user role
         const defaultRole = await Role.findByName('user');
 
-        // Create user
+        // Create user (with password → active immediately)
         const newUser = await User.create({
           username,
           email,
@@ -87,7 +89,7 @@ async function authRoutes(fastify, _options) {
     }
   );
 
-  // Config route (public) - exposes server-side feature flags to the frontend
+  // Config route (public) — exposes server-side feature flags to the frontend
   fastify.get('/auth/config', {}, async (_request, reply) => {
     return reply.send({ registrationEnabled: config.app.registrationEnabled });
   });
@@ -120,6 +122,13 @@ async function authRoutes(fastify, _options) {
         // Check if user is enabled
         if (!user.enabled) {
           return reply.code(401).send({ error: 'Account is disabled' });
+        }
+
+        // Check if user account is pending (password not yet set)
+        if (user.status === 'pending') {
+          return reply
+            .code(401)
+            .send({ error: 'Account setup pending. Please check your email to set your password.' });
         }
 
         // Verify password
@@ -161,9 +170,7 @@ async function authRoutes(fastify, _options) {
   );
 
   // Logout route
-  fastify.post('/auth/logout', async (request, reply) => {
-    // In a stateless JWT system, logout is client-side (remove token)
-    // We could add token blacklisting here if needed
+  fastify.post('/auth/logout', async (_request, reply) => {
     return reply.send({ message: 'Logout successful' });
   });
 
@@ -203,6 +210,77 @@ async function authRoutes(fastify, _options) {
       }
     }
   );
+
+  // Forgot password — public, sends reset email if email is registered
+  fastify.post(
+    '/auth/forgot-password',
+    {
+      config: {
+        rateLimit: {
+          max: isDev ? 500 : 5,
+          timeWindow: '15 minutes',
+        },
+      },
+    },
+    async (request, reply) => {
+      const { email } = request.body || {};
+      if (!email) {
+        return reply.code(400).send({ error: 'Email is required' });
+      }
+
+      // Always return success to avoid leaking which emails are registered
+      const successMsg = { message: 'If that email is registered, a reset link has been sent.' };
+
+      try {
+        const user = await User.findByEmail(email);
+        if (user && user.status !== 'pending') {
+          // Remove stale tokens before creating a new one
+          await PasswordResetToken.deleteStaleForUser(user.id);
+          const tokenRecord = await PasswordResetToken.create(user.id, 'reset', 1);
+          await sendPasswordResetEmail(user, tokenRecord.token);
+        }
+        return reply.send(successMsg);
+      } catch (error) {
+        console.error('Forgot password error:', error);
+        // Still return 200 to avoid timing-based enumeration
+        return reply.send(successMsg);
+      }
+    }
+  );
+
+  // Set / reset password using a token (public)
+  fastify.post('/auth/set-password', async (request, reply) => {
+    const { token, password } = request.body || {};
+
+    if (!token || !password) {
+      return reply.code(400).send({ error: 'Token and password are required' });
+    }
+    if (password.length < 6) {
+      return reply.code(400).send({ error: 'Password must be at least 6 characters' });
+    }
+
+    try {
+      const tokenRecord = await PasswordResetToken.findByToken(token);
+
+      if (!tokenRecord || tokenRecord.used || new Date(tokenRecord.expires_at) < new Date()) {
+        return reply.code(400).send({ error: 'Invalid or expired token' });
+      }
+
+      await User.updatePassword(tokenRecord.user_id, password);
+
+      // Activate the account if this was a first-time setup token
+      if (tokenRecord.token_type === 'setup') {
+        await User.activate(tokenRecord.user_id);
+      }
+
+      await PasswordResetToken.markUsed(tokenRecord.id);
+
+      return reply.send({ message: 'Password set successfully. You can now log in.' });
+    } catch (error) {
+      console.error('Set password error:', error);
+      return reply.code(500).send({ error: 'Failed to set password' });
+    }
+  });
 }
 
 module.exports = authRoutes;

@@ -1,8 +1,10 @@
 const User = require('../models/User');
 const Group = require('../models/Group');
+const PasswordResetToken = require('../models/PasswordResetToken');
+const { sendPasswordSetupEmail, sendPasswordResetEmail } = require('../services/email');
 
 async function usersRoutes(fastify, _options) {
-  // Get all users (admin/assignment_manager only)
+  // Get all users (admin/assignment_manager only) — supports ?role=, ?status=, ?groupId= filters
   fastify.get(
     '/users',
     {
@@ -18,7 +20,8 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const users = await User.findAll();
+        const { role, status, groupId } = request.query || {};
+        const users = await User.findAll({ role, status, groupId });
         return reply.send({ users });
       } catch (error) {
         console.error('Get users error:', error);
@@ -64,7 +67,9 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Create new user (admin/assignment_manager)
+  // Create new user (admin/assignment_manager) — password is optional.
+  // When no password is supplied the account is created as 'pending' and an
+  // email is sent with a link for the user to set their own password.
   fastify.post(
     '/users',
     {
@@ -82,13 +87,18 @@ async function usersRoutes(fastify, _options) {
       try {
         const { username, email, password, firstName, lastName, studentId, groupId, role } = request.body;
 
-        if (!username || !email || !password) {
-          return reply.code(400).send({ error: 'Username, email, and password are required' });
+        if (!username || !email) {
+          return reply.code(400).send({ error: 'Username and email are required' });
         }
 
         // Validate firstName and lastName are provided
         if (!firstName || !lastName) {
           return reply.code(400).send({ error: 'First name and last name are required' });
+        }
+
+        // If a password is provided, validate its length
+        if (password && password.length < 6) {
+          return reply.code(400).send({ error: 'Password must be at least 6 characters' });
         }
 
         // Only admins can create admin users
@@ -129,7 +139,7 @@ async function usersRoutes(fastify, _options) {
         const newUser = await User.create({
           username,
           email,
-          password,
+          password: password || null,
           firstName,
           lastName,
           studentId,
@@ -137,12 +147,25 @@ async function usersRoutes(fastify, _options) {
           roleId,
         });
 
+        // Send setup email if no password was provided
+        if (!password) {
+          try {
+            await PasswordResetToken.deleteStaleForUser(newUser.id);
+            const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
+            await sendPasswordSetupEmail(newUser, tokenRecord.token);
+          } catch (emailError) {
+            console.error('Failed to send setup email:', emailError);
+            // Don't fail the request — user was created successfully
+          }
+        }
+
         return reply.code(201).send({
           message: 'User created successfully',
           user: {
             id: newUser.id,
             username: newUser.username,
             email: newUser.email,
+            status: newUser.status,
             studentId: newUser.student_id,
           },
         });
@@ -304,6 +327,40 @@ async function usersRoutes(fastify, _options) {
       } catch (error) {
         console.error('Change password error:', error);
         return reply.code(500).send({ error: 'Failed to change password' });
+      }
+    }
+  );
+
+  // Reset user password (admin/assignment_manager) — sends a reset email to the user
+  fastify.post(
+    '/users/:id/reset-password',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
+        if (!allowed) {
+          return reply;
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const userId = request.params.id;
+        const user = await User.findById(userId);
+        if (!user) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
+
+        await PasswordResetToken.deleteStaleForUser(userId);
+        const tokenRecord = await PasswordResetToken.create(userId, 'reset', 24);
+        await sendPasswordResetEmail(user, tokenRecord.token);
+
+        return reply.send({ message: 'Password reset email sent' });
+      } catch (error) {
+        console.error('Reset password error:', error);
+        return reply.code(500).send({ error: 'Failed to send password reset email' });
       }
     }
   );

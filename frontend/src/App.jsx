@@ -6,6 +6,8 @@ import Footer from './components/Footer.jsx';
 // Pages
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import SetPassword from './pages/SetPassword.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Users from './pages/Users.jsx';
 import Groups from './pages/Groups.jsx';
@@ -20,6 +22,8 @@ function App() {
               {/* Public Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/set-password" element={<SetPassword />} />
 
               {/* Protected Routes */}
               <Route

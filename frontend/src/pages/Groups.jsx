@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
-import { Power, Gauge, Trash2, UserMinus, ChevronDown, ChevronRight, Check } from 'lucide-react';
+import { Power, Gauge, Trash2, UserMinus, ChevronDown, ChevronRight, Check, Pencil } from 'lucide-react';
 import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -49,6 +49,9 @@ function Groups() {
 
   // Delete confirmation modal — holds the array of groups to delete (single or bulk)
   const [deleteModal, setDeleteModal] = useState(null);
+
+  // Edit group modal
+  const [editingGroup, setEditingGroup] = useState(null); // { id, name, maxMembers }
 
   // Expanded row state
   const [expandedGroup, setExpandedGroup] = useState(null);
@@ -138,6 +141,39 @@ function Groups() {
       fetchGroups();
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to create group');
+    }
+  };
+
+  const openEditModal = (e, group) => {
+    e.stopPropagation();
+    setEditingGroup({
+      id: group.id,
+      name: group.name,
+      maxMembers: group.max_members !== null ? String(group.max_members) : '',
+    });
+  };
+
+  const handleEditGroup = async (e) => {
+    e.preventDefault();
+    if (!editingGroup || !editingGroup.name.trim()) {return;}
+
+    const maxMembersVal = editingGroup.maxMembers.trim();
+    const maxMembers = maxMembersVal === '' ? null : parseInt(maxMembersVal, 10);
+    if (maxMembers !== null && (isNaN(maxMembers) || maxMembers < 1)) {
+      showError('Max members must be a positive number');
+      return;
+    }
+
+    try {
+      await axios.put(`${API_BASE}/groups/${editingGroup.id}`, {
+        name: editingGroup.name.trim(),
+        maxMembers,
+      });
+      showSuccess('Group updated successfully');
+      setEditingGroup(null);
+      fetchGroups();
+    } catch (err) {
+      showError(err.response?.data?.error || 'Failed to update group');
     }
   };
 
@@ -403,6 +439,13 @@ function Groups() {
                 <td className="px-4 py-4 text-sm text-gray-500">{new Date(group.created_at).toLocaleDateString()}</td>
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                    <IconBtn
+                      label="Edit Group"
+                      onClick={(e) => openEditModal(e, group)}
+                      className="text-gray-500 hover:text-primary-600 hover:bg-primary-50"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </IconBtn>
                     <IconBtn
                       label={group.enabled ? 'Disable Group' : 'Enable Group'}
                       onClick={(e) => handleToggleEnabled(e, group.id, group.enabled)}
@@ -680,6 +723,52 @@ function Groups() {
                 </button>
                 <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
                   Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Group Modal */}
+      {editingGroup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Group</h3>
+            <form onSubmit={handleEditGroup}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingGroup.name}
+                  onChange={(e) => setEditingGroup({ ...editingGroup, name: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter group name"
+                  autoFocus
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Max Members (optional)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editingGroup.maxMembers}
+                  onChange={(e) => setEditingGroup({ ...editingGroup, maxMembers: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Leave blank for unlimited"
+                />
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingGroup(null)}
+                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
+                  Save
                 </button>
               </div>
             </form>

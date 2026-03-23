@@ -2,22 +2,47 @@ const { pool } = require('../db/migrate');
 const bcrypt = require('bcryptjs');
 
 class User {
-  static async findAll() {
+  static async findAll(filters = {}) {
+    const conditions = [];
+    const values = [];
+    let idx = 1;
+
+    if (filters.role) {
+      conditions.push(`r.name = $${idx++}`);
+      values.push(filters.role);
+    }
+    if (filters.status) {
+      conditions.push(`u.status = $${idx++}`);
+      values.push(filters.status);
+    }
+    if (filters.groupId === 'none') {
+      conditions.push('u.group_id IS NULL');
+    } else if (filters.groupId) {
+      conditions.push(`u.group_id = $${idx++}`);
+      values.push(filters.groupId);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
     const result = await pool.query(
-      `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id, u.enabled, u.created_at,
+      `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
+              u.enabled, u.status, u.created_at,
               u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
        LEFT JOIN groups g ON u.group_id = g.id
        LEFT JOIN roles r ON u.role_id = r.id
-       ORDER BY u.username`
+       ${where}
+       ORDER BY u.username`,
+      values
     );
     return result.rows;
   }
 
   static async findById(id) {
     const result = await pool.query(
-      `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id, u.enabled, u.created_at,
+      `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
+              u.enabled, u.status, u.created_at,
               u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
@@ -26,12 +51,13 @@ class User {
        WHERE u.id = $1`,
       [id]
     );
-    return result.rows[0];
+    return result.rows[0] || null;
   }
 
   static async findByUsername(username) {
     const result = await pool.query(
-      `SELECT u.id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.student_id, u.enabled,
+      `SELECT u.id, u.username, u.email, u.password_hash, u.first_name, u.last_name,
+              u.student_id, u.enabled, u.status,
               u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
@@ -40,23 +66,29 @@ class User {
        WHERE u.username = $1`,
       [username]
     );
-    return result.rows[0];
+    return result.rows[0] || null;
   }
 
   static async findByEmail(email) {
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    return result.rows[0];
+    return result.rows[0] || null;
   }
 
   static async create(userData) {
     const { username, email, password, firstName, lastName, studentId, groupId, roleId } = userData;
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
+    // If no password provided the account starts as 'pending'; the user sets a password via email link
+    let passwordHash = null;
+    let status = 'pending';
+    if (password) {
+      passwordHash = await bcrypt.hash(password, 10);
+      status = 'active';
+    }
 
     const result = await pool.query(
-      `INSERT INTO users (username, email, password_hash, first_name, last_name, student_id, group_id, role_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, username, email, first_name, last_name, student_id, enabled, created_at`,
+      `INSERT INTO users (username, email, password_hash, first_name, last_name, student_id, group_id, role_id, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, username, email, first_name, last_name, student_id, enabled, status, created_at`,
       [
         username,
         email,
@@ -66,14 +98,13 @@ class User {
         studentId || null,
         groupId || null,
         roleId,
+        status,
       ]
     );
     return result.rows[0];
   }
 
   static async update(id, updates) {
-    // Build SET clauses dynamically so we only update fields that were explicitly provided.
-    // This allows setting nullable fields (group_id, student_id) to null.
     const setClauses = [];
     const values = [];
     let paramIndex = 1;
@@ -87,6 +118,7 @@ class User {
       groupId: 'group_id',
       roleId: 'role_id',
       enabled: 'enabled',
+      status: 'status',
     };
 
     for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
@@ -115,7 +147,7 @@ class User {
 
   static async updateGroup(userId, groupId) {
     const result = await pool.query(
-      `UPDATE users 
+      `UPDATE users
        SET group_id = $1, updated_at = CURRENT_TIMESTAMP
        WHERE id = $2 RETURNING *`,
       [groupId, userId]
@@ -126,12 +158,17 @@ class User {
   static async updatePassword(id, newPassword) {
     const passwordHash = await bcrypt.hash(newPassword, 10);
     const result = await pool.query(
-      `UPDATE users 
+      `UPDATE users
        SET password_hash = $1, updated_at = CURRENT_TIMESTAMP
        WHERE id = $2 RETURNING id, username, email`,
       [passwordHash, id]
     );
     return result.rows[0];
+  }
+
+  /** Activate a pending account (called after the user sets their password). */
+  static async activate(id) {
+    await pool.query(`UPDATE users SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [id]);
   }
 
   static async delete(id) {
@@ -140,6 +177,7 @@ class User {
   }
 
   static async verifyPassword(password, hash) {
+    if (!hash) {return false;}
     return await bcrypt.compare(password, hash);
   }
 }

@@ -75,12 +75,12 @@ describe('User Model', () => {
       expect(result).toEqual(mockUser);
     });
 
-    it('returns undefined when user not found', async () => {
+    it('returns null when user not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
       const result = await User.findById('u0000000-0000-0000-0000-000000000999');
 
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
     });
   });
 
@@ -101,12 +101,12 @@ describe('User Model', () => {
       expect(result).toEqual(mockUser);
     });
 
-    it('returns undefined when username not found', async () => {
+    it('returns null when username not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
       const result = await User.findByUsername('nonexistent');
 
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
     });
   });
 
@@ -125,12 +125,12 @@ describe('User Model', () => {
       expect(result).toEqual(mockUser);
     });
 
-    it('returns undefined when email not found', async () => {
+    it('returns null when email not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
       const result = await User.findByEmail('nonexistent@test.com');
 
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
     });
   });
 
@@ -168,6 +168,7 @@ describe('User Model', () => {
         'S123',
         'g0000000-0000-0000-0000-000000000001',
         'r0000000-0000-0000-0000-000000000003',
+        'active',
       ]);
       expect(result).toEqual(mockCreatedUser);
     });
@@ -204,6 +205,7 @@ describe('User Model', () => {
         null,
         null,
         'r0000000-0000-0000-0000-000000000003',
+        'active',
       ]);
       expect(result).toEqual(mockCreatedUser);
     });
@@ -240,6 +242,7 @@ describe('User Model', () => {
         null,
         null,
         'r0000000-0000-0000-0000-000000000001',
+        'active',
       ]);
       expect(result).toEqual(mockCreatedUser);
     });
