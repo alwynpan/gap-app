@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
+import Header from '../components/Header.jsx';
 import { Link } from 'react-router-dom';
 import { formatRoleName } from '../utils/formatting.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 function Dashboard() {
-  const { user, logout, isAdmin, isAssignmentManager, refreshUser } = useAuth();
+  const { user, isAdmin, isAssignmentManager, refreshUser } = useAuth();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordError, setPasswordError] = useState('');
@@ -65,10 +66,6 @@ function Dashboard() {
     }
   };
 
-  const handleLogout = async () => {
-    await logout();
-  };
-
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setPasswordError('');
@@ -98,24 +95,7 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navigation */}
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-bold text-primary-600">G.A.P. Portal</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">
-                {user?.username} ({formatRoleName(user?.role)})
-              </span>
-              <button onClick={handleLogout} className="text-sm text-red-600 hover:text-red-700">
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Header />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">

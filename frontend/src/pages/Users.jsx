@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
+import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -184,23 +185,7 @@ function Users() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navigation */}
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-bold text-primary-600">G.A.P. Portal</h1>
-              <span className="ml-4 text-sm text-gray-500">User Management</span>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">{user?.username}</span>
-              <a href="/dashboard" className="text-sm text-primary-600 hover:text-primary-700">
-                Back to Dashboard
-              </a>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Header pageName="User Management" />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
