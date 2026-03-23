@@ -134,7 +134,9 @@ function Groups() {
       await axios.put(`${API_BASE}/users/${userId}/group`, { groupId: null });
       setSuccess('Member removed successfully');
       setTimeout(() => setSuccess(''), 3000);
-      if (groupId) {fetchGroupMembers(groupId);}
+      if (groupId) {
+        fetchGroupMembers(groupId);
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to remove member');
       setTimeout(() => setError(''), 3000);
@@ -151,7 +153,9 @@ function Groups() {
       setSuccess('Member added successfully');
       setSelectedUserId('');
       setTimeout(() => setSuccess(''), 3000);
-      if (groupId) {fetchGroupMembers(groupId);}
+      if (groupId) {
+        fetchGroupMembers(groupId);
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to add member');
       setTimeout(() => setError(''), 3000);
