@@ -28,6 +28,11 @@ async function authRoutes(fastify, _options) {
         return reply.code(400).send({ error: 'Username, email, and password are required' });
       }
 
+      // Validate firstName and lastName are provided
+      if (!firstName || !lastName) {
+        return reply.code(400).send({ error: 'First name and last name are required' });
+      }
+
       // Validate password length
       if (password.length < 6) {
         return reply.code(400).send({ error: 'Password must be at least 6 characters' });
