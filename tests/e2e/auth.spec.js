@@ -1,6 +1,5 @@
-import axios from 'axios';
-
-const API_BASE = process.env.API_BASE || 'http://localhost:3001';
+const axios = require('axios');
+const { API_BASE, waitForAPI } = require('./api');
 
 describe('Authentication E2E Tests', () => {
   let authToken = null;
@@ -10,27 +9,12 @@ describe('Authentication E2E Tests', () => {
     username: `testuser_${Date.now()}`,
     email: `test_${Date.now()}@example.com`,
     password: 'testpass123',
-    studentId: 'TEST001',
+    studentId: `STU_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
   };
 
   beforeAll(async () => {
-    // Wait for API to be ready
     await waitForAPI();
   });
-
-  async function waitForAPI(maxRetries = 30) {
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        await axios.get(`${API_BASE}/health`);
-        return;
-      } catch (error) {
-        if (i === maxRetries - 1) {
-          throw new Error('API not available after waiting');
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-  }
 
   describe('POST /auth/register', () => {
     it('should register a new user successfully', async () => {
@@ -70,6 +54,58 @@ describe('Authentication E2E Tests', () => {
           password: '123',
         })
       ).rejects.toThrow('400');
+    });
+
+    it('should reject registration without username', async () => {
+      await expect(
+        axios.post(`${API_BASE}/auth/register`, {
+          email: `noun_${Date.now()}@example.com`,
+          password: 'password123',
+        })
+      ).rejects.toThrow('400');
+    });
+
+    it('should reject registration without email', async () => {
+      await expect(
+        axios.post(`${API_BASE}/auth/register`, {
+          username: `noemail_${Date.now()}`,
+          password: 'password123',
+        })
+      ).rejects.toThrow('400');
+    });
+
+    it('should reject registration without password', async () => {
+      await expect(
+        axios.post(`${API_BASE}/auth/register`, {
+          username: `nopass_${Date.now()}`,
+          email: `nopass_${Date.now()}@example.com`,
+        })
+      ).rejects.toThrow('400');
+    });
+
+    it('should reject registration with invalid email format', async () => {
+      await expect(
+        axios.post(`${API_BASE}/auth/register`, {
+          username: `bademail_${Date.now()}`,
+          email: 'invalid-email',
+          password: 'password123',
+        })
+      ).rejects.toThrow('400');
+    });
+
+    it('should register with optional fields (firstName, lastName, studentId)', async () => {
+      const uniqueId = Date.now();
+      const response = await axios.post(`${API_BASE}/auth/register`, {
+        username: `fulluser_${uniqueId}`,
+        email: `fulluser_${uniqueId}@example.com`,
+        password: 'password123',
+        firstName: 'Test',
+        lastName: 'User',
+        studentId: `STU${uniqueId}`,
+      });
+
+      expect(response.status).toBe(201);
+      expect(response.data.user.studentId).toBe(`STU${uniqueId}`);
     });
   });
 
@@ -111,11 +147,43 @@ describe('Authentication E2E Tests', () => {
         axios.post(`${API_BASE}/auth/login`, {})
       ).rejects.toThrow('400');
     });
+
+    it('should reject login with only username', async () => {
+      await expect(
+        axios.post(`${API_BASE}/auth/login`, {
+          username: testUser.username,
+        })
+      ).rejects.toThrow('400');
+    });
+
+    it('should reject login with only password', async () => {
+      await expect(
+        axios.post(`${API_BASE}/auth/login`, {
+          password: 'password123',
+        })
+      ).rejects.toThrow('400');
+    });
+
+    it('should return user details on login (firstName, lastName, groupId, groupName)', async () => {
+      const response = await axios.post(`${API_BASE}/auth/login`, {
+        username: testUser.username,
+        password: testUser.password,
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.data.user).toHaveProperty('id');
+      expect(response.data.user).toHaveProperty('username');
+      expect(response.data.user).toHaveProperty('email');
+      expect(response.data.user).toHaveProperty('role');
+      expect(response.data.user).toHaveProperty('groupId');
+      expect(response.data.user).toHaveProperty('groupName');
+      expect(response.data.user).toHaveProperty('studentId');
+    });
   });
 
   describe('POST /auth/logout', () => {
     it('should logout successfully', async () => {
-      const response = await axios.post(`${API_BASE}/auth/logout`, null, {
+      const response = await axios.post(`${API_BASE}/auth/logout`, {}, {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },
@@ -161,6 +229,32 @@ describe('Authentication E2E Tests', () => {
           },
         })
       ).rejects.toThrow('401');
+    });
+
+    it('should return full user profile (firstName, lastName, role, groupId, studentId)', async () => {
+      const loginResponse = await axios.post(`${API_BASE}/auth/login`, {
+        username: testUser.username,
+        password: testUser.password,
+      });
+      
+      const token = loginResponse.data.token;
+
+      const response = await axios.get(`${API_BASE}/auth/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.data.user).toHaveProperty('id');
+      expect(response.data.user).toHaveProperty('username');
+      expect(response.data.user).toHaveProperty('email');
+      expect(response.data.user).toHaveProperty('firstName');
+      expect(response.data.user).toHaveProperty('lastName');
+      expect(response.data.user).toHaveProperty('role');
+      expect(response.data.user).toHaveProperty('groupId');
+      expect(response.data.user).toHaveProperty('groupName');
+      expect(response.data.user).toHaveProperty('studentId');
     });
   });
 

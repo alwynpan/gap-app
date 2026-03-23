@@ -3,13 +3,14 @@ const Role = require('../models/Role');
 const config = require('../config/index');
 
 async function authRoutes(fastify, _options) {
-  // Register route (stricter limit: 3 req/min per IP to prevent spam)
+  const isDev = config.app.nodeEnv === 'development';
+  // Register route (stricter limit by default; relaxed only in dev for e2e tests)
   fastify.post(
     '/auth/register',
     {
       config: {
         rateLimit: {
-          max: 3,
+          max: isDev ? 500 : 3,
           timeWindow: '1 minute',
         },
       },
@@ -81,13 +82,13 @@ async function authRoutes(fastify, _options) {
     }
   );
 
-  // Login route (5 req/min per IP to prevent brute-force attacks)
+  // Login route (strict limit by default; relaxed only in dev for e2e tests)
   fastify.post(
     '/auth/login',
     {
       config: {
         rateLimit: {
-          max: 5,
+          max: isDev ? 500 : 5,
           timeWindow: '1 minute',
         },
       },

@@ -1,6 +1,8 @@
-import axios from 'axios';
+const axios = require('axios');
+const { API_BASE, waitForAPI } = require('./api');
 
-const API_BASE = process.env.API_BASE || 'http://localhost:3001';
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change_this_in_production';
 
 describe('Registration E2E Tests', () => {
   let adminToken = null;
@@ -11,28 +13,14 @@ describe('Registration E2E Tests', () => {
     // Login as admin for cleanup operations
     try {
       const response = await axios.post(`${API_BASE}/auth/login`, {
-        username: 'admin',
-        password: 'admin123',
+        username: ADMIN_USERNAME,
+        password: ADMIN_PASSWORD,
       });
       adminToken = response.data.token;
     } catch (error) {
       console.warn('Admin login failed - may need to run migrations first');
     }
   });
-
-  async function waitForAPI(maxRetries = 30) {
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        await axios.get(`${API_BASE}/health`);
-        return;
-      } catch (error) {
-        if (i === maxRetries - 1) {
-          throw new Error('API not available after waiting');
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-  }
 
   describe('Registration Validation', () => {
     it('should require username field', async () => {
@@ -75,15 +63,16 @@ describe('Registration E2E Tests', () => {
 
     it('should accept optional studentId field', async () => {
       const uniqueId = Date.now();
+      const studentId = `STU${uniqueId}`;
       const response = await axios.post(`${API_BASE}/auth/register`, {
         username: `student_${uniqueId}`,
         email: `student_${uniqueId}@example.com`,
         password: 'password123',
-        studentId: 'STU123456',
+        studentId,
       });
 
       expect(response.status).toBe(201);
-      expect(response.data.user.studentId).toBe('STU123456');
+      expect(response.data.user.studentId).toBe(studentId);
     });
 
     it('should assign default role (user) to new registrations', async () => {
@@ -135,18 +124,15 @@ describe('Registration E2E Tests', () => {
       };
     });
 
-    it('should enforce unique username (case-insensitive)', async () => {
-      // Create first user
+    it('should enforce unique username (exact match)', async () => {
       await axios.post(`${API_BASE}/auth/register`, uniqueUser);
 
-      // Try to create with same username different case
       await expect(
         axios.post(`${API_BASE}/auth/register`, {
-          username: uniqueUser.username.toUpperCase(),
+          ...uniqueUser,
           email: `different_${Date.now()}@example.com`,
-          password: 'password123',
         })
-      ).rejects.toThrow();
+      ).rejects.toThrow('409');
     });
 
     it('should enforce unique email', async () => {

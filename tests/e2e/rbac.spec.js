@@ -1,6 +1,8 @@
-import axios from 'axios';
+const axios = require('axios');
+const { API_BASE, waitForAPI } = require('./api');
 
-const API_BASE = process.env.API_BASE || 'http://localhost:3001';
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change_this_in_production';
 
 describe('RBAC E2E Tests', () => {
   let adminToken = null;
@@ -14,8 +16,8 @@ describe('RBAC E2E Tests', () => {
     // Login as admin
     try {
       const adminResponse = await axios.post(`${API_BASE}/auth/login`, {
-        username: 'admin',
-        password: 'admin123',
+        username: ADMIN_USERNAME,
+        password: ADMIN_PASSWORD,
       });
       adminToken = adminResponse.data.token;
 
@@ -63,20 +65,6 @@ describe('RBAC E2E Tests', () => {
       console.warn('User setup failed');
     }
   });
-
-  async function waitForAPI(maxRetries = 30) {
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        await axios.get(`${API_BASE}/health`);
-        return;
-      } catch (error) {
-        if (i === maxRetries - 1) {
-          throw new Error('API not available after waiting');
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-  }
 
   describe('GET /groups', () => {
     it('should allow authenticated users to list groups', async () => {
@@ -211,7 +199,7 @@ describe('RBAC E2E Tests', () => {
       await expect(
         axios.put(
           `${API_BASE}/users/${testUserId}/group`,
-          { groupId: 99999 },
+          { groupId: '00000000-0000-0000-0000-000000000001' },
           {
             headers: { Authorization: `Bearer ${adminToken}` },
           }

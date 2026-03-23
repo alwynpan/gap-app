@@ -234,132 +234,143 @@ function Users() {
           )}
 
           {/* Users Table */}
-          <div className="bg-white shadow overflow-hidden rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Username
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Email
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Role
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Current Group
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map((u) => (
-                    <tr key={u.id}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{u.username}</div>
-                        {u.student_id && <div className="text-sm text-gray-500">{u.student_id}</div>}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {u.first_name} {u.last_name}
+          <div className="bg-white shadow overflow-x-auto rounded-lg">
+            <table className="w-full min-w-[900px] divide-y divide-gray-200 table-fixed">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Username
+                  </th>
+                  <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Name
+                  </th>
+                  <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Email
+                  </th>
+                  <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Role
+                  </th>
+                  <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Current Group
+                  </th>
+                  <th className="w-[23%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {users.map((u) => (
+                  <tr key={u.id}>
+                    <td className="px-6 py-4 overflow-hidden">
+                      <div className="text-sm font-medium text-gray-900 truncate" title={u.username}>
+                        {u.username}
+                      </div>
+                      {u.student_id && (
+                        <div className="text-sm text-gray-500 truncate" title={u.student_id}>
+                          {u.student_id}
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{u.email}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            u.role_name === 'admin'
-                              ? 'bg-red-100 text-red-800'
-                              : u.role_name === 'assignment_manager'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-green-100 text-green-800'
-                          }`}
-                        >
-                          {formatRoleName(u.role_name)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{u.group_name || 'Not assigned'}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {selectedUser === u.id ? (
-                          <div className="flex items-center space-x-2">
-                            <select
-                              value={selectedGroup}
-                              onChange={(e) => setSelectedGroup(e.target.value)}
-                              className="border border-gray-300 rounded-md px-2 py-1 text-sm"
-                            >
-                              <option value="">No Group</option>
-                              {groups.map((g) => (
-                                <option key={g.id} value={g.id}>
-                                  {g.name}
-                                </option>
-                              ))}
-                            </select>
-                            <button onClick={handleAssignGroup} className="text-primary-600 hover:text-primary-800">
-                              Save
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedUser(null);
-                                setSelectedGroup('');
-                              }}
-                              className="text-gray-600 hover:text-gray-800"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center space-x-3">
-                            {(isAdmin || user?.id === u.id) && (
-                              <>
-                                <button
-                                  onClick={() => openEditModal(u)}
-                                  className="text-primary-600 hover:text-primary-800"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() =>
-                                    setPasswordChange({
-                                      userId: u.id,
-                                      username: u.username,
-                                      currentPassword: '',
-                                      newPassword: '',
-                                      confirmPassword: '',
-                                    })
-                                  }
-                                  className="text-primary-600 hover:text-primary-800"
-                                >
-                                  Password
-                                </button>
-                              </>
-                            )}
-                            <button
-                              onClick={() => setSelectedUser(u.id)}
-                              className="text-primary-600 hover:text-primary-800"
-                            >
-                              Assign Group
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 overflow-hidden">
+                      <div
+                        className="text-sm text-gray-900 truncate"
+                        title={`${u.first_name || ''} ${u.last_name || ''}`.trim()}
+                      >
+                        {u.first_name} {u.last_name}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 overflow-hidden">
+                      <div className="text-sm text-gray-900 truncate" title={u.email}>
+                        {u.email}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full whitespace-nowrap ${
+                          u.role_name === 'admin'
+                            ? 'bg-red-100 text-red-800'
+                            : u.role_name === 'assignment_manager'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-green-100 text-green-800'
+                        }`}
+                      >
+                        {formatRoleName(u.role_name)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 overflow-hidden">
+                      <div className="text-sm text-gray-900 truncate" title={u.group_name || 'Not assigned'}>
+                        {u.group_name || 'Not assigned'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {selectedUser === u.id ? (
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={selectedGroup}
+                            onChange={(e) => setSelectedGroup(e.target.value)}
+                            className="min-w-0 flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                          >
+                            <option value="">No Group</option>
+                            {groups.map((g) => (
+                              <option key={g.id} value={g.id}>
+                                {g.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button onClick={handleAssignGroup} className="text-primary-600 hover:text-primary-800">
+                            Save
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedUser(null);
+                              setSelectedGroup('');
+                            }}
+                            className="text-gray-600 hover:text-gray-800"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-3">
+                          {(isAdmin || user?.id === u.id) && (
+                            <>
+                              <button
+                                onClick={() => openEditModal(u)}
+                                className="text-primary-600 hover:text-primary-800"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() =>
+                                  setPasswordChange({
+                                    userId: u.id,
+                                    username: u.username,
+                                    currentPassword: '',
+                                    newPassword: '',
+                                    confirmPassword: '',
+                                  })
+                                }
+                                className="text-primary-600 hover:text-primary-800"
+                              >
+                                Password
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => setSelectedUser(u.id)}
+                            className="text-primary-600 hover:text-primary-800"
+                          >
+                            Assign Group
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
-              {users.length === 0 && <div className="text-center py-8 text-gray-500">No users found</div>}
-            </div>
+            {users.length === 0 && <div className="text-center px-6 py-8 text-gray-500">No users found</div>}
           </div>
         </div>
       </main>

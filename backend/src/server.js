@@ -15,7 +15,7 @@ const rbacPlugin = require('./middleware/rbac');
 
 async function buildServer() {
   const fastify = Fastify({
-    logger: config.app.nodeEnv === 'development',
+    logger: config.app.nodeEnv !== 'production',
   });
 
   // Register security plugins
@@ -29,9 +29,11 @@ async function buildServer() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   });
 
+  const isDev = config.app.nodeEnv === 'development';
   // Register rate limiting (enables per-route rateLimit config)
+  // Stricter limit by default (production-safe); relaxed only in dev for e2e tests
   await fastify.register(rateLimit, {
-    max: 100,
+    max: isDev ? 5000 : 100,
     timeWindow: '1 minute',
   });
 

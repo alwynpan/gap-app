@@ -264,26 +264,35 @@ function Groups() {
                         ) : (
                           <ul className="divide-y divide-gray-100">
                             {groupMembers.map((member) => (
-                              <li key={member.id} className="flex items-center justify-between py-2">
-                                <div>
-                                  <span className="text-sm font-medium text-gray-900">{member.username}</span>
-                                  <span className="text-sm text-gray-500 ml-2">{member.email}</span>
-                                  <span
-                                    className={`ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                      member.role_name === 'admin'
-                                        ? 'bg-red-100 text-red-800'
-                                        : member.role_name === 'assignment_manager'
-                                          ? 'bg-blue-100 text-blue-800'
-                                          : 'bg-green-100 text-green-800'
-                                    }`}
-                                  >
-                                    {formatRoleName(member.role_name)}
-                                  </span>
+                              <li key={member.id} className="flex items-center justify-between gap-2 py-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="text-sm font-medium text-gray-900 truncate"
+                                      title={member.username}
+                                    >
+                                      {member.username}
+                                    </span>
+                                    <span
+                                      className={`shrink-0 px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                        member.role_name === 'admin'
+                                          ? 'bg-red-100 text-red-800'
+                                          : member.role_name === 'assignment_manager'
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : 'bg-green-100 text-green-800'
+                                      }`}
+                                    >
+                                      {formatRoleName(member.role_name)}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-gray-500 truncate" title={member.email}>
+                                    {member.email}
+                                  </p>
                                 </div>
                                 {isAssignmentManager && (
                                   <button
                                     onClick={() => handleRemoveMember(member.id)}
-                                    className="text-sm text-red-600 hover:text-red-800"
+                                    className="shrink-0 text-sm text-red-600 hover:text-red-800"
                                   >
                                     Remove
                                   </button>
@@ -294,11 +303,11 @@ function Groups() {
                         )}
 
                         {isAssignmentManager && availableUsers.length > 0 && (
-                          <div className="mt-3 flex items-center space-x-2">
+                          <div className="mt-3 flex items-center gap-2 min-w-0">
                             <select
                               value={selectedUserId}
                               onChange={(e) => setSelectedUserId(e.target.value)}
-                              className="border border-gray-300 rounded-md px-2 py-1 text-sm flex-1"
+                              className="min-w-0 flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm"
                             >
                               <option value="">Select a user to add</option>
                               {availableUsers.map((u) => (

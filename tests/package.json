@@ -2,11 +2,10 @@
   "name": "gap-portal-tests",
   "version": "1.0.0",
   "description": "G.A.P. Portal E2E Tests",
-  "type": "module",
   "scripts": {
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
+    "test": "node node_modules/jest/bin/jest.js",
+    "test:watch": "node node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node node_modules/jest/bin/jest.js --coverage"
   },
   "dependencies": {
     "axios": "^1.13.6"
