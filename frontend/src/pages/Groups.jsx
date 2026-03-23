@@ -224,7 +224,11 @@ function Groups() {
     }
     try {
       await Promise.all(
-        Array.from({ length: n }, (_, i) => axios.post(`${API_BASE}/groups`, { name: `${prefix.trim()}${i + 1}` }))
+        Array.from({ length: n }, (_, i) =>
+          axios.post(`${API_BASE}/groups`, {
+            name: `${prefix.trim()}${String(i + 1).padStart(String(n).length, '0')}`,
+          })
+        )
       );
       showSuccess(`Created ${n} groups`);
       setBulkCreateModal(null);
@@ -243,7 +247,8 @@ function Groups() {
     if (!prefix.trim() || isNaN(n) || n < 1) {
       return [];
     }
-    return Array.from({ length: n }, (_, i) => `${prefix.trim()}${i + 1}`);
+    const pad = String(n).length;
+    return Array.from({ length: n }, (_, i) => `${prefix.trim()}${String(i + 1).padStart(pad, '0')}`);
   };
 
   // ── Bulk delete ─────────────────────────────────────────────────────────
