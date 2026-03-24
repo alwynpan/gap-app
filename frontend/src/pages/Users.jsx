@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Pencil, UserPlus, Check, X, Download, Trash2 } from 'lucide-react';
+import { Pencil, UserPlus, Check, X, Download, Trash2, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
@@ -20,6 +21,7 @@ const emptyNewUser = {
 
 function Users() {
   const { user, isAdmin, isAssignmentManager } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -578,6 +580,15 @@ function Users() {
                 <Download className="h-4 w-4" />
                 Export All
               </button>
+              {isAssignmentManager && (
+                <button
+                  onClick={() => navigate('/users/import')}
+                  className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
+                >
+                  <Upload className="h-4 w-4" />
+                  Import Users
+                </button>
+              )}
               {isAssignmentManager && (
                 <button
                   onClick={() => {
