@@ -1,38 +1,17 @@
-const config = require('../../../src/config/index');
-
 jest.mock('nodemailer', () => ({
   createTransport: jest.fn(),
 }));
-
-jest.mock('../../../src/config/index', () => ({
-  smtp: {
-    host: '',
-    port: 587,
-    secure: false,
-    user: '',
-    pass: '',
-    from: 'no-reply@gap-app.local',
-  },
-  appUrl: 'http://localhost:3000',
-}));
-
-const nodemailer = require('nodemailer');
 
 describe('Email Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
-    // Reset smtp host to empty (no SMTP configured) by default
-    config.smtp.host = '';
   });
 
   describe('sendEmail', () => {
     it('logs to console when SMTP host is not configured', async () => {
-      config.smtp.host = '';
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
 
-      // Re-require after reset to get fresh module state
-      jest.resetModules();
       jest.mock('../../../src/config/index', () => ({
         smtp: { host: '', port: 587, secure: false, user: '', pass: '', from: 'no-reply@gap-app.local' },
         appUrl: 'http://localhost:3000',

@@ -93,7 +93,7 @@ describe('PasswordResetToken Model', () => {
   });
 
   describe('deleteStaleForUser', () => {
-    it('deletes expired or used tokens for a user', async () => {
+    it('deletes all existing tokens for a user', async () => {
       pool.query.mockResolvedValue({});
 
       await PasswordResetToken.deleteStaleForUser('u0000000-0000-0000-0000-000000000001');

@@ -507,6 +507,7 @@ describe('Users Routes', () => {
       const handlers = captureHandlers(mockFastify);
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
       Group.findById.mockResolvedValue({
         id: 'g0000000-0000-0000-0000-000000000001',
         name: 'Full Group',

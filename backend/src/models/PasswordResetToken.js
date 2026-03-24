@@ -44,11 +44,9 @@ class PasswordResetToken {
     await pool.query('UPDATE password_reset_tokens SET used = true WHERE id = $1', [id]);
   }
 
-  /** Remove old/used tokens for a user before creating a new one. */
+  /** Remove all existing tokens for a user before creating a new one (ensures only one active token at a time). */
   static async deleteStaleForUser(userId) {
-    await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1 AND (expires_at < NOW() OR used = true)', [
-      userId,
-    ]);
+    await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId]);
   }
 }
 

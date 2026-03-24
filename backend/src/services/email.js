@@ -3,6 +3,15 @@ const config = require('../config/index');
 
 let _transporter = null;
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function getTransporter() {
   if (_transporter) {
     return _transporter;
@@ -37,7 +46,7 @@ async function sendEmail(to, subject, html) {
 
 async function sendPasswordSetupEmail(user, token) {
   const url = `${config.appUrl}/set-password?token=${token}`;
-  const name = user.first_name || user.username;
+  const name = escapeHtml(user.first_name || user.username);
   await sendEmail(
     user.email,
     'Set your password — G.A.P. Portal',
@@ -51,7 +60,7 @@ async function sendPasswordSetupEmail(user, token) {
 
 async function sendPasswordResetEmail(user, token) {
   const url = `${config.appUrl}/set-password?token=${token}`;
-  const name = user.first_name || user.username;
+  const name = escapeHtml(user.first_name || user.username);
   await sendEmail(
     user.email,
     'Reset your password — G.A.P. Portal',

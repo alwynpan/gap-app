@@ -241,10 +241,11 @@ async function authRoutes(fastify, _options) {
       },
     },
     async (request, reply) => {
-      const { email } = request.body || {};
-      if (!email) {
+      const { email: rawEmail } = request.body || {};
+      if (!rawEmail) {
         return reply.code(400).send({ error: 'Email is required' });
       }
+      const email = rawEmail.trim();
 
       // Always return success to avoid leaking which emails are registered
       const successMsg = { message: 'If that email is registered, a reset link has been sent.' };
@@ -290,14 +291,16 @@ async function authRoutes(fastify, _options) {
         return reply.code(400).send({ error: 'Invalid or expired token' });
       }
 
+      // Consume the token first — if the password update fails the user requests a new link;
+      // this prevents a valid token from persisting after a successful password change.
+      await PasswordResetToken.markUsed(tokenRecord.id);
+
       await User.updatePassword(tokenRecord.user_id, password);
 
       // Activate the account if this was a first-time setup token
       if (tokenRecord.token_type === 'setup') {
         await User.activate(tokenRecord.user_id);
       }
-
-      await PasswordResetToken.markUsed(tokenRecord.id);
 
       return reply.send({ message: 'Password set successfully. You can now log in.' });
     } catch (error) {

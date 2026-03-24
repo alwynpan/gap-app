@@ -117,9 +117,23 @@ async function usersRoutes(fastify, _options) {
           return reply.code(409).send({ error: 'Email already exists' });
         }
 
+        // Get role ID by name lookup (needed before group check to know effective role)
+        const Role = require('../models/Role');
+        const effectiveRole = role || 'user';
+        const roleRecord = await Role.findByName(effectiveRole);
+        if (!roleRecord) {
+          return reply.code(400).send({ error: `Invalid role: ${role}` });
+        }
+        const roleId = roleRecord.id;
+
+        // studentId and groupId only apply to regular users
+        const isUserRole = effectiveRole === 'user';
+        const effectiveStudentId = isUserRole ? studentId : undefined;
+        const effectiveGroupId = isUserRole ? groupId : undefined;
+
         // If a group is specified, verify it exists and has capacity
-        if (groupId) {
-          const group = await Group.findById(groupId);
+        if (effectiveGroupId) {
+          const group = await Group.findById(effectiveGroupId);
           if (!group) {
             return reply.code(404).send({ error: 'Group not found' });
           }
@@ -128,22 +142,14 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
-        // Get role ID by name lookup
-        const Role = require('../models/Role');
-        const roleRecord = await Role.findByName(role || 'user');
-        if (!roleRecord) {
-          return reply.code(400).send({ error: `Invalid role: ${role}` });
-        }
-        const roleId = roleRecord.id;
-
         const newUser = await User.create({
           username,
           email,
           password: password || null,
           firstName,
           lastName,
-          studentId,
-          groupId,
+          studentId: effectiveStudentId,
+          groupId: effectiveGroupId,
           roleId,
         });
 
