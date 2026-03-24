@@ -1732,7 +1732,7 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'New password must be at least 6 characters' });
     });
 
-    it('rejects when current password is not provided for non-admin', async () => {
+    it('rejects when current password is not provided', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findById.mockResolvedValue({
@@ -1745,6 +1745,28 @@ describe('Users Routes', () => {
       await handlers['/users/:id/password_put'](
         {
           user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'user' },
+          params: { id: 'u0000000-0000-0000-0000-000000000001' },
+          body: { newPassword: 'newpass123' },
+        },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Current password is required' });
+    });
+
+    it('rejects when admin does not provide current password', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'admin',
+      });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/password_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
           params: { id: 'u0000000-0000-0000-0000-000000000001' },
           body: { newPassword: 'newpass123' },
         },
@@ -1781,7 +1803,7 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Current password is incorrect' });
     });
 
-    it('successfully changes password for non-admin with correct current password', async () => {
+    it('successfully changes password with correct current password', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findById.mockResolvedValue({
