@@ -140,6 +140,10 @@ function Users() {
         if (editingUser.roleName !== editingUser.originalRoleName) {
           payload.role = editingUser.roleName;
         }
+      }
+
+      // Admins and assignment managers can enable/disable users
+      if ((isAdmin || isAssignmentManager) && editingUser.roleName !== 'admin') {
         payload.enabled = editingUser.enabled;
       }
 
@@ -900,8 +904,9 @@ function Users() {
                   </select>
                 </div>
               )}
-              {/* Show Enabled checkbox for admins editing non-built-in-admin users */}
-              {isAdmin && editingUser.username !== 'admin' && (
+              {/* Show Enabled checkbox for admins and assignment managers editing non-built-in-admin users */}
+              {((isAdmin && editingUser.username !== 'admin') ||
+                (isAssignmentManager && editingUser.roleName !== 'admin')) && (
                 <div className="mb-4">
                   <label className="flex items-center space-x-2">
                     <input

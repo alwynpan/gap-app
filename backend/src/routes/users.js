@@ -287,8 +287,8 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
-        // Non-admin users can only update basic profile fields
         const isAdmin = request.user.role === 'admin';
+        const isAssignmentManager = request.user.role === 'assignment_manager';
         const updates = { email, firstName, lastName };
 
         // Only include studentId for regular users
@@ -310,14 +310,16 @@ async function usersRoutes(fastify, _options) {
             }
             updates.roleId = roleRecord.id;
           }
-          // Only include enabled if it's provided; sync status with enabled state
-          if (enabled !== undefined) {
-            updates.enabled = enabled;
-            if (enabled === false) {
-              updates.status = 'inactive';
-            } else if (enabled === true && user.status === 'inactive') {
-              updates.status = 'active';
-            }
+        }
+
+        // Admins and assignment managers can enable/disable users; sync status accordingly
+        // (assignment managers cannot edit admin users — enforced in preHandler)
+        if ((isAdmin || isAssignmentManager) && enabled !== undefined) {
+          updates.enabled = enabled;
+          if (enabled === false) {
+            updates.status = 'inactive';
+          } else if (enabled === true && user.status === 'inactive') {
+            updates.status = 'active';
           }
         }
 

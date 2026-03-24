@@ -775,18 +775,26 @@ describe('Auth Routes', () => {
       });
     });
 
-    it('returns 200 without sending email when user has pending status', async () => {
+    it('resends setup email when user has pending status', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      User.findByEmail.mockResolvedValue({
+      const { sendPasswordSetupEmail } = require('../../src/services/email');
+      const pendingUser = {
         id: 'u1',
         email: 'pending@test.com',
+        username: 'pendinguser',
         status: 'pending',
-      });
+      };
+      User.findByEmail.mockResolvedValue(pendingUser);
+      PasswordResetToken.deleteStaleForUser.mockResolvedValue();
+      PasswordResetToken.create.mockResolvedValue({ token: 'setuptoken123', id: 't2' });
+      sendPasswordSetupEmail.mockResolvedValue();
 
       await capturedHandlers['/auth/forgot-password']({ body: { email: 'pending@test.com' } }, mockReply);
 
+      expect(PasswordResetToken.create).toHaveBeenCalledWith('u1', 'setup', 24);
+      expect(sendPasswordSetupEmail).toHaveBeenCalledWith(pendingUser, 'setuptoken123');
       expect(sendPasswordResetEmail).not.toHaveBeenCalled();
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'If that email is registered, a reset link has been sent.',

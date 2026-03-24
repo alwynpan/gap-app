@@ -1,7 +1,7 @@
 const User = require('../models/User');
 const Role = require('../models/Role');
 const PasswordResetToken = require('../models/PasswordResetToken');
-const { sendPasswordResetEmail } = require('../services/email');
+const { sendPasswordResetEmail, sendPasswordSetupEmail } = require('../services/email');
 const config = require('../config/index');
 
 async function authRoutes(fastify, _options) {
@@ -251,11 +251,17 @@ async function authRoutes(fastify, _options) {
 
       try {
         const user = await User.findByEmail(email);
-        if (user && user.status !== 'pending') {
-          // Remove stale tokens before creating a new one
+        if (user) {
           await PasswordResetToken.deleteStaleForUser(user.id);
-          const tokenRecord = await PasswordResetToken.create(user.id, 'reset', 1);
-          await sendPasswordResetEmail(user, tokenRecord.token);
+          if (user.status === 'pending') {
+            // Account was never activated — resend the setup link (24 h expiry, same as initial)
+            const tokenRecord = await PasswordResetToken.create(user.id, 'setup', 24);
+            await sendPasswordSetupEmail(user, tokenRecord.token);
+          } else {
+            // Active or inactive account — send a password reset link (1 h expiry)
+            const tokenRecord = await PasswordResetToken.create(user.id, 'reset', 1);
+            await sendPasswordResetEmail(user, tokenRecord.token);
+          }
         }
         return reply.send(successMsg);
       } catch (error) {

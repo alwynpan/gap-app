@@ -762,7 +762,7 @@ describe('Users page', () => {
       expect(roleSelect).toBeTruthy();
     });
 
-    it('assignment manager does not see role or enabled fields in edit modal', async () => {
+    it('assignment manager does not see role field but sees enabled field in edit modal', async () => {
       useAuth.mockReturnValue({
         user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'am1', role: 'assignment_manager' },
         isAdmin: false,
@@ -773,10 +773,10 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
-      // Assignment managers cannot change role or toggle enabled — only admins can
+      // Assignment managers cannot change role but can toggle enabled
       const modal = screen.getByText('Edit User').closest('div');
       expect(within(modal).queryByLabelText(/role/i)).not.toBeInTheDocument();
-      expect(within(modal).queryByText('Enabled')).not.toBeInTheDocument();
+      expect(within(modal).getByText('Enabled')).toBeInTheDocument();
     });
 
     it('shows error when edit fails', async () => {
@@ -819,7 +819,7 @@ describe('Users page', () => {
       });
     });
 
-    it('assignment manager can save edit form without enabled in payload', async () => {
+    it('assignment manager can toggle enabled and it is included in payload', async () => {
       useAuth.mockReturnValue({
         user: { id: 'u0000000-0000-0000-0000-000000000099', username: 'am1', role: 'assignment_manager' },
         isAdmin: false,
@@ -830,6 +830,9 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
+      const enabledCheckbox = screen.getByRole('checkbox', { name: /enabled/i });
+      await user.click(enabledCheckbox);
+
       axios.put.mockResolvedValue({});
       axios.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
@@ -838,8 +841,10 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
-        const [, payload] = axios.put.mock.calls[0];
-        expect(payload).not.toHaveProperty('enabled');
+        expect(axios.put).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\//),
+          expect.objectContaining({ enabled: false })
+        );
       });
     });
   });

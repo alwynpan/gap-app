@@ -1010,13 +1010,14 @@ describe('Users Routes', () => {
       });
     });
 
-    it('non-admin can only update basic profile fields (username, email, studentId)', async () => {
+    it('assignment_manager can update basic fields and enabled but not role/groupId', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findById.mockResolvedValue({
         id: 'u0000000-0000-0000-0000-000000000001',
         username: 'oldname',
         role_name: 'user',
+        status: 'active',
       });
       User.update.mockResolvedValue({
         id: 'u0000000-0000-0000-0000-000000000001',
@@ -1045,12 +1046,14 @@ describe('Users Routes', () => {
         mockReply
       );
 
-      // Should only pass basic fields for regular users, not admin fields
+      // role and groupId must be excluded; enabled must be included with status sync
       expect(User.update).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', {
         email: 'new@test.com',
         firstName: undefined,
         lastName: undefined,
         studentId: undefined,
+        enabled: false,
+        status: 'inactive',
       });
     });
 
