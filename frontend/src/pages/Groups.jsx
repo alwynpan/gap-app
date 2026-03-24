@@ -92,7 +92,7 @@ function Groups() {
       clearTimeout(successTimeoutRef.current);
     }
     setSuccess(msg);
-    successTimeoutRef.current = setTimeout(() => setSuccess(''), 3000);
+    successTimeoutRef.current = setTimeout(() => setSuccess(''), 2000);
   };
 
   // ── Selection helpers ───────────────────────────────────────────────────
@@ -155,7 +155,9 @@ function Groups() {
 
   const handleEditGroup = async (e) => {
     e.preventDefault();
-    if (!editingGroup || !editingGroup.name.trim()) {return;}
+    if (!editingGroup || !editingGroup.name.trim()) {
+      return;
+    }
 
     const maxMembersVal = editingGroup.maxMembers.trim();
     const maxMembers = maxMembersVal === '' ? null : parseInt(maxMembersVal, 10);

@@ -886,7 +886,8 @@ describe('Users Routes', () => {
         params: { id: 'u0000000-0000-0000-0000-000000000001' },
       };
       await handlers['/users/:id_put_pre'](request, mockReply);
-      expect(mockReply.code).not.toHaveBeenCalled();
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Regular users cannot edit user information' });
     });
 
     it('rejects non-admin editing another user', async () => {
@@ -901,12 +902,16 @@ describe('Users Routes', () => {
       };
       await handlers['/users/:id_put_pre'](request, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(403);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: You can only edit your own profile' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Regular users cannot edit user information' });
     });
 
     it('rejects assignment_manager editing another user', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        role_name: 'admin',
+      });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -916,11 +921,16 @@ describe('Users Routes', () => {
       };
       await handlers['/users/:id_put_pre'](request, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Assignment managers cannot edit admin users' });
     });
 
     it('allows admin to edit another user', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        role_name: 'user',
+      });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -953,16 +963,18 @@ describe('Users Routes', () => {
       expect(mockReply.code).toHaveBeenCalledWith(404);
     });
 
-    it('admin can update all fields including roleId and enabled', async () => {
+    it('admin can update all fields including role and enabled', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findById.mockResolvedValue({
         id: 'u0000000-0000-0000-0000-000000000002',
         username: 'oldname',
+        role_name: 'user',
       });
+      Role.findByName.mockResolvedValue({ id: 'a0000000-0000-0000-0000-000000000001' });
       User.update.mockResolvedValue({
         id: 'u0000000-0000-0000-0000-000000000002',
-        username: 'newname',
+        username: 'oldname',
         email: 'new@test.com',
       });
 
@@ -975,9 +987,11 @@ describe('Users Routes', () => {
           user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
           params: { id: 'u0000000-0000-0000-0000-000000000002' },
           body: {
-            username: 'newname',
             email: 'new@test.com',
-            roleId: 'r0000000-0000-0000-0000-000000000001',
+            firstName: undefined,
+            lastName: undefined,
+            studentId: undefined,
+            role: 'admin',
             enabled: false,
           },
         },
@@ -985,14 +999,14 @@ describe('Users Routes', () => {
       );
 
       expect(User.update).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000002', {
-        username: 'newname',
         email: 'new@test.com',
         firstName: undefined,
         lastName: undefined,
         studentId: undefined,
         groupId: undefined,
-        roleId: 'r0000000-0000-0000-0000-000000000001',
+        roleId: 'a0000000-0000-0000-0000-000000000001',
         enabled: false,
+        status: 'inactive',
       });
     });
 
@@ -1002,10 +1016,12 @@ describe('Users Routes', () => {
       User.findById.mockResolvedValue({
         id: 'u0000000-0000-0000-0000-000000000001',
         username: 'oldname',
+        role_name: 'user',
       });
       User.update.mockResolvedValue({
         id: 'u0000000-0000-0000-0000-000000000001',
-        username: 'newname',
+        username: 'oldname',
+        email: 'new@test.com',
       });
 
       const usersRoutes = require('../../src/routes/users');
@@ -1014,12 +1030,14 @@ describe('Users Routes', () => {
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'user' },
+          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'assignment_manager' },
           params: { id: 'u0000000-0000-0000-0000-000000000001' },
           body: {
-            username: 'newname',
             email: 'new@test.com',
-            roleId: 'r0000000-0000-0000-0000-000000000001',
+            firstName: undefined,
+            lastName: undefined,
+            studentId: undefined,
+            role: 'admin',
             groupId: 'g0000000-0000-0000-0000-000000000005',
             enabled: false,
           },
@@ -1027,9 +1045,8 @@ describe('Users Routes', () => {
         mockReply
       );
 
-      // Should only pass basic fields, not admin fields
+      // Should only pass basic fields for regular users, not admin fields
       expect(User.update).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', {
-        username: 'newname',
         email: 'new@test.com',
         firstName: undefined,
         lastName: undefined,
@@ -1043,6 +1060,7 @@ describe('Users Routes', () => {
       User.findById.mockResolvedValue({
         id: 'u0000000-0000-0000-0000-000000000001',
         username: 'oldname',
+        role_name: 'user',
       });
       User.update.mockRejectedValue(new Error('Database error'));
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
@@ -1055,7 +1073,7 @@ describe('Users Routes', () => {
         {
           user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
           params: { id: 'u0000000-0000-0000-0000-000000000001' },
-          body: { username: 'newname' },
+          body: { email: 'new@test.com' },
         },
         mockReply
       );
@@ -1063,6 +1081,408 @@ describe('Users Routes', () => {
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
       consoleSpy.mockRestore();
+    });
+
+    it('prevents disabling the built-in admin user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'admin',
+        role_id: 'r0000000-0000-0000-0000-000000000001',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000002', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000001' },
+          body: { enabled: false },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Cannot disable the built-in admin account' });
+      expect(User.update).not.toHaveBeenCalled();
+    });
+
+    it('prevents changing role of the built-in admin user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'admin',
+        role_name: 'admin',
+        role_id: 'a0000000-0000-0000-0000-000000000001',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000002', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000001' },
+          body: { role: 'user' },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Cannot change role of the built-in admin account' });
+      expect(User.update).not.toHaveBeenCalled();
+    });
+
+    it('allows disabling a non-built-in admin user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        username: 'otheradmin',
+        role_id: 'r0000000-0000-0000-0000-000000000001',
+      });
+      User.update.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        username: 'otheradmin',
+        enabled: false,
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000002' },
+          body: { enabled: false },
+        },
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'User updated successfully',
+        user: expect.objectContaining({
+          id: 'u0000000-0000-0000-0000-000000000002',
+          username: 'otheradmin',
+          enabled: false,
+        }),
+      });
+    });
+
+    it('sets status to inactive when disabling a user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        username: 'someuser',
+        role_name: 'user',
+        status: 'active',
+      });
+      User.update.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        enabled: false,
+        status: 'inactive',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000002' },
+          body: { enabled: false },
+        },
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalledWith(
+        'u0000000-0000-0000-0000-000000000002',
+        expect.objectContaining({
+          enabled: false,
+          status: 'inactive',
+        })
+      );
+    });
+
+    it('restores status to active when re-enabling a previously inactive user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        username: 'someuser',
+        role_name: 'user',
+        status: 'inactive',
+      });
+      User.update.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        enabled: true,
+        status: 'active',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000002' },
+          body: { enabled: true },
+        },
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalledWith(
+        'u0000000-0000-0000-0000-000000000002',
+        expect.objectContaining({
+          enabled: true,
+          status: 'active',
+        })
+      );
+    });
+
+    it('does not change status when re-enabling a pending user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        username: 'pendinguser',
+        role_name: 'user',
+        status: 'pending',
+      });
+      User.update.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        enabled: true,
+        status: 'pending',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000002' },
+          body: { enabled: true },
+        },
+        mockReply
+      );
+
+      // status should not be changed for pending users
+      expect(User.update).toHaveBeenCalledWith(
+        'u0000000-0000-0000-0000-000000000002',
+        expect.not.objectContaining({
+          status: 'active',
+        })
+      );
+    });
+
+    it('allows changing role of a non-built-in admin user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        username: 'otheradmin',
+        role_name: 'admin',
+        role_id: 'a0000000-0000-0000-0000-000000000001',
+      });
+      Role.findByName.mockResolvedValue({ id: 'b0000000-0000-0000-0000-000000000003' });
+      User.update.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000002',
+        username: 'otheradmin',
+        role_id: 'b0000000-0000-0000-0000-000000000003',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000002' },
+          body: { role: 'user' },
+        },
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalledWith(
+        'u0000000-0000-0000-0000-000000000002',
+        expect.objectContaining({
+          roleId: 'b0000000-0000-0000-0000-000000000003',
+        })
+      );
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'User updated successfully',
+        user: expect.objectContaining({
+          id: 'u0000000-0000-0000-0000-000000000002',
+          username: 'otheradmin',
+          role_id: 'b0000000-0000-0000-0000-000000000003',
+        }),
+      });
+    });
+
+    it('allows updating built-in admin user email and name (but not role or enabled)', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'admin',
+        role_id: 'r0000000-0000-0000-0000-000000000001',
+        role_name: 'admin',
+      });
+      User.update.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'admin',
+        email: 'newadmin@example.com',
+        first_name: 'New',
+        last_name: 'Admin',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000002', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000001' },
+          body: {
+            email: 'newadmin@example.com',
+            firstName: 'New',
+            lastName: 'Admin',
+          },
+        },
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', {
+        email: 'newadmin@example.com',
+        firstName: 'New',
+        lastName: 'Admin',
+      });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'User updated successfully',
+        user: expect.objectContaining({
+          username: 'admin',
+          email: 'newadmin@example.com',
+        }),
+      });
+    });
+
+    it('prevents username change', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'oldusername',
+        role_name: 'user',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000002', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000001' },
+          body: { username: 'newusername' },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username cannot be changed' });
+      expect(User.update).not.toHaveBeenCalled();
+    });
+
+    it('ignores student ID for admin users (only sets for regular users)', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'adminuser',
+        role_name: 'admin',
+      });
+      User.update.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'adminuser',
+        email: 'new@test.com',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000002', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000001' },
+          body: { email: 'new@test.com', studentId: 'S12345' },
+        },
+        mockReply
+      );
+
+      // Should succeed but not include studentId in updates
+      expect(User.update).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', {
+        email: 'new@test.com',
+        firstName: undefined,
+        lastName: undefined,
+      });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'User updated successfully',
+        user: expect.objectContaining({ id: 'u0000000-0000-0000-0000-000000000001' }),
+      });
+    });
+
+    it('ignores group ID for admin users (only sets for regular users)', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'adminuser',
+        role_name: 'admin',
+      });
+      User.update.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'adminuser',
+        email: 'new@test.com',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: 'u0000000-0000-0000-0000-000000000002', role: 'admin' },
+          params: { id: 'u0000000-0000-0000-0000-000000000001' },
+          body: { email: 'new@test.com', groupId: 'g0000000-0000-0000-0000-000000000001' },
+        },
+        mockReply
+      );
+
+      // Should succeed but not include groupId in updates
+      expect(User.update).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', {
+        email: 'new@test.com',
+        firstName: undefined,
+        lastName: undefined,
+      });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'User updated successfully',
+        user: expect.objectContaining({ id: 'u0000000-0000-0000-0000-000000000001' }),
+      });
     });
   });
 
@@ -1277,7 +1697,7 @@ describe('Users Routes', () => {
       expect(mockReply.code).toHaveBeenCalledWith(403);
     });
 
-    it('allows admin to change another users password', async () => {
+    it('rejects admin changing another users password', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       const usersRoutes = require('../../src/routes/users');
@@ -1290,7 +1710,8 @@ describe('Users Routes', () => {
         },
         mockReply
       );
-      expect(mockReply.code).not.toHaveBeenCalled();
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: You can only change your own password' });
     });
 
     it('rejects password shorter than 6 characters', async () => {
@@ -1391,33 +1812,6 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password updated successfully' });
     });
 
-    it('admin can change another users password without current password', async () => {
-      const mockFastify = createMockFastify();
-      const handlers = captureHandlers(mockFastify);
-      User.findById.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000002',
-        username: 'otheruser',
-      });
-      User.updatePassword.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000002',
-        username: 'otheruser',
-      });
-      const usersRoutes = require('../../src/routes/users');
-      usersRoutes(mockFastify, {});
-      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id/password_put'](
-        {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'u0000000-0000-0000-0000-000000000002' },
-          body: { newPassword: 'newpass123' },
-        },
-        mockReply
-      );
-      expect(User.verifyPassword).not.toHaveBeenCalled();
-      expect(User.updatePassword).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000002', 'newpass123');
-      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password updated successfully' });
-    });
-
     it('returns 404 when user not found', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
@@ -1482,97 +1876,78 @@ describe('Users Routes', () => {
     });
   });
 
-  describe('POST /users/:id/reset-password', () => {
-    it('rejects unauthenticated request', async () => {
+  describe('PUT /users/:id - preHandler permissions', () => {
+    it('rejects regular user from editing anyone', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
 
-      await handlers['/users/:id/reset-password_post_pre']({ user: null }, mockReply);
-
-      expect(mockReply.code).toHaveBeenCalledWith(401);
-    });
-
-    it('rejects user without admin/assignment_manager role', async () => {
-      const mockFastify = createMockFastify({ checkRoleResult: false });
-      const handlers = captureHandlers(mockFastify);
-      const usersRoutes = require('../../src/routes/users');
-      usersRoutes(mockFastify, {});
-      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-
-      await handlers['/users/:id/reset-password_post_pre']({ user: { role: 'user' } }, mockReply);
-
-      expect(mockFastify.checkRole).toHaveBeenCalledWith({ user: { role: 'user' } }, mockReply, [
-        'admin',
-        'assignment_manager',
-      ]);
-    });
-
-    it('returns 404 when user not found', async () => {
-      const mockFastify = createMockFastify();
-      const handlers = captureHandlers(mockFastify);
-      User.findById.mockResolvedValue(null);
-      const usersRoutes = require('../../src/routes/users');
-      usersRoutes(mockFastify, {});
-      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-
-      await handlers['/users/:id/reset-password_post'](
-        { user: { role: 'admin' }, params: { id: 'u0000000-0000-0000-0000-000000000999' } },
-        mockReply
-      );
-
-      expect(mockReply.code).toHaveBeenCalledWith(404);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'User not found' });
-    });
-
-    it('sends reset email and returns success', async () => {
-      const mockFastify = createMockFastify();
-      const handlers = captureHandlers(mockFastify);
-      const mockUser = {
-        id: 'u0000000-0000-0000-0000-000000000001',
-        email: 'user@test.com',
-        username: 'testuser',
-        first_name: 'Test',
+      const request = {
+        user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'user' },
+        params: { id: 'u0000000-0000-0000-0000-000000000001' },
       };
-      User.findById.mockResolvedValue(mockUser);
-      PasswordResetToken.deleteStaleForUser.mockResolvedValue();
-      PasswordResetToken.create.mockResolvedValue({ token: 'resettoken', id: 't1' });
-      sendPasswordResetEmail.mockResolvedValue();
 
-      const usersRoutes = require('../../src/routes/users');
-      usersRoutes(mockFastify, {});
-      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put_pre'](request, mockReply);
 
-      await handlers['/users/:id/reset-password_post'](
-        { user: { role: 'admin' }, params: { id: 'u0000000-0000-0000-0000-000000000001' } },
-        mockReply
-      );
-
-      expect(PasswordResetToken.deleteStaleForUser).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001');
-      expect(PasswordResetToken.create).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', 'reset', 24);
-      expect(sendPasswordResetEmail).toHaveBeenCalledWith(mockUser, 'resettoken');
-      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password reset email sent' });
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Regular users cannot edit user information' });
     });
 
-    it('returns 500 on unexpected error', async () => {
+    it('allows admin to edit any user', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      User.findById.mockRejectedValue(new Error('DB error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-
+      User.findById.mockResolvedValue({ id: 'u0000000-0000-0000-0000-000000000002', role_name: 'admin' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
 
-      await handlers['/users/:id/reset-password_post'](
-        { user: { role: 'admin' }, params: { id: 'u0000000-0000-0000-0000-000000000001' } },
-        mockReply
-      );
+      const request = {
+        user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+        params: { id: 'u0000000-0000-0000-0000-000000000002' },
+      };
 
-      expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
+      await handlers['/users/:id_put_pre'](request, mockReply);
+
+      expect(mockReply.code).not.toHaveBeenCalled();
+    });
+
+    it('allows assignment manager to edit regular user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({ id: 'u0000000-0000-0000-0000-000000000002', role_name: 'user' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      const request = {
+        user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'assignment_manager' },
+        params: { id: 'u0000000-0000-0000-0000-000000000002' },
+      };
+
+      await handlers['/users/:id_put_pre'](request, mockReply);
+
+      expect(mockReply.code).not.toHaveBeenCalled();
+    });
+
+    it('rejects assignment manager from editing admin user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({ id: 'u0000000-0000-0000-0000-000000000002', role_name: 'admin' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      const request = {
+        user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'assignment_manager' },
+        params: { id: 'u0000000-0000-0000-0000-000000000002' },
+      };
+
+      await handlers['/users/:id_put_pre'](request, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Assignment managers cannot edit admin users' });
     });
   });
 });

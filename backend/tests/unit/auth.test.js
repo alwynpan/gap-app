@@ -104,7 +104,7 @@ describe('Auth Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username, email, and password are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username and email are required' });
     });
 
     it('rejects missing email', async () => {
@@ -353,6 +353,56 @@ describe('Auth Routes', () => {
       });
     });
 
+    it('rejects registration with admin role', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/register'](
+        {
+          body: {
+            username: 'newadmin',
+            email: 'admin@test.com',
+            password: 'password123',
+            firstName: 'Admin',
+            lastName: 'User',
+            role: 'admin',
+          },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Registration is only available for regular user accounts',
+      });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects registration with assignment_manager role', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/register'](
+        {
+          body: {
+            username: 'newam',
+            email: 'am@test.com',
+            password: 'password123',
+            firstName: 'AM',
+            lastName: 'User',
+            role: 'assignment_manager',
+          },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Registration is only available for regular user accounts',
+      });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
     it('successfully creates user without studentId', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
@@ -462,6 +512,26 @@ describe('Auth Routes', () => {
 
       expect(mockReply.code).toHaveBeenCalledWith(401);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
+    });
+
+    it('rejects when user status is pending', async () => {
+      User.findByUsername.mockResolvedValue({
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'test',
+        enabled: true,
+        status: 'pending',
+        password_hash: null,
+      });
+
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/login']({ body: { username: 'test', password: 'password123' } }, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(401);
+      expect(mockReply.send).toHaveBeenCalledWith(
+        expect.objectContaining({ error: expect.stringContaining('pending') })
+      );
     });
 
     it('rejects when password is incorrect', async () => {

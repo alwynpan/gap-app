@@ -8,8 +8,6 @@ function Register() {
     firstName: '',
     lastName: '',
     email: '',
-    password: '',
-    confirmPassword: '',
     studentId: '',
   });
   const [error, setError] = useState('');
@@ -30,31 +28,27 @@ function Register() {
     setError('');
     setSuccess('');
 
-    // Validate passwords match
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    // Validate password length
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
     setLoading(true);
 
-    const result = await register(formData.username, formData.email, formData.password, {
+    // Register without password - user will receive email to set password
+    const result = await register(formData.username, formData.email, null, {
       firstName: formData.firstName || undefined,
       lastName: formData.lastName || undefined,
       studentId: formData.studentId || undefined,
     });
 
     if (result.success) {
-      setSuccess(result.message || 'Registration successful! Redirecting to login...');
+      setSuccess('Registration successful! Please check your email to set your password. Redirecting to login...');
       setTimeout(() => navigate('/login'), 2000);
     } else {
-      setError(result.error);
+      // Show generic error message for security (don't reveal if email/username exists)
+      if (result.status === 409) {
+        setError('Username or email already in use. Please use a different one.');
+      } else if (result.status === 400) {
+        setError('Invalid input. Please check all required fields.');
+      } else {
+        setError('Registration failed. Please try again.');
+      }
     }
 
     setLoading(false);
@@ -158,36 +152,8 @@ function Register() {
             />
           </div>
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              value={formData.password}
-              onChange={handleChange}
-              className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-              placeholder="Create a password"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-              Confirm Password
-            </label>
-            <input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              required
-              value={formData.confirmPassword}
-              onChange={handleChange}
-              className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-              placeholder="Confirm your password"
-            />
+          <div className="text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-md px-4 py-3">
+            You will receive an email with a link to set your password. This also verifies your email address.
           </div>
 
           <div>

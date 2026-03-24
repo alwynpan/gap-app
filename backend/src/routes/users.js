@@ -1,7 +1,7 @@
 const User = require('../models/User');
 const Group = require('../models/Group');
 const PasswordResetToken = require('../models/PasswordResetToken');
-const { sendPasswordSetupEmail, sendPasswordResetEmail } = require('../services/email');
+const { sendPasswordSetupEmail } = require('../services/email');
 
 async function usersRoutes(fastify, _options) {
   // Get all users (admin/assignment_manager only) — supports ?role=, ?status=, ?groupId= filters
@@ -233,7 +233,7 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Update user (admin can edit any user; users can edit their own profile)
+  // Update user (admin can edit any user; assignment managers can edit non-admin users; regular users cannot edit anyone)
   fastify.put(
     '/users/:id',
     {
@@ -242,29 +242,83 @@ async function usersRoutes(fastify, _options) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
         const userId = request.params.id;
-        // Non-admin users can only edit themselves
-        if (request.user.id !== userId && request.user.role !== 'admin') {
-          return reply.code(403).send({ error: 'Forbidden: You can only edit your own profile' });
+        const isAdmin = request.user.role === 'admin';
+        const isAssignmentManager = request.user.role === 'assignment_manager';
+
+        // Regular users cannot edit anyone (including themselves - they should use password change endpoint)
+        if (!isAdmin && !isAssignmentManager) {
+          return reply.code(403).send({ error: 'Forbidden: Regular users cannot edit user information' });
+        }
+
+        // Get the target user to check their role
+        const targetUser = await User.findById(userId);
+        if (!targetUser) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
+
+        // Assignment managers can only edit non-admin users
+        if (isAssignmentManager && targetUser.role_name === 'admin') {
+          return reply.code(403).send({ error: 'Forbidden: Assignment managers cannot edit admin users' });
         }
       },
     },
     async (request, reply) => {
       try {
         const userId = request.params.id;
-        const { username, email, firstName, lastName, studentId, groupId, roleId, enabled } = request.body;
+        const { username, email, firstName, lastName, studentId, groupId, role, enabled } = request.body;
 
         const user = await User.findById(userId);
         if (!user) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
+        // Prevent username changes
+        if (username !== undefined && username !== user.username) {
+          return reply.code(400).send({ error: 'Username cannot be changed' });
+        }
+
+        // Prevent disabling or changing role of the built-in admin user
+        if (user.username === 'admin') {
+          if (enabled === false) {
+            return reply.code(400).send({ error: 'Cannot disable the built-in admin account' });
+          }
+          if (role !== undefined && role !== user.role_name) {
+            return reply.code(400).send({ error: 'Cannot change role of the built-in admin account' });
+          }
+        }
+
         // Non-admin users can only update basic profile fields
         const isAdmin = request.user.role === 'admin';
-        const updates = { username, email, firstName, lastName, studentId };
+        const updates = { email, firstName, lastName };
+
+        // Only include studentId for regular users
+        if (user.role_name === 'user' && studentId !== undefined) {
+          updates.studentId = studentId;
+        }
+
         if (isAdmin) {
-          updates.groupId = groupId;
-          updates.roleId = roleId;
-          updates.enabled = enabled;
+          // Only include groupId for regular users
+          if (user.role_name === 'user' && groupId !== undefined) {
+            updates.groupId = groupId;
+          }
+          // Resolve role name to roleId if provided and changed
+          if (role !== undefined && role !== user.role_name) {
+            const Role = require('../models/Role');
+            const roleRecord = await Role.findByName(role);
+            if (!roleRecord) {
+              return reply.code(400).send({ error: `Invalid role: ${role}` });
+            }
+            updates.roleId = roleRecord.id;
+          }
+          // Only include enabled if it's provided; sync status with enabled state
+          if (enabled !== undefined) {
+            updates.enabled = enabled;
+            if (enabled === false) {
+              updates.status = 'inactive';
+            } else if (enabled === true && user.status === 'inactive') {
+              updates.status = 'active';
+            }
+          }
         }
 
         const updatedUser = await User.update(userId, updates);
@@ -280,7 +334,7 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Change password (any user can change their own; admin can change anyone's)
+  // Change password (only the current logged-in user can change their own password)
   fastify.put(
     '/users/:id/password',
     {
@@ -289,7 +343,8 @@ async function usersRoutes(fastify, _options) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
         const userId = request.params.id;
-        if (request.user.id !== userId && request.user.role !== 'admin') {
+        // Only allow users to change their own password
+        if (request.user.id !== userId) {
           return reply.code(403).send({ error: 'Forbidden: You can only change your own password' });
         }
       },
@@ -327,40 +382,6 @@ async function usersRoutes(fastify, _options) {
       } catch (error) {
         console.error('Change password error:', error);
         return reply.code(500).send({ error: 'Failed to change password' });
-      }
-    }
-  );
-
-  // Reset user password (admin/assignment_manager) — sends a reset email to the user
-  fastify.post(
-    '/users/:id/reset-password',
-    {
-      preHandler: async (request, reply) => {
-        if (!request.user) {
-          return reply.code(401).send({ error: 'Unauthorized' });
-        }
-        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
-        if (!allowed) {
-          return reply;
-        }
-      },
-    },
-    async (request, reply) => {
-      try {
-        const userId = request.params.id;
-        const user = await User.findById(userId);
-        if (!user) {
-          return reply.code(404).send({ error: 'User not found' });
-        }
-
-        await PasswordResetToken.deleteStaleForUser(userId);
-        const tokenRecord = await PasswordResetToken.create(userId, 'reset', 24);
-        await sendPasswordResetEmail(user, tokenRecord.token);
-
-        return reply.send({ message: 'Password reset email sent' });
-      } catch (error) {
-        console.error('Reset password error:', error);
-        return reply.code(500).send({ error: 'Failed to send password reset email' });
       }
     }
   );
