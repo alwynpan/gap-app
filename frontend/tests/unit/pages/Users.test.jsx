@@ -355,12 +355,11 @@ describe('Users page', () => {
       });
     });
 
-    it('shows error when user creation fails', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    it('shows generic error when user creation fails with 409', async () => {
+      const user = userEvent.setup();
       await setupRenderedPage();
 
-      axios.post.mockRejectedValue({ response: { data: { error: 'Username already exists' } } });
+      axios.post.mockRejectedValue({ response: { data: { error: 'Username already exists' }, status: 409 } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
       await user.type(screen.getByPlaceholderText('Enter username'), 'existing');
@@ -370,12 +369,43 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
-        expect(screen.getByText('Username already exists')).toBeInTheDocument();
+        expect(screen.getByText('Username or email already in use. Please use a different one.')).toBeInTheDocument();
       });
+    });
 
-      jest.advanceTimersByTime(3000);
+    it('shows generic error when user creation fails with 400', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      axios.post.mockRejectedValue({ response: { data: { error: 'Invalid input' }, status: 400 } });
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await user.type(screen.getByPlaceholderText('Enter username'), 'baduser');
+      await user.type(screen.getByPlaceholderText('Enter email'), 'bad@test.com');
+      await user.type(screen.getByPlaceholderText('Enter first name'), 'Bad');
+      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
       await waitFor(() => {
-        expect(screen.queryByText('Username already exists')).not.toBeInTheDocument();
+        expect(screen.getByText('Invalid input. Please check all required fields.')).toBeInTheDocument();
+      });
+    });
+
+    it('shows generic error when user creation fails with 500', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      axios.post.mockRejectedValue({ response: { data: { error: 'Server error' }, status: 500 } });
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await user.type(screen.getByPlaceholderText('Enter username'), 'baduser');
+      await user.type(screen.getByPlaceholderText('Enter email'), 'bad@test.com');
+      await user.type(screen.getByPlaceholderText('Enter first name'), 'Bad');
+      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to create user. Please try again.')).toBeInTheDocument();
       });
     });
 
@@ -601,14 +631,14 @@ describe('Users page', () => {
       expect(screen.getByRole('button', { name: /edit user profile/i })).toBeInTheDocument();
     });
 
-    it('shows Edit button for user on their own row only', async () => {
+    it('hides Edit button for regular users (even on their own row)', async () => {
       useAuth.mockReturnValue({
         user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
         isAdmin: false,
         isAssignmentManager: false,
       });
       await setupRenderedPage();
-      expect(screen.getByRole('button', { name: /edit user profile/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /edit user profile/i })).not.toBeInTheDocument();
     });
 
     it('hides Edit button for user on other users rows', async () => {
@@ -641,9 +671,9 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
+      // Username field is disabled and cannot be changed
       const usernameInput = screen.getByDisplayValue('u1');
-      await user.clear(usernameInput);
-      await user.type(usernameInput, 'updated_u1');
+      expect(usernameInput.disabled).toBe(true);
 
       const firstNameInput = screen.getByDisplayValue('First');
       await user.clear(firstNameInput);
@@ -663,7 +693,7 @@ describe('Users page', () => {
       await waitFor(() => {
         expect(axios.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/),
-          expect.objectContaining({ username: 'updated_u1', firstName: 'NewFirst', lastName: 'NewLast' })
+          expect.objectContaining({ email: 'u1@test.com', firstName: 'NewFirst', lastName: 'NewLast' })
         );
         expect(screen.getByText('User updated successfully')).toBeInTheDocument();
       });
@@ -677,7 +707,7 @@ describe('Users page', () => {
       });
     });
 
-    it('admin can edit email, studentId, role and enabled fields', async () => {
+    it('admin can edit email, studentId, and enabled fields', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupRenderedPage();
@@ -693,10 +723,6 @@ describe('Users page', () => {
       const studentInput = screen.getByDisplayValue('s1');
       await user.clear(studentInput);
       await user.type(studentInput, 's999');
-
-      // Change role
-      const roleSelect = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="1"]'));
-      await user.selectOptions(roleSelect, '2');
 
       // Toggle enabled
       const enabledCheckbox = screen.getByRole('checkbox', { name: /enabled/i });
@@ -714,8 +740,9 @@ describe('Users page', () => {
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/),
           expect.objectContaining({
             email: 'new@test.com',
+            firstName: 'First',
+            lastName: 'Last',
             studentId: 's999',
-            roleId: '2',
             enabled: false,
           })
         );
@@ -731,27 +758,29 @@ describe('Users page', () => {
       // Admin should see role dropdown and enabled checkbox
       expect(screen.getByText('Enabled')).toBeInTheDocument();
       const roleSelects = screen.getAllByRole('combobox');
-      const roleSelect = roleSelects.find((el) => el.querySelector('option[value="1"]'));
+      const roleSelect = roleSelects.find((el) => el.querySelector('option[value="admin"]'));
       expect(roleSelect).toBeTruthy();
     });
 
-    it('non-admin does not see role and enabled fields in edit modal', async () => {
+    it('assignment manager does not see role field but sees enabled field in edit modal', async () => {
       useAuth.mockReturnValue({
-        user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
+        user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'am1', role: 'assignment_manager' },
         isAdmin: false,
-        isAssignmentManager: false,
+        isAssignmentManager: true,
       });
       const user = userEvent.setup();
       await setupRenderedPage();
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
-      expect(screen.queryByText('Enabled')).not.toBeInTheDocument();
+      // Assignment managers cannot change role, so role dropdown should not be in the edit modal
+      const modal = screen.getByText('Edit User').closest('div');
+      expect(within(modal).queryByLabelText(/role/i)).not.toBeInTheDocument();
+      expect(within(modal).getByText('Enabled')).toBeInTheDocument();
     });
 
     it('shows error when edit fails', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       await setupRenderedPage();
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
@@ -763,162 +792,59 @@ describe('Users page', () => {
       await waitFor(() => {
         expect(screen.getByText('Username taken')).toBeInTheDocument();
       });
-
-      jest.advanceTimersByTime(3000);
-      await waitFor(() => {
-        expect(screen.queryByText('Username taken')).not.toBeInTheDocument();
-      });
     });
-  });
 
-  describe('Change Password', () => {
-    const setupRenderedPage = async () => {
+    it('admin includes role in payload when role is changed', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
+
+      const modal = screen.getByText('Edit User').closest('div');
+      const roleSelect = within(modal).getByRole('combobox');
+      await user.selectOptions(roleSelect, 'assignment_manager');
+
+      axios.put.mockResolvedValue({});
       axios.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
-      });
-    };
-
-    it('shows Password button for admin on all users', async () => {
-      await setupRenderedPage();
-      expect(screen.getByRole('button', { name: /change password/i })).toBeInTheDocument();
-    });
-
-    it('shows Password button for user on their own row', async () => {
-      useAuth.mockReturnValue({
-        user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-      await setupRenderedPage();
-      expect(screen.getByRole('button', { name: /change password/i })).toBeInTheDocument();
-    });
-
-    it('hides Password button for user on other users rows', async () => {
-      useAuth.mockReturnValue({
-        user: { id: 'u0000000-0000-0000-0000-000000000099', username: 'other', role: 'user' },
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-      await setupRenderedPage();
-      expect(screen.queryByRole('button', { name: /change password/i })).not.toBeInTheDocument();
-    });
-
-    it('opens and closes password change modal', async () => {
-      const user = userEvent.setup();
-      await setupRenderedPage();
-
-      await user.click(screen.getByRole('button', { name: /change password/i }));
-      expect(screen.getByText(/change password for/i)).toBeInTheDocument();
-
-      await user.click(screen.getByRole('button', { name: /cancel/i }));
-      expect(screen.queryByText(/change password for/i)).not.toBeInTheDocument();
-    });
-
-    it('admin does not see current password field', async () => {
-      const user = userEvent.setup();
-      await setupRenderedPage();
-
-      await user.click(screen.getByRole('button', { name: /change password/i }));
-      expect(screen.queryByPlaceholderText('Enter current password')).not.toBeInTheDocument();
-      expect(screen.getByPlaceholderText('Enter new password')).toBeInTheDocument();
-    });
-
-    it('non-admin sees and can type into current password field', async () => {
-      useAuth.mockReturnValue({
-        user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-      const user = userEvent.setup();
-      await setupRenderedPage();
-
-      await user.click(screen.getByRole('button', { name: /change password/i }));
-      const currentPwInput = screen.getByPlaceholderText('Enter current password');
-      expect(currentPwInput).toBeInTheDocument();
-      await user.type(currentPwInput, 'myoldpass');
-      expect(currentPwInput.value).toBe('myoldpass');
-    });
-
-    it('shows error when passwords do not match', async () => {
-      const user = userEvent.setup();
-      await setupRenderedPage();
-
-      await user.click(screen.getByRole('button', { name: /change password/i }));
-      await user.type(screen.getByPlaceholderText('Enter new password'), 'newpass1');
-      await user.type(screen.getByPlaceholderText('Confirm new password'), 'newpass2');
-      await user.click(screen.getByText('Change Password', { selector: 'button[type="submit"]' }));
-
-      await waitFor(() => {
-        expect(screen.getByText('New passwords do not match')).toBeInTheDocument();
-      });
-    });
-
-    it('shows error when password is too short', async () => {
-      const user = userEvent.setup();
-      await setupRenderedPage();
-
-      await user.click(screen.getByRole('button', { name: /change password/i }));
-      await user.type(screen.getByPlaceholderText('Enter new password'), '12345');
-      await user.type(screen.getByPlaceholderText('Confirm new password'), '12345');
-      await user.click(screen.getByText('Change Password', { selector: 'button[type="submit"]' }));
-
-      await waitFor(() => {
-        expect(screen.getByText('New password must be at least 6 characters')).toBeInTheDocument();
-      });
-    });
-
-    it('successfully changes password', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupRenderedPage();
-
-      axios.put.mockResolvedValue({});
-
-      await user.click(screen.getByRole('button', { name: /change password/i }));
-      await user.type(screen.getByPlaceholderText('Enter new password'), 'newpass123');
-      await user.type(screen.getByPlaceholderText('Confirm new password'), 'newpass123');
-      await user.click(screen.getByText('Change Password', { selector: 'button[type="submit"]' }));
+      await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
         expect(axios.put).toHaveBeenCalledWith(
-          expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/password$/),
-          {
-            newPassword: 'newpass123',
-          }
+          expect.stringMatching(/\/users\//),
+          expect.objectContaining({ role: 'assignment_manager' })
         );
-        expect(screen.getByText('Password changed successfully')).toBeInTheDocument();
-      });
-
-      jest.advanceTimersByTime(3000);
-      await waitFor(() => {
-        expect(screen.queryByText('Password changed successfully')).not.toBeInTheDocument();
       });
     });
 
-    it('shows API error when password change fails', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    it('assignment manager can save edit form with enabled field', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 'u0000000-0000-0000-0000-000000000099', username: 'am1', role: 'assignment_manager' },
+        isAdmin: false,
+        isAssignmentManager: true,
+      });
+      const user = userEvent.setup();
       await setupRenderedPage();
 
-      axios.put.mockRejectedValue({ response: { data: { error: 'Current password is incorrect' } } });
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
-      await user.click(screen.getByRole('button', { name: /change password/i }));
-      await user.type(screen.getByPlaceholderText('Enter new password'), 'newpass123');
-      await user.type(screen.getByPlaceholderText('Confirm new password'), 'newpass123');
-      await user.click(screen.getByText('Change Password', { selector: 'button[type="submit"]' }));
+      const enabledCheckbox = screen.getByRole('checkbox', { name: /enabled/i });
+      await user.click(enabledCheckbox);
+
+      axios.put.mockResolvedValue({});
+      axios.get
+        .mockResolvedValueOnce({ data: { users: initialUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
-        expect(screen.getByText('Current password is incorrect')).toBeInTheDocument();
+        expect(axios.put).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\//),
+          expect.objectContaining({ enabled: false })
+        );
       });
     });
   });

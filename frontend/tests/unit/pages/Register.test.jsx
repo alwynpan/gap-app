@@ -41,53 +41,13 @@ describe('Register page', () => {
 
     expect(screen.getByLabelText(/username/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/first name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/last name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/student id/i)).toBeInTheDocument();
+    expect(screen.getByText(/you will receive an email with a link to set your password/i)).toBeInTheDocument();
   });
 
-  it('validates mismatched passwords', async () => {
-    const user = userEvent.setup();
-
-    render(
-      <MemoryRouter>
-        <Register />
-      </MemoryRouter>
-    );
-
-    await user.type(screen.getByLabelText(/username/i), 'mismatch');
-    await user.type(screen.getByLabelText(/email/i), 'mismatch@example.com');
-    await user.type(screen.getByLabelText(/first name/i), 'Test');
-    await user.type(screen.getByLabelText(/last name/i), 'User');
-    await user.type(screen.getByLabelText(/^password$/i), 'password123');
-    await user.type(screen.getByLabelText(/confirm password/i), 'different123');
-    await user.click(screen.getByRole('button', { name: /create account/i }));
-
-    expect(screen.getByText('Passwords do not match')).toBeInTheDocument();
-    expect(mockRegister).not.toHaveBeenCalled();
-  });
-
-  it('validates minimum password length', async () => {
-    const user = userEvent.setup();
-
-    render(
-      <MemoryRouter>
-        <Register />
-      </MemoryRouter>
-    );
-
-    await user.type(screen.getByLabelText(/username/i), 'shortpass');
-    await user.type(screen.getByLabelText(/email/i), 'short@example.com');
-    await user.type(screen.getByLabelText(/first name/i), 'Test');
-    await user.type(screen.getByLabelText(/last name/i), 'User');
-    await user.type(screen.getByLabelText(/^password$/i), '12345');
-    await user.type(screen.getByLabelText(/confirm password/i), '12345');
-    await user.click(screen.getByRole('button', { name: /create account/i }));
-
-    expect(screen.getByText('Password must be at least 6 characters')).toBeInTheDocument();
-    expect(mockRegister).not.toHaveBeenCalled();
-  });
-
-  it('calls register with expected arguments', async () => {
+  it('calls register without password', async () => {
     const user = userEvent.setup();
     mockRegister.mockResolvedValue({ success: true, message: 'Registration successful' });
 
@@ -101,13 +61,36 @@ describe('Register page', () => {
     await user.type(screen.getByLabelText(/email/i), 'new@example.com');
     await user.type(screen.getByLabelText(/first name/i), 'New');
     await user.type(screen.getByLabelText(/last name/i), 'User');
-    await user.type(screen.getByLabelText(/^password$/i), 'password123');
-    await user.type(screen.getByLabelText(/confirm password/i), 'password123');
+    await user.click(screen.getByRole('button', { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(mockRegister).toHaveBeenCalledWith('newuser', 'new@example.com', null, {
+        firstName: 'New',
+        lastName: 'User',
+        studentId: undefined,
+      });
+    });
+  });
+
+  it('passes studentId when provided', async () => {
+    const user = userEvent.setup();
+    mockRegister.mockResolvedValue({ success: true, message: 'Registration successful' });
+
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>
+    );
+
+    await user.type(screen.getByLabelText(/username/i), 'newuser');
+    await user.type(screen.getByLabelText(/email/i), 'new@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'New');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
     await user.type(screen.getByLabelText(/student id/i), 's001');
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() => {
-      expect(mockRegister).toHaveBeenCalledWith('newuser', 'new@example.com', 'password123', {
+      expect(mockRegister).toHaveBeenCalledWith('newuser', 'new@example.com', null, {
         firstName: 'New',
         lastName: 'User',
         studentId: 's001',
@@ -129,12 +112,10 @@ describe('Register page', () => {
     await user.type(screen.getByLabelText(/email/i), 'nostudent@example.com');
     await user.type(screen.getByLabelText(/first name/i), 'No');
     await user.type(screen.getByLabelText(/last name/i), 'Student');
-    await user.type(screen.getByLabelText(/^password$/i), 'password123');
-    await user.type(screen.getByLabelText(/confirm password/i), 'password123');
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() => {
-      expect(mockRegister).toHaveBeenCalledWith('nostudent', 'nostudent@example.com', 'password123', {
+      expect(mockRegister).toHaveBeenCalledWith('nostudent', 'nostudent@example.com', null, {
         firstName: 'No',
         lastName: 'Student',
         studentId: undefined,
@@ -142,9 +123,9 @@ describe('Register page', () => {
     });
   });
 
-  it('shows API error message when registration fails', async () => {
+  it('shows generic API error message when registration fails', async () => {
     const user = userEvent.setup();
-    mockRegister.mockResolvedValue({ success: false, error: 'Username exists' });
+    mockRegister.mockResolvedValue({ success: false, error: 'Email already exists', status: 409 });
 
     render(
       <MemoryRouter>
@@ -156,12 +137,10 @@ describe('Register page', () => {
     await user.type(screen.getByLabelText(/email/i), 'existing@example.com');
     await user.type(screen.getByLabelText(/first name/i), 'Existing');
     await user.type(screen.getByLabelText(/last name/i), 'User');
-    await user.type(screen.getByLabelText(/^password$/i), 'password123');
-    await user.type(screen.getByLabelText(/confirm password/i), 'password123');
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Username exists')).toBeInTheDocument();
+      expect(screen.getByText('Username or email already in use. Please use a different one.')).toBeInTheDocument();
     });
   });
 
@@ -180,8 +159,6 @@ describe('Register page', () => {
     await user.type(screen.getByLabelText(/email/i), 'new@example.com');
     await user.type(screen.getByLabelText(/first name/i), 'New');
     await user.type(screen.getByLabelText(/last name/i), 'User');
-    await user.type(screen.getByLabelText(/^password$/i), 'password123');
-    await user.type(screen.getByLabelText(/confirm password/i), 'password123');
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() => {
@@ -196,5 +173,47 @@ describe('Register page', () => {
 
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
+  });
+
+  it('shows generic error for 400 status', async () => {
+    const user = userEvent.setup();
+    mockRegister.mockResolvedValue({ success: false, error: 'Validation failed', status: 400 });
+
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>
+    );
+
+    await user.type(screen.getByLabelText(/username/i), 'baduser');
+    await user.type(screen.getByLabelText(/email/i), 'bad@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'Bad');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
+    await user.click(screen.getByRole('button', { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Invalid input. Please check all required fields.')).toBeInTheDocument();
+    });
+  });
+
+  it('shows generic error for unknown status', async () => {
+    const user = userEvent.setup();
+    mockRegister.mockResolvedValue({ success: false, error: 'Server error', status: 500 });
+
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>
+    );
+
+    await user.type(screen.getByLabelText(/username/i), 'baduser');
+    await user.type(screen.getByLabelText(/email/i), 'bad@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'Bad');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
+    await user.click(screen.getByRole('button', { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Registration failed. Please try again.')).toBeInTheDocument();
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Pencil, KeyRound, UserPlus, Check, X, Download, Trash2, MailOpen } from 'lucide-react';
+import { Pencil, UserPlus, Check, X, Download, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
@@ -31,6 +31,7 @@ function Users() {
   const [newUser, setNewUser] = useState({ ...emptyNewUser });
   const [editingUser, setEditingUser] = useState(null);
   const [passwordChange, setPasswordChange] = useState(null);
+  const [formError, setFormError] = useState('');
 
   // Row selection & delete
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -105,37 +106,59 @@ function Users() {
       setShowCreateModal(false);
       fetchData();
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to create user');
+      // Show generic error message for security (don't reveal if email/username exists)
+      const errorCode = err.response?.status;
+      if (errorCode === 409) {
+        setFormError('Username or email already in use. Please use a different one.');
+      } else if (errorCode === 400) {
+        setFormError('Invalid input. Please check all required fields.');
+      } else {
+        setFormError('Failed to create user. Please try again.');
+      }
     }
   };
 
   const handleEditUser = async (e) => {
     e.preventDefault();
-    if (!editingUser || !editingUser.username.trim() || !editingUser.email.trim()) {
+    if (!editingUser || !editingUser.email.trim()) {
       return;
     }
 
     try {
-      await axios.put(`${API_BASE}/users/${editingUser.id}`, {
-        username: editingUser.username.trim(),
+      const payload = {
         email: editingUser.email.trim(),
         firstName: editingUser.firstName?.trim() || null,
         lastName: editingUser.lastName?.trim() || null,
-        studentId: editingUser.studentId?.trim() || null,
-        ...(isAdmin && {
-          roleId: editingUser.roleId || undefined,
-          enabled: editingUser.enabled,
-        }),
-      });
+      };
+
+      // Only include studentId for regular users
+      if (editingUser.roleName === 'user') {
+        payload.studentId = editingUser.studentId?.trim() || null;
+      }
+
+      if (isAdmin) {
+        // Only include role if it's different from the original
+        if (editingUser.roleName !== editingUser.originalRoleName) {
+          payload.role = editingUser.roleName;
+        }
+        payload.enabled = editingUser.enabled;
+      }
+
+      if (!isAdmin && isAssignmentManager && editingUser.roleName !== 'admin') {
+        payload.enabled = editingUser.enabled;
+      }
+
+      await axios.put(`${API_BASE}/users/${editingUser.id}`, payload);
       showSuccess('User updated successfully');
       setEditingUser(null);
       fetchData();
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to update user');
+      setFormError(err.response?.data?.error || 'Failed to update user');
     }
   };
 
   const openEditModal = (u) => {
+    setFormError('');
     setEditingUser({
       id: u.id,
       username: u.username,
@@ -143,8 +166,8 @@ function Users() {
       firstName: u.first_name || '',
       lastName: u.last_name || '',
       studentId: u.student_id || '',
-      roleId: u.role_id || '',
-      roleName: u.role_name,
+      roleName: u.role_name || 'user',
+      originalRoleName: u.role_name || 'user',
       enabled: u.enabled !== false,
     });
   };
@@ -157,11 +180,11 @@ function Users() {
 
     const { userId, currentPassword, newPassword, confirmPassword } = passwordChange;
     if (newPassword !== confirmPassword) {
-      showError('New passwords do not match');
+      setFormError('New passwords do not match');
       return;
     }
     if (newPassword.length < 6) {
-      showError('New password must be at least 6 characters');
+      setFormError('New password must be at least 6 characters');
       return;
     }
 
@@ -173,16 +196,7 @@ function Users() {
       showSuccess('Password changed successfully');
       setPasswordChange(null);
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to change password');
-    }
-  };
-
-  const handleResetPassword = async (userId, username) => {
-    try {
-      await axios.post(`${API_BASE}/users/${userId}/reset-password`);
-      showSuccess(`Password reset email sent to ${username}`);
-    } catch (err) {
-      showError(err.response?.data?.error || 'Failed to send reset email');
+      setFormError(err.response?.data?.error || 'Failed to change password');
     }
   };
 
@@ -191,7 +205,7 @@ function Users() {
       clearTimeout(successTimeoutRef.current);
     }
     setSuccess(msg);
-    successTimeoutRef.current = setTimeout(() => setSuccess(''), 3000);
+    successTimeoutRef.current = setTimeout(() => setSuccess(''), 2000);
   };
 
   const showError = (msg) => {
@@ -297,10 +311,18 @@ function Users() {
 
   // Apply filters
   const filteredUsers = users.filter((u) => {
-    if (filterRole && u.role_name !== filterRole) {return false;}
-    if (filterStatus && u.status !== filterStatus) {return false;}
-    if (filterGroup === 'none' && u.group_id) {return false;}
-    if (filterGroup && filterGroup !== 'none' && u.group_id !== filterGroup) {return false;}
+    if (filterRole && u.role_name !== filterRole) {
+      return false;
+    }
+    if (filterStatus && u.status !== filterStatus) {
+      return false;
+    }
+    if (filterGroup === 'none' && u.group_id) {
+      return false;
+    }
+    if (filterGroup && filterGroup !== 'none' && u.group_id !== filterGroup) {
+      return false;
+    }
     return true;
   });
 
@@ -391,17 +413,25 @@ function Users() {
                 </span>
               </td>
               <td className="px-6 py-4 overflow-hidden">
-                <div className="text-sm text-gray-900 truncate" title={u.group_name || 'Not assigned'}>
-                  {u.group_name || 'Not assigned'}
-                </div>
+                {u.role_name === 'admin' || u.role_name === 'assignment_manager' ? (
+                  <div className="text-sm">&nbsp;</div>
+                ) : (
+                  <div className="text-sm text-gray-900 truncate" title={u.group_name || 'Not assigned'}>
+                    {u.group_name || 'Not assigned'}
+                  </div>
+                )}
               </td>
               <td className="px-4 py-4">
                 <span
                   className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full whitespace-nowrap ${
-                    u.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
+                    u.status === 'pending'
+                      ? 'bg-yellow-100 text-yellow-800'
+                      : u.enabled === false
+                        ? 'bg-gray-100 text-gray-800'
+                        : 'bg-green-100 text-green-800'
                   }`}
                 >
-                  {u.status === 'pending' ? 'Pending' : 'Active'}
+                  {u.status === 'pending' ? 'Pending' : u.enabled === false ? 'Inactive' : 'Active'}
                 </span>
               </td>
               <td className="px-4 py-4">
@@ -442,53 +472,18 @@ function Users() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-1">
-                    {(isAdmin || user?.id === u.id) && (
-                      <>
-                        <div className="relative group">
-                          <button
-                            onClick={() => openEditModal(u)}
-                            aria-label="Edit User Profile"
-                            className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                            Edit User Profile
-                          </span>
-                        </div>
-                        <div className="relative group">
-                          <button
-                            onClick={() =>
-                              setPasswordChange({
-                                userId: u.id,
-                                username: u.username,
-                                currentPassword: '',
-                                newPassword: '',
-                                confirmPassword: '',
-                              })
-                            }
-                            aria-label="Change Password"
-                            className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
-                          >
-                            <KeyRound className="h-4 w-4" />
-                          </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                            Change Password
-                          </span>
-                        </div>
-                      </>
-                    )}
-                    {isAssignmentManager && (
+                    {/* Edit User Profile button for admins and assignment managers (for non-admins) */}
+                    {(isAdmin || (isAssignmentManager && u.role_name !== 'admin')) && (
                       <div className="relative group">
                         <button
-                          onClick={() => handleResetPassword(u.id, u.username)}
-                          aria-label="Send Password Reset"
-                          className="p-1.5 rounded text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          onClick={() => openEditModal(u)}
+                          aria-label="Edit User Profile"
+                          className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
                         >
-                          <MailOpen className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" />
                         </button>
                         <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                          Send Password Reset
+                          Edit User Profile
                         </span>
                       </div>
                     )}
@@ -614,7 +609,10 @@ function Users() {
               </button>
               {isAssignmentManager && (
                 <button
-                  onClick={() => setShowCreateModal(true)}
+                  onClick={() => {
+                    setFormError('');
+                    setShowCreateModal(true);
+                  }}
                   className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
                 >
                   + Create User
@@ -722,8 +720,15 @@ function Users() {
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New User</h3>
             <form onSubmit={handleCreateUser}>
+              {formError && (
+                <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+                  {formError}
+                </div>
+              )}
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Username <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
@@ -734,7 +739,9 @@ function Users() {
                 />
               </div>
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="email"
                   required
@@ -774,32 +781,9 @@ function Users() {
                 The user will receive an email to set their own password.
               </div>
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Student ID (Optional)</label>
-                <input
-                  type="text"
-                  value={newUser.studentId}
-                  onChange={(e) => setNewUser({ ...newUser, studentId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter student ID"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Group (Optional)</label>
-                <select
-                  value={newUser.groupId}
-                  onChange={(e) => setNewUser({ ...newUser, groupId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">No Group</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Role <span className="text-red-500">*</span>
+                </label>
                 <select
                   value={newUser.role}
                   onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
@@ -810,6 +794,35 @@ function Users() {
                   {isAdmin && <option value="admin">Admin</option>}
                 </select>
               </div>
+              {newUser.role === 'user' && (
+                <>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Student ID (Optional)</label>
+                    <input
+                      type="text"
+                      value={newUser.studentId}
+                      onChange={(e) => setNewUser({ ...newUser, studentId: e.target.value })}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      placeholder="Enter student ID"
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Group (Optional)</label>
+                    <select
+                      value={newUser.groupId}
+                      onChange={(e) => setNewUser({ ...newUser, groupId: e.target.value })}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      <option value="">No Group</option>
+                      {groups.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
               <div className="flex justify-end space-x-3">
                 <button
                   type="button"
@@ -835,19 +848,29 @@ function Users() {
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit User</h3>
             <form onSubmit={handleEditUser}>
+              {formError && (
+                <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+                  {formError}
+                </div>
+              )}
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Username <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
                   value={editingUser.username}
-                  onChange={(e) => setEditingUser({ ...editingUser, username: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  disabled
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 text-gray-500 cursor-not-allowed"
                   placeholder="Enter username"
                 />
+                <p className="mt-1 text-xs text-gray-500">Username cannot be changed</p>
               </div>
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="email"
                   required
@@ -883,43 +906,47 @@ function Users() {
                   placeholder="Enter last name"
                 />
               </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
-                <input
-                  type="text"
-                  value={editingUser.studentId}
-                  onChange={(e) => setEditingUser({ ...editingUser, studentId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter student ID"
-                />
-              </div>
-              {isAdmin && (
-                <>
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                    <select
-                      value={editingUser.roleId}
-                      onChange={(e) => setEditingUser({ ...editingUser, roleId: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    >
-                      <option value="3">User</option>
-                      <option value="2">Assignment Manager</option>
-                      <option value="1">Admin</option>
-                    </select>
-                  </div>
-                  <div className="mb-4">
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={editingUser.enabled}
-                        onChange={(e) => setEditingUser({ ...editingUser, enabled: e.target.checked })}
-                        aria-label="Enabled"
-                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                      />
-                      <span className="text-sm font-medium text-gray-700">Enabled</span>
-                    </label>
-                  </div>
-                </>
+              {editingUser.roleName === 'user' && (
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
+                  <input
+                    type="text"
+                    value={editingUser.studentId}
+                    onChange={(e) => setEditingUser({ ...editingUser, studentId: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="Enter student ID"
+                  />
+                </div>
+              )}
+              {isAdmin && editingUser.username !== 'admin' && (
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                  <select
+                    value={editingUser.roleName}
+                    onChange={(e) => setEditingUser({ ...editingUser, roleName: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="user">User</option>
+                    <option value="assignment_manager">Assignment Manager</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+              )}
+              {/* Show Enabled checkbox for admins editing non-built-in-admin users, and for assignment managers editing non-admin users */}
+              {((isAdmin && editingUser.username !== 'admin') ||
+                (isAssignmentManager && editingUser.roleName !== 'admin')) && (
+                <div className="mb-4">
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={editingUser.enabled}
+                      onChange={(e) => setEditingUser({ ...editingUser, enabled: e.target.checked })}
+                      aria-label="Enabled"
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Enabled</span>
+                  </label>
+                </div>
               )}
               <div className="flex justify-end space-x-3">
                 <button

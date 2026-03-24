@@ -26,8 +26,8 @@ async function authRoutes(fastify, _options) {
       const { username, email, password, firstName, lastName, studentId } = request.body;
 
       // Validate required fields
-      if (!username || !email || !password) {
-        return reply.code(400).send({ error: 'Username, email, and password are required' });
+      if (!username || !email) {
+        return reply.code(400).send({ error: 'Username and email are required' });
       }
 
       // Validate firstName and lastName are provided
@@ -35,8 +35,8 @@ async function authRoutes(fastify, _options) {
         return reply.code(400).send({ error: 'First name and last name are required' });
       }
 
-      // Validate password length
-      if (password.length < 6) {
+      // Validate password length if provided (password is optional for registration via email link flow)
+      if (password && password.length < 6) {
         return reply.code(400).send({ error: 'Password must be at least 6 characters' });
       }
 
@@ -44,6 +44,11 @@ async function authRoutes(fastify, _options) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         return reply.code(400).send({ error: 'Invalid email format' });
+      }
+
+      // Reject any attempt to register with admin or assignment_manager role
+      if (request.body.role && request.body.role !== 'user') {
+        return reply.code(403).send({ error: 'Registration is only available for regular user accounts' });
       }
 
       try {
@@ -62,16 +67,29 @@ async function authRoutes(fastify, _options) {
         // Get default user role
         const defaultRole = await Role.findByName('user');
 
-        // Create user (with password → active immediately)
+        // Create user - if no password provided, user is created as 'pending' and will receive email to set password
         const newUser = await User.create({
           username,
           email,
-          password,
+          password: password || null,
           firstName,
           lastName,
           studentId,
           roleId: defaultRole.id,
         });
+
+        // Send setup email if no password was provided
+        if (!password) {
+          try {
+            await PasswordResetToken.deleteStaleForUser(newUser.id);
+            const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
+            const { sendPasswordSetupEmail } = require('../services/email');
+            await sendPasswordSetupEmail(newUser, tokenRecord.token);
+          } catch (emailError) {
+            console.error('Failed to send setup email:', emailError);
+            // Don't fail the request - user was created successfully
+          }
+        }
 
         return reply.code(201).send({
           message: 'User registered successfully',

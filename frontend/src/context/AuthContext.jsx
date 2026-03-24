@@ -69,6 +69,7 @@ export function AuthProvider({ children }) {
       return {
         success: false,
         error: error.response?.data?.error || 'Login failed',
+        status: error.response?.status,
       };
     }
   };
@@ -89,6 +90,7 @@ export function AuthProvider({ children }) {
       return {
         success: false,
         error: error.response?.data?.error || 'Registration failed',
+        status: error.response?.status,
       };
     }
   };

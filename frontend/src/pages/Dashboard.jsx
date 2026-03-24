@@ -63,7 +63,7 @@ function Dashboard() {
       await axios.post(`${API_BASE}/groups/${groupId}/join`);
       setGroupSuccess('Successfully joined group');
       await refreshUser();
-      setTimeout(() => setGroupSuccess(''), 3000);
+      setTimeout(() => setGroupSuccess(''), 2000);
     } catch (err) {
       setGroupError(err.response?.data?.error || 'Failed to join group');
       setTimeout(() => setGroupError(''), 3000);
@@ -78,7 +78,7 @@ function Dashboard() {
       await axios.post(`${API_BASE}/groups/${user.groupId}/leave`);
       setGroupSuccess('Successfully left group');
       await refreshUser();
-      setTimeout(() => setGroupSuccess(''), 3000);
+      setTimeout(() => setGroupSuccess(''), 2000);
     } catch (err) {
       setGroupError(err.response?.data?.error || 'Failed to leave group');
       setTimeout(() => setGroupError(''), 3000);
@@ -106,7 +106,7 @@ function Dashboard() {
       setPasswordSuccess('Password changed successfully');
       setShowPasswordModal(false);
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      setTimeout(() => setPasswordSuccess(''), 3000);
+      setTimeout(() => setPasswordSuccess(''), 2000);
     } catch (err) {
       setPasswordError(err.response?.data?.error || 'Failed to change password');
     }
@@ -147,10 +147,12 @@ function Dashboard() {
                   <dt className="text-sm font-medium text-gray-500">Role</dt>
                   <dd className="mt-1 text-sm text-gray-900">{formatRoleName(user?.role)}</dd>
                 </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Group</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{user?.groupName || 'Not assigned'}</dd>
-                </div>
+                {isNormalUser && (
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Group</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{user?.groupName || 'Not assigned'}</dd>
+                  </div>
+                )}
                 {user?.studentId && (
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Student ID</dt>
