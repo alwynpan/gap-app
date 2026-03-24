@@ -30,7 +30,6 @@ function Users() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newUser, setNewUser] = useState({ ...emptyNewUser });
   const [editingUser, setEditingUser] = useState(null);
-  const [passwordChange, setPasswordChange] = useState(null);
   const [formError, setFormError] = useState('');
 
   // Row selection & delete
@@ -144,10 +143,6 @@ function Users() {
         payload.enabled = editingUser.enabled;
       }
 
-      if (!isAdmin && isAssignmentManager && editingUser.roleName !== 'admin') {
-        payload.enabled = editingUser.enabled;
-      }
-
       await axios.put(`${API_BASE}/users/${editingUser.id}`, payload);
       showSuccess('User updated successfully');
       setEditingUser(null);
@@ -170,34 +165,6 @@ function Users() {
       originalRoleName: u.role_name || 'user',
       enabled: u.enabled !== false,
     });
-  };
-
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-    if (!passwordChange) {
-      return;
-    }
-
-    const { userId, currentPassword, newPassword, confirmPassword } = passwordChange;
-    if (newPassword !== confirmPassword) {
-      setFormError('New passwords do not match');
-      return;
-    }
-    if (newPassword.length < 6) {
-      setFormError('New password must be at least 6 characters');
-      return;
-    }
-
-    try {
-      await axios.put(`${API_BASE}/users/${userId}/password`, {
-        ...(currentPassword && { currentPassword }),
-        newPassword,
-      });
-      showSuccess('Password changed successfully');
-      setPasswordChange(null);
-    } catch (err) {
-      setFormError(err.response?.data?.error || 'Failed to change password');
-    }
   };
 
   const showSuccess = (msg) => {
@@ -655,6 +622,7 @@ function Users() {
             >
               <option value="">All Statuses</option>
               <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
               <option value="pending">Pending</option>
             </select>
             <select
@@ -932,9 +900,8 @@ function Users() {
                   </select>
                 </div>
               )}
-              {/* Show Enabled checkbox for admins editing non-built-in-admin users, and for assignment managers editing non-admin users */}
-              {((isAdmin && editingUser.username !== 'admin') ||
-                (isAssignmentManager && editingUser.roleName !== 'admin')) && (
+              {/* Show Enabled checkbox for admins editing non-built-in-admin users */}
+              {isAdmin && editingUser.username !== 'admin' && (
                 <div className="mb-4">
                   <label className="flex items-center space-x-2">
                     <input
@@ -1003,64 +970,6 @@ function Users() {
                 Delete {deleteModal.length} user{deleteModal.length > 1 ? 's' : ''}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Change Password Modal */}
-      {passwordChange && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password for {passwordChange.username}</h3>
-            <form onSubmit={handleChangePassword}>
-              {!isAdmin && (
-                <div className="mb-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={passwordChange.currentPassword}
-                    onChange={(e) => setPasswordChange({ ...passwordChange, currentPassword: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Enter current password"
-                  />
-                </div>
-              )}
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordChange.newPassword}
-                  onChange={(e) => setPasswordChange({ ...passwordChange, newPassword: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter new password"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordChange.confirmPassword}
-                  onChange={(e) => setPasswordChange({ ...passwordChange, confirmPassword: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Confirm new password"
-                />
-              </div>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setPasswordChange(null)}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
-                  Change Password
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

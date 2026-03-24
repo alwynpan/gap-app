@@ -177,7 +177,9 @@ class User {
   }
 
   static async verifyPassword(password, hash) {
-    if (!hash) {return false;}
+    if (!hash) {
+      return false;
+    }
     return await bcrypt.compare(password, hash);
   }
 }

@@ -4,9 +4,13 @@ const config = require('../config/index');
 let _transporter = null;
 
 function getTransporter() {
-  if (_transporter) {return _transporter;}
+  if (_transporter) {
+    return _transporter;
+  }
   const { host, port, secure, user, pass } = config.smtp;
-  if (!host) {return null;}
+  if (!host) {
+    return null;
+  }
   _transporter = nodemailer.createTransport({
     host,
     port,
@@ -19,8 +23,13 @@ function getTransporter() {
 async function sendEmail(to, subject, html) {
   const transporter = getTransporter();
   if (!transporter) {
-    // SMTP not configured — log to console (useful in development / testing)
-    console.log(`[EMAIL] To: ${to} | Subject: ${subject}`);
+    // SMTP not configured — log to console so dev flows (password setup/reset) remain usable
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[EMAIL DEV] To: ${to} | Subject: ${subject}`); // eslint-disable-line no-console
+      console.log('[EMAIL DEV] Body:', html); // eslint-disable-line no-console
+    } else {
+      console.warn('[EMAIL] SMTP not configured; email not sent.'); // eslint-disable-line no-console
+    }
     return;
   }
   await transporter.sendMail({ from: config.smtp.from, to, subject, html });

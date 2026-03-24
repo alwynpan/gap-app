@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const PasswordResetToken = require('../../../src/models/PasswordResetToken');
 
 jest.mock('../../../src/db/migrate', () => ({
@@ -14,11 +15,11 @@ describe('PasswordResetToken Model', () => {
   });
 
   describe('create', () => {
-    it('inserts a token record and returns it', async () => {
+    it('stores a SHA-256 hash and returns the raw token on the row', async () => {
       const mockRow = {
         id: 't0000000-0000-0000-0000-000000000001',
         user_id: 'u0000000-0000-0000-0000-000000000001',
-        token: 'fakehex64chartokenstring0000000000000000000000000000000000000000',
+        token: 'will-be-overwritten',
         token_type: 'reset',
         expires_at: new Date(),
         used: false,
@@ -27,13 +28,12 @@ describe('PasswordResetToken Model', () => {
 
       const result = await PasswordResetToken.create('u0000000-0000-0000-0000-000000000001', 'reset', 1);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO password_reset_tokens'), [
-        'u0000000-0000-0000-0000-000000000001',
-        expect.any(String),
-        'reset',
-        expect.any(Date),
-      ]);
-      expect(result).toEqual(mockRow);
+      // The hash (not the raw token) must be persisted
+      const storedToken = pool.query.mock.calls[0][1][1];
+      expect(storedToken).toHaveLength(64); // SHA-256 hex
+      // The raw token returned to callers must differ from the stored hash
+      expect(result.token).toHaveLength(64);
+      expect(result.token).not.toEqual(storedToken);
     });
 
     it('uses default tokenType and expiresInHours', async () => {
@@ -66,7 +66,8 @@ describe('PasswordResetToken Model', () => {
 
       const result = await PasswordResetToken.findByToken('sometoken');
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE t.token = $1'), ['sometoken']);
+      const expectedHash = crypto.createHash('sha256').update('sometoken').digest('hex');
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE t.token = $1'), [expectedHash]);
       expect(result).toEqual(mockRow);
     });
 
