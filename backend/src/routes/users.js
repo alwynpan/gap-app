@@ -363,17 +363,14 @@ async function usersRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
-        // Non-admin users must provide current password
-        const isAdmin = request.user.role === 'admin';
-        if (!isAdmin) {
-          if (!currentPassword) {
-            return reply.code(400).send({ error: 'Current password is required' });
-          }
-          const userWithPassword = await User.findByUsername(user.username);
-          const valid = await User.verifyPassword(currentPassword, userWithPassword.password_hash);
-          if (!valid) {
-            return reply.code(401).send({ error: 'Current password is incorrect' });
-          }
+        // All users must verify their current password before changing it
+        if (!currentPassword) {
+          return reply.code(400).send({ error: 'Current password is required' });
+        }
+        const userWithPassword = await User.findByUsername(user.username);
+        const valid = await User.verifyPassword(currentPassword, userWithPassword.password_hash);
+        if (!valid) {
+          return reply.code(401).send({ error: 'Current password is incorrect' });
         }
 
         await User.updatePassword(userId, newPassword);
