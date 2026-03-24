@@ -13,7 +13,7 @@ const FIELD_OPTIONS = [
   { value: 'firstName', label: 'First Name' },
   { value: 'lastName', label: 'Last Name' },
   { value: 'studentId', label: 'Student ID' },
-  { value: 'fullNameFL', label: 'Full Name (First Last)' },
+  { value: 'fullNameFL', label: 'Full Name (First, Last)' },
   { value: 'fullNameLF', label: 'Full Name (Last, First)' },
 ];
 
@@ -35,7 +35,9 @@ function parseCsv(text) {
   const rows = [];
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
-    if (!line.trim()) {continue;}
+    if (!line.trim()) {
+      continue;
+    }
     const row = [];
     let cur = '';
     let inQ = false;
@@ -81,7 +83,9 @@ function applyMapping(rawRow, mapping, colCount) {
   for (let i = 0; i < colCount; i++) {
     const field = mapping[i] || ''; // eslint-disable-line security/detect-object-injection
     const val = (rawRow[i] || '').trim(); // eslint-disable-line security/detect-object-injection
-    if (!field || !val) {continue;}
+    if (!field || !val) {
+      continue;
+    }
     switch (field) {
       case 'username':
         user.username = val;
@@ -99,20 +103,42 @@ function applyMapping(rawRow, mapping, colCount) {
         user.studentId = val;
         break;
       case 'fullNameFL': {
-        const parts = val.split(/\s+/).filter(Boolean);
-        if (!user.firstName) {user.firstName = parts[0] || '';}
-        if (!user.lastName) {user.lastName = parts.slice(1).join(' ') || '';}
+        const ci = val.indexOf(',');
+        if (ci !== -1) {
+          if (!user.firstName) {
+            user.firstName = val.slice(0, ci).trim();
+          }
+          if (!user.lastName) {
+            user.lastName = val.slice(ci + 1).trim();
+          }
+        } else {
+          const parts = val.split(/\s+/).filter(Boolean);
+          if (!user.firstName) {
+            user.firstName = parts[0] || '';
+          }
+          if (!user.lastName) {
+            user.lastName = parts.slice(1).join(' ') || '';
+          }
+        }
         break;
       }
       case 'fullNameLF': {
         const ci = val.indexOf(',');
         if (ci !== -1) {
-          if (!user.lastName) {user.lastName = val.slice(0, ci).trim();}
-          if (!user.firstName) {user.firstName = val.slice(ci + 1).trim();}
+          if (!user.lastName) {
+            user.lastName = val.slice(0, ci).trim();
+          }
+          if (!user.firstName) {
+            user.firstName = val.slice(ci + 1).trim();
+          }
         } else {
           const parts = val.split(/\s+/).filter(Boolean);
-          if (!user.lastName) {user.lastName = parts[0] || '';}
-          if (!user.firstName) {user.firstName = parts.slice(1).join(' ') || '';}
+          if (!user.lastName) {
+            user.lastName = parts[0] || '';
+          }
+          if (!user.firstName) {
+            user.firstName = parts.slice(1).join(' ') || '';
+          }
         }
         break;
       }
@@ -189,6 +215,7 @@ export default function ImportUsers() {
   const [previewRows, setPreviewRows] = useState([]);
   const [existingByUsername, setExistingByUsername] = useState(new Map());
   const [existingByEmail, setExistingByEmail] = useState(new Map());
+  const [existingByStudentId, setExistingByStudentId] = useState(new Map());
   const [conflictAction, setConflictAction] = useState('skip');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
@@ -201,7 +228,9 @@ export default function ImportUsers() {
   // ── File handling ────────────────────────────────────────────────────────
 
   const processFile = (file) => {
-    if (!file) {return;}
+    if (!file) {
+      return;
+    }
     if (!file.name.toLowerCase().endsWith('.csv')) {
       setParseError('Please upload a CSV (.csv) file.');
       return;
@@ -273,12 +302,32 @@ export default function ImportUsers() {
       const existing = res.data.users || [];
       const byUname = new Map(existing.map((u) => [u.username?.toLowerCase(), u]));
       const byMail = new Map(existing.map((u) => [u.email?.toLowerCase(), u]));
+      const bySid = new Map(existing.filter((u) => u.student_id).map((u) => [u.student_id.toLowerCase(), u]));
       setExistingByUsername(byUname);
       setExistingByEmail(byMail);
+      setExistingByStudentId(bySid);
 
+      // Track seen values to detect intra-CSV duplicates
+      const seenUsernames = new Set();
+      const seenEmails = new Set();
+      const seenStudentIds = new Set();
       const rows = csvRows.map((rawRow, idx) => {
         const user = applyMapping(rawRow, mapping, csvHeaders.length);
-        return { ...user, _rowIndex: idx + 1, _missing: getMissingFields(user) };
+        const uname = user.username?.toLowerCase();
+        const mail = user.email?.toLowerCase();
+        const sid = user.studentId?.toLowerCase();
+        const duplicate =
+          (uname && seenUsernames.has(uname)) || (mail && seenEmails.has(mail)) || (sid && seenStudentIds.has(sid));
+        if (uname) {
+          seenUsernames.add(uname);
+        }
+        if (mail) {
+          seenEmails.add(mail);
+        }
+        if (sid) {
+          seenStudentIds.add(sid);
+        }
+        return { ...user, _rowIndex: idx + 1, _missing: getMissingFields(user), _duplicate: duplicate };
       });
       setPreviewRows(rows);
       setStep(3);
@@ -292,13 +341,27 @@ export default function ImportUsers() {
   // ── Conflict status (computed, not stored) ───────────────────────────────
 
   const getConflictStatus = (row) => {
-    const existing =
-      (row.username && existingByUsername.get(row.username.toLowerCase())) ||
-      (row.email && existingByEmail.get(row.email.toLowerCase()));
-    if (!existing) {return 'new';}
-    if (conflictAction === 'skip') {return 'skip';}
-    if (existing.role_name === 'admin' || existing.role_name === 'assignment_manager') {return 'protected';}
-    return 'overwrite';
+    if (row._duplicate) {
+      return 'duplicate';
+    }
+    const byUsername = row.username && existingByUsername.get(row.username.toLowerCase());
+    if (byUsername) {
+      if (conflictAction === 'skip') {
+        return 'skip';
+      }
+      if (byUsername.role_name === 'admin' || byUsername.role_name === 'assignment_manager') {
+        return 'protected';
+      }
+      return 'overwrite';
+    }
+    // Check if email or studentId is taken by a DIFFERENT existing user
+    if (row.email && existingByEmail.get(row.email.toLowerCase())) {
+      return 'conflict';
+    }
+    if (row.studentId && existingByStudentId.get(row.studentId.toLowerCase())) {
+      return 'conflict';
+    }
+    return 'new';
   };
 
   // ── Import ───────────────────────────────────────────────────────────────
@@ -308,8 +371,14 @@ export default function ImportUsers() {
     setSubmitError('');
     try {
       const validUsers = previewRows
-        .filter((r) => r._missing.length === 0)
-        .map(({ _rowIndex, _missing, ...user }) => user);
+        .filter((r) => {
+          if (r._missing.length > 0 || r._duplicate) {
+            return false;
+          }
+          const st = getConflictStatus(r);
+          return st !== 'conflict';
+        })
+        .map(({ _rowIndex, _missing, _duplicate, ...user }) => user);
 
       const res = await axios.post(`${API_BASE}/users/import`, {
         users: validUsers,
@@ -318,7 +387,7 @@ export default function ImportUsers() {
       });
       setResult({
         ...res.data,
-        skippedInvalid: previewRows.filter((r) => r._missing.length > 0).length,
+        skippedInvalid: previewRows.filter((r) => r._missing.length > 0 || r._duplicate).length,
       });
       setStep(4);
     } catch (e) {
@@ -340,17 +409,28 @@ export default function ImportUsers() {
     setPreviewRows([]);
     setExistingByUsername(new Map());
     setExistingByEmail(new Map());
+    setExistingByStudentId(new Map());
     setConflictAction('skip');
     setPreviewError('');
     setSubmitError('');
     setResult(null);
-    if (fileInputRef.current) {fileInputRef.current.value = '';}
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   // ── Preview summary counts ───────────────────────────────────────────────
 
-  const newCount = previewRows.filter((r) => r._missing.length === 0 && getConflictStatus(r) === 'new').length;
-  const conflictCount = previewRows.filter((r) => r._missing.length === 0 && getConflictStatus(r) !== 'new').length;
+  const newCount = previewRows.filter(
+    (r) => r._missing.length === 0 && !r._duplicate && getConflictStatus(r) === 'new'
+  ).length;
+  const conflictCount = previewRows.filter(
+    (r) => r._missing.length === 0 && !r._duplicate && ['skip', 'overwrite', 'protected'].includes(getConflictStatus(r))
+  ).length;
+  const duplicateCount = previewRows.filter((r) => r._missing.length === 0 && r._duplicate).length;
+  const unresolvableCount = previewRows.filter(
+    (r) => r._missing.length === 0 && !r._duplicate && getConflictStatus(r) === 'conflict'
+  ).length;
   const invalidCount = previewRows.filter((r) => r._missing.length > 0).length;
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -529,7 +609,9 @@ export default function ImportUsers() {
                     setStep(1);
                     setMappingError('');
                     setPreviewError('');
-                    if (fileInputRef.current) {fileInputRef.current.value = '';}
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
                   }}
                   className="flex items-center gap-1.5 px-4 py-2 text-gray-600 hover:text-gray-800"
                 >
@@ -575,6 +657,18 @@ export default function ImportUsers() {
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-full text-xs font-medium">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     {conflictCount} conflict{conflictCount !== 1 ? 's' : ''}
+                  </span>
+                )}
+                {duplicateCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-50 border border-purple-200 text-purple-700 rounded-full text-xs font-medium">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    {duplicateCount} duplicate{duplicateCount !== 1 ? 's' : ''} in file
+                  </span>
+                )}
+                {unresolvableCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-50 border border-orange-200 text-orange-700 rounded-full text-xs font-medium">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    {unresolvableCount} conflict{unresolvableCount !== 1 ? 's' : ''} (email/ID taken)
                   </span>
                 )}
                 {invalidCount > 0 && (
@@ -656,7 +750,11 @@ export default function ImportUsers() {
                               ? 'bg-blue-50'
                               : status === 'protected'
                                 ? 'bg-orange-50'
-                                : '';
+                                : status === 'duplicate'
+                                  ? 'bg-purple-50'
+                                  : status === 'conflict'
+                                    ? 'bg-orange-50'
+                                    : '';
                       return (
                         <tr key={row._rowIndex} className={rowCls}>
                           <td className="px-3 py-2 text-gray-400 text-xs">{row._rowIndex}</td>
@@ -701,6 +799,16 @@ export default function ImportUsers() {
                               >
                                 <AlertTriangle className="w-3 h-3" />
                                 Missing: {row._missing.join(', ')}
+                              </span>
+                            )}
+                            {status === 'duplicate' && (
+                              <span className="inline-flex items-center px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
+                                Duplicate in file
+                              </span>
+                            )}
+                            {status === 'conflict' && (
+                              <span className="inline-flex items-center px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
+                                Conflict (email/ID taken)
                               </span>
                             )}
                           </td>

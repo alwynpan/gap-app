@@ -74,6 +74,11 @@ class User {
     return result.rows[0] || null;
   }
 
+  static async findByStudentId(studentId) {
+    const result = await pool.query('SELECT * FROM users WHERE student_id = $1', [studentId]);
+    return result.rows[0] || null;
+  }
+
   static async create(userData) {
     const { username, email, password, firstName, lastName, studentId, groupId, roleId } = userData;
 

@@ -2031,6 +2031,8 @@ describe('Users Routes', () => {
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
       User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
       User.create.mockResolvedValue({
         id: 'u0000000-0000-0000-0000-000000000002',
         username: 'newuser',
@@ -2058,6 +2060,8 @@ describe('Users Routes', () => {
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
       User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
       const newUser = { id: 'u2', username: 'newuser', email: 'new@test.com' };
       User.create.mockResolvedValue(newUser);
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
@@ -2085,6 +2089,8 @@ describe('Users Routes', () => {
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
       User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
       User.create.mockResolvedValue({ id: 'u2', username: 'newuser', email: 'new@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2131,6 +2137,8 @@ describe('Users Routes', () => {
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
       const existingUser = { id: 'u0000000-0000-0000-0000-000000000002', username: 'existing', role_name: 'user' };
       User.findByUsername.mockResolvedValue(existingUser);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
       User.update.mockResolvedValue({ ...existingUser, email: 'new@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2209,6 +2217,8 @@ describe('Users Routes', () => {
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
       User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
       User.create.mockRejectedValue(new Error('DB constraint violation'));
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const usersRoutes = require('../../src/routes/users');
@@ -2238,6 +2248,8 @@ describe('Users Routes', () => {
         .mockResolvedValueOnce(null) // new
         .mockResolvedValueOnce({ id: 'u2', username: 'existing', role_name: 'user' }) // skip
         .mockResolvedValueOnce(null); // missing fields row — won't reach findByUsername
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
       User.create.mockResolvedValue({ id: 'u3', username: 'newuser', email: 'new@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2275,6 +2287,245 @@ describe('Users Routes', () => {
         makeImportRequest({ users: [{ username: 'u', email: 'e@e.com', firstName: 'F', lastName: 'L' }] }),
         mockReply
       );
+
+      expect(mockReply.code).toHaveBeenCalledWith(500);
+      consoleSpy.mockRestore();
+    });
+
+    it('errors when new user email conflicts with existing user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue({ id: 'other', username: 'other', email: 'taken@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'newuser', email: 'taken@test.com', firstName: 'New', lastName: 'User' }],
+        }),
+        mockReply
+      );
+
+      expect(User.create).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({
+        imported: 0,
+        skipped: 0,
+        errors: [{ row: 1, identifier: 'newuser', reason: 'Email already in use by another user' }],
+      });
+    });
+
+    it('errors when new user student ID conflicts with existing user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue({ id: 'other', username: 'other', student_id: 'S123' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [
+            { username: 'newuser', email: 'new@test.com', firstName: 'New', lastName: 'User', studentId: 'S123' },
+          ],
+        }),
+        mockReply
+      );
+
+      expect(User.create).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({
+        imported: 0,
+        skipped: 0,
+        errors: [{ row: 1, identifier: 'newuser', reason: 'Student ID already in use by another user' }],
+      });
+    });
+
+    it('errors when overwrite email conflicts with a different existing user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      const existingUser = { id: 'u2', username: 'existing', role_name: 'user' };
+      User.findByUsername.mockResolvedValue(existingUser);
+      User.findByEmail.mockResolvedValue({ id: 'u3', username: 'other', email: 'taken@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'existing', email: 'taken@test.com', firstName: 'Ex', lastName: 'User' }],
+          conflictAction: 'overwrite',
+        }),
+        mockReply
+      );
+
+      expect(User.update).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({
+        imported: 0,
+        skipped: 0,
+        errors: [{ row: 1, identifier: 'existing', reason: 'Email already in use by another user' }],
+      });
+    });
+
+    it('allows overwrite when email belongs to the same existing user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      const existingUser = { id: 'u2', username: 'existing', role_name: 'user' };
+      User.findByUsername.mockResolvedValue(existingUser);
+      User.findByEmail.mockResolvedValue({ id: 'u2', username: 'existing', email: 'same@test.com' });
+      User.findByStudentId.mockResolvedValue(null);
+      User.update.mockResolvedValue({ ...existingUser, email: 'same@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'existing', email: 'same@test.com', firstName: 'Ex', lastName: 'User' }],
+          conflictAction: 'overwrite',
+        }),
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({ imported: 1, skipped: 0, errors: [] });
+    });
+
+    it('errors when overwrite student ID conflicts with a different existing user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      const existingUser = { id: 'u2', username: 'existing', role_name: 'user' };
+      User.findByUsername.mockResolvedValue(existingUser);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue({ id: 'u3', username: 'other', student_id: 'S123' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'existing', email: 'ex@test.com', firstName: 'Ex', lastName: 'User', studentId: 'S123' }],
+          conflictAction: 'overwrite',
+        }),
+        mockReply
+      );
+
+      expect(User.update).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({
+        imported: 0,
+        skipped: 0,
+        errors: [{ row: 1, identifier: 'existing', reason: 'Student ID already in use by another user' }],
+      });
+    });
+  });
+
+  describe('POST /users/send-setup-emails', () => {
+    it('rejects unauthenticated request', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/send-setup-emails_post_pre']({ user: null }, mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(401);
+    });
+
+    it('rejects user without admin/assignment_manager role', async () => {
+      const mockFastify = createMockFastify({ checkRoleResult: false });
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      const request = { user: { id: 'u1', role: 'user' } };
+      const result = await handlers['/users/send-setup-emails_post_pre'](request, mockReply);
+      expect(mockFastify.checkRole).toHaveBeenCalledWith(request, mockReply, ['admin', 'assignment_manager']);
+      expect(result).toBe(mockReply);
+    });
+
+    it('sends setup emails to all pending users when no userIds provided', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const pendingUsers = [
+        { id: 'u1', username: 'pending1', status: 'pending' },
+        { id: 'u2', username: 'pending2', status: 'pending' },
+      ];
+      User.findAll.mockResolvedValue(pendingUsers);
+      PasswordResetToken.deleteStaleForUser.mockResolvedValue();
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
+      sendPasswordSetupEmail.mockResolvedValue();
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/send-setup-emails_post']({ user: { id: 'admin1', role: 'admin' }, body: {} }, mockReply);
+
+      expect(User.findAll).toHaveBeenCalledWith({ status: 'pending' });
+      expect(sendPasswordSetupEmail).toHaveBeenCalledTimes(2);
+      expect(mockReply.send).toHaveBeenCalledWith({ sent: 2, errors: [] });
+    });
+
+    it('sends setup emails only to specified pending userIds', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById
+        .mockResolvedValueOnce({ id: 'u1', username: 'pending1', status: 'pending' })
+        .mockResolvedValueOnce({ id: 'u2', username: 'active1', status: 'active' });
+      PasswordResetToken.deleteStaleForUser.mockResolvedValue();
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
+      sendPasswordSetupEmail.mockResolvedValue();
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/send-setup-emails_post'](
+        { user: { id: 'admin1', role: 'admin' }, body: { userIds: ['u1', 'u2'] } },
+        mockReply
+      );
+
+      // Only u1 is pending, so only 1 email sent
+      expect(sendPasswordSetupEmail).toHaveBeenCalledTimes(1);
+      expect(mockReply.send).toHaveBeenCalledWith({ sent: 1, errors: [] });
+    });
+
+    it('reports errors for failed email sends', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const pendingUsers = [{ id: 'u1', username: 'pending1', status: 'pending' }];
+      User.findAll.mockResolvedValue(pendingUsers);
+      PasswordResetToken.deleteStaleForUser.mockResolvedValue();
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
+      sendPasswordSetupEmail.mockRejectedValue(new Error('SMTP down'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/send-setup-emails_post']({ user: { id: 'admin1', role: 'admin' }, body: {} }, mockReply);
+
+      expect(mockReply.send).toHaveBeenCalledWith({
+        sent: 0,
+        errors: [{ userId: 'u1', username: 'pending1', reason: 'SMTP down' }],
+      });
+      consoleSpy.mockRestore();
+    });
+
+    it('handles top-level errors with 500', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findAll.mockRejectedValue(new Error('DB down'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/send-setup-emails_post']({ user: { id: 'admin1', role: 'admin' }, body: {} }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(500);
       consoleSpy.mockRestore();
