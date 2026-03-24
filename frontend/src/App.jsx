@@ -10,6 +10,7 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import SetPassword from './pages/SetPassword.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Users from './pages/Users.jsx';
+import ImportUsers from './pages/ImportUsers.jsx';
 import Groups from './pages/Groups.jsx';
 
 function App() {
@@ -41,6 +42,14 @@ function App() {
                 element={
                   <ProtectedRoute requireAssignmentManager>
                     <Users />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/users/import"
+                element={
+                  <ProtectedRoute requireAssignmentManager>
+                    <ImportUsers />
                   </ProtectedRoute>
                 }
               />

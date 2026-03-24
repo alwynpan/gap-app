@@ -1,0 +1,819 @@
+import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { Upload, ArrowLeft, ArrowRight, Check, AlertTriangle, ChevronDown } from 'lucide-react';
+import Header from '../components/Header.jsx';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+const FIELD_OPTIONS = [
+  { value: '', label: '— Skip —' },
+  { value: 'username', label: 'Username' },
+  { value: 'email', label: 'Email' },
+  { value: 'firstName', label: 'First Name' },
+  { value: 'lastName', label: 'Last Name' },
+  { value: 'studentId', label: 'Student ID' },
+  { value: 'fullNameFL', label: 'Full Name (First Last)' },
+  { value: 'fullNameLF', label: 'Full Name (Last, First)' },
+];
+
+const REQUIRED_FIELDS = ['username', 'email', 'firstName', 'lastName'];
+
+const HEADER_SYNONYMS = {
+  username: ['username', 'user', 'login', 'user name'],
+  email: ['email', 'e-mail', 'mail', 'email address'],
+  firstName: ['first name', 'firstname', 'first', 'given name', 'given'],
+  lastName: ['last name', 'lastname', 'last', 'surname', 'family name', 'family'],
+  studentId: ['student id', 'studentid', 'sid', 'student number', 'student no', 'id number'],
+  fullNameFL: ['full name', 'fullname', 'name'],
+  fullNameLF: ['name (last, first)', 'last, first'],
+};
+
+// ── CSV helpers ────────────────────────────────────────────────────────────
+
+function parseCsv(text) {
+  const rows = [];
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) {continue;}
+    const row = [];
+    let cur = '';
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i]; // eslint-disable-line security/detect-object-injection
+      if (c === '"') {
+        if (inQ && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQ = !inQ;
+        }
+      } else if (c === ',' && !inQ) {
+        row.push(cur.trim());
+        cur = '';
+      } else {
+        cur += c;
+      }
+    }
+    row.push(cur.trim());
+    rows.push(row);
+  }
+  return rows;
+}
+
+function autoDetect(headers) {
+  const result = {};
+  headers.forEach((h, i) => {
+    const norm = h.toLowerCase().trim();
+    for (const [field, synonyms] of Object.entries(HEADER_SYNONYMS)) {
+      if (synonyms.includes(norm)) {
+        result[i] = field; // eslint-disable-line security/detect-object-injection
+        return;
+      }
+    }
+    result[i] = ''; // eslint-disable-line security/detect-object-injection
+  });
+  return result;
+}
+
+function applyMapping(rawRow, mapping, colCount) {
+  const user = {};
+  for (let i = 0; i < colCount; i++) {
+    const field = mapping[i] || ''; // eslint-disable-line security/detect-object-injection
+    const val = (rawRow[i] || '').trim(); // eslint-disable-line security/detect-object-injection
+    if (!field || !val) {continue;}
+    switch (field) {
+      case 'username':
+        user.username = val;
+        break;
+      case 'email':
+        user.email = val;
+        break;
+      case 'firstName':
+        user.firstName = val;
+        break;
+      case 'lastName':
+        user.lastName = val;
+        break;
+      case 'studentId':
+        user.studentId = val;
+        break;
+      case 'fullNameFL': {
+        const parts = val.split(/\s+/).filter(Boolean);
+        if (!user.firstName) {user.firstName = parts[0] || '';}
+        if (!user.lastName) {user.lastName = parts.slice(1).join(' ') || '';}
+        break;
+      }
+      case 'fullNameLF': {
+        const ci = val.indexOf(',');
+        if (ci !== -1) {
+          if (!user.lastName) {user.lastName = val.slice(0, ci).trim();}
+          if (!user.firstName) {user.firstName = val.slice(ci + 1).trim();}
+        } else {
+          const parts = val.split(/\s+/).filter(Boolean);
+          if (!user.lastName) {user.lastName = parts[0] || '';}
+          if (!user.firstName) {user.firstName = parts.slice(1).join(' ') || '';}
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return user;
+}
+
+function getMissingFields(user) {
+  return REQUIRED_FIELDS.filter((f) => !user[f]); // eslint-disable-line security/detect-object-injection
+}
+
+// ── Step indicator ─────────────────────────────────────────────────────────
+
+const STEPS = ['Upload', 'Map Columns', 'Preview', 'Result'];
+
+function StepIndicator({ current }) {
+  return (
+    <ol className="flex items-center gap-0 mb-8">
+      {STEPS.map((label, idx) => {
+        const n = idx + 1;
+        const done = n < current;
+        const active = n === current;
+        return (
+          <li key={n} className="flex items-center">
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold border-2 ${
+                  done
+                    ? 'bg-primary-600 border-primary-600 text-white'
+                    : active
+                      ? 'border-primary-600 text-primary-600'
+                      : 'border-gray-300 text-gray-400'
+                }`}
+              >
+                {done ? <Check className="w-4 h-4" /> : n}
+              </span>
+              <span
+                className={`text-sm ${active ? 'font-semibold text-primary-700' : done ? 'text-gray-600' : 'text-gray-400'}`}
+              >
+                {label}
+              </span>
+            </div>
+            {idx < STEPS.length - 1 && <div className="mx-3 h-px w-10 bg-gray-300" />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
+
+export default function ImportUsers() {
+  const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+
+  const [step, setStep] = useState(1);
+
+  // Step 1
+  const [fileName, setFileName] = useState('');
+  const [csvHeaders, setCsvHeaders] = useState([]);
+  const [csvRows, setCsvRows] = useState([]);
+  const [parseError, setParseError] = useState('');
+
+  // Step 2
+  const [mapping, setMapping] = useState({});
+  const [mappingError, setMappingError] = useState('');
+  const [sendSetupEmail, setSendSetupEmail] = useState(false);
+
+  // Step 3
+  const [previewRows, setPreviewRows] = useState([]);
+  const [existingByUsername, setExistingByUsername] = useState(new Map());
+  const [existingByEmail, setExistingByEmail] = useState(new Map());
+  const [conflictAction, setConflictAction] = useState('skip');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+
+  // Step 4
+  const [result, setResult] = useState(null);
+
+  // ── File handling ────────────────────────────────────────────────────────
+
+  const processFile = (file) => {
+    if (!file) {return;}
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setParseError('Please upload a CSV (.csv) file.');
+      return;
+    }
+    setParseError('');
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const rows = parseCsv(evt.target.result);
+        if (rows.length < 2) {
+          setParseError('CSV must contain a header row and at least one data row.');
+          return;
+        }
+        const headers = rows[0];
+        const dataRows = rows.slice(1).filter((r) => r.some((c) => c));
+        if (dataRows.length === 0) {
+          setParseError('No data rows found in the CSV.');
+          return;
+        }
+        setCsvHeaders(headers);
+        setCsvRows(dataRows);
+        setFileName(file.name);
+        setMapping(autoDetect(headers));
+        setStep(2);
+      } catch {
+        setParseError('Failed to parse the CSV file. Please check it is valid UTF-8.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleFileChange = (e) => processFile(e.target.files[0]);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    processFile(e.dataTransfer.files[0]);
+  };
+
+  // ── Step 2 → 3 ──────────────────────────────────────────────────────────
+
+  const validateMapping = () => {
+    const mapped = new Set(Object.values(mapping));
+    const missing = REQUIRED_FIELDS.filter(
+      (f) => !mapped.has(f) && !mapped.has('fullNameFL') && !mapped.has('fullNameLF')
+    ).filter((f) => {
+      if (f === 'firstName' || f === 'lastName') {
+        return !mapped.has('fullNameFL') && !mapped.has('fullNameLF');
+      }
+      return true;
+    });
+    if (missing.length > 0) {
+      const labels = missing.map((f) => FIELD_OPTIONS.find((o) => o.value === f)?.label || f);
+      return `Required fields not mapped: ${labels.join(', ')}`;
+    }
+    return null;
+  };
+
+  const loadPreview = async () => {
+    const err = validateMapping();
+    if (err) {
+      setMappingError(err);
+      return;
+    }
+    setMappingError('');
+    setPreviewLoading(true);
+    setPreviewError('');
+    try {
+      const res = await axios.get(`${API_BASE}/users`);
+      const existing = res.data.users || [];
+      const byUname = new Map(existing.map((u) => [u.username?.toLowerCase(), u]));
+      const byMail = new Map(existing.map((u) => [u.email?.toLowerCase(), u]));
+      setExistingByUsername(byUname);
+      setExistingByEmail(byMail);
+
+      const rows = csvRows.map((rawRow, idx) => {
+        const user = applyMapping(rawRow, mapping, csvHeaders.length);
+        return { ...user, _rowIndex: idx + 1, _missing: getMissingFields(user) };
+      });
+      setPreviewRows(rows);
+      setStep(3);
+    } catch (e) {
+      setPreviewError(e.response?.data?.error || 'Failed to load existing users for conflict check.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // ── Conflict status (computed, not stored) ───────────────────────────────
+
+  const getConflictStatus = (row) => {
+    const existing =
+      (row.username && existingByUsername.get(row.username.toLowerCase())) ||
+      (row.email && existingByEmail.get(row.email.toLowerCase()));
+    if (!existing) {return 'new';}
+    if (conflictAction === 'skip') {return 'skip';}
+    if (existing.role_name === 'admin' || existing.role_name === 'assignment_manager') {return 'protected';}
+    return 'overwrite';
+  };
+
+  // ── Import ───────────────────────────────────────────────────────────────
+
+  const handleImport = async () => {
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      const validUsers = previewRows
+        .filter((r) => r._missing.length === 0)
+        .map(({ _rowIndex, _missing, ...user }) => user);
+
+      const res = await axios.post(`${API_BASE}/users/import`, {
+        users: validUsers,
+        conflictAction,
+        sendSetupEmail,
+      });
+      setResult({
+        ...res.data,
+        skippedInvalid: previewRows.filter((r) => r._missing.length > 0).length,
+      });
+      setStep(4);
+    } catch (e) {
+      setSubmitError(e.response?.data?.error || 'Import failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const resetAll = () => {
+    setStep(1);
+    setFileName('');
+    setCsvHeaders([]);
+    setCsvRows([]);
+    setParseError('');
+    setMapping({});
+    setMappingError('');
+    setSendSetupEmail(false);
+    setPreviewRows([]);
+    setExistingByUsername(new Map());
+    setExistingByEmail(new Map());
+    setConflictAction('skip');
+    setPreviewError('');
+    setSubmitError('');
+    setResult(null);
+    if (fileInputRef.current) {fileInputRef.current.value = '';}
+  };
+
+  // ── Preview summary counts ───────────────────────────────────────────────
+
+  const newCount = previewRows.filter((r) => r._missing.length === 0 && getConflictStatus(r) === 'new').length;
+  const conflictCount = previewRows.filter((r) => r._missing.length === 0 && getConflictStatus(r) !== 'new').length;
+  const invalidCount = previewRows.filter((r) => r._missing.length > 0).length;
+
+  // ── Render ───────────────────────────────────────────────────────────────
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Header pageName="Import Users" />
+
+      <main className="w-[85%] mx-auto py-6">
+        <div className="px-4 py-6 sm:px-0 max-w-5xl mx-auto">
+          <div className="mb-6">
+            <button
+              onClick={() => navigate('/users')}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Users
+            </button>
+          </div>
+
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Import Users from CSV</h2>
+          <p className="text-gray-500 text-sm mb-6">
+            Upload a CSV file, map its columns to user fields, review conflicts, then import.
+          </p>
+
+          <StepIndicator current={step} />
+
+          {/* ── Step 1: Upload ────────────────────────────────────────────── */}
+          {step === 1 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload CSV File</h3>
+
+              <input
+                type="file"
+                accept=".csv"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                aria-label="Upload CSV file"
+              />
+
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+                onDrop={handleDrop}
+                onDragOver={(e) => e.preventDefault()}
+                className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors"
+              >
+                <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-600 font-medium">Click to browse or drag &amp; drop a CSV file</p>
+                <p className="text-xs text-gray-400 mt-1">Only .csv files are accepted</p>
+              </div>
+
+              {parseError && (
+                <div className="mt-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  {parseError}
+                </div>
+              )}
+
+              <div className="mt-6 flex justify-end">
+                <button onClick={() => navigate('/users')} className="px-4 py-2 text-gray-600 hover:text-gray-800">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 2: Map Columns ───────────────────────────────────────── */}
+          {step === 2 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Map Columns</h3>
+              <p className="text-sm text-gray-500 mb-6">
+                File: <span className="font-medium text-gray-700">{fileName}</span> &nbsp;·&nbsp; {csvRows.length} data
+                row{csvRows.length !== 1 ? 's' : ''}
+              </p>
+
+              <div className="overflow-x-auto mb-6">
+                <table className="min-w-full border border-gray-200 rounded-lg text-sm">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      {csvHeaders.map((h, i) => (
+                        <th key={i} className="px-4 py-2 text-left font-medium text-gray-700 border-b border-gray-200">
+                          {h || <span className="text-gray-400 italic">Column {i + 1}</span>}
+                        </th>
+                      ))}
+                    </tr>
+                    <tr className="bg-primary-50">
+                      {csvHeaders.map((_, i) => {
+                        const colMapping = mapping[i] || ''; // eslint-disable-line security/detect-object-injection
+                        return (
+                          <th key={i} className="px-3 py-2 border-b border-gray-200">
+                            <div className="relative">
+                              <select
+                                value={colMapping}
+                                onChange={(e) => setMapping((prev) => ({ ...prev, [i]: e.target.value }))}
+                                aria-label={`Map column ${i + 1}`}
+                                className="w-full appearance-none border border-gray-300 rounded-md pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                              >
+                                {FIELD_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                            </div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {csvRows.slice(0, 3).map((row, ri) => (
+                      <tr key={ri} className="border-b border-gray-100 last:border-0">
+                        {csvHeaders.map((_, ci) => {
+                          const cellVal = row[ci]; // eslint-disable-line security/detect-object-injection
+                          return (
+                            <td key={ci} className="px-4 py-2 text-gray-600 max-w-[180px] truncate">
+                              {cellVal || <span className="text-gray-300">—</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    {csvRows.length > 3 && (
+                      <tr>
+                        <td colSpan={csvHeaders.length} className="px-4 py-2 text-center text-xs text-gray-400 italic">
+                          … and {csvRows.length - 3} more row{csvRows.length - 3 !== 1 ? 's' : ''}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {mappingError && (
+                <div className="mb-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  {mappingError}
+                </div>
+              )}
+
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sendSetupEmail}
+                    onChange={(e) => setSendSetupEmail(e.target.checked)}
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">
+                      Send &ldquo;Set Password&rdquo; email to new users
+                    </span>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Each new user will receive an email with a link to set their password. Not sent for overwritten
+                      accounts.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {previewError && (
+                <div className="mb-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  {previewError}
+                </div>
+              )}
+
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={() => {
+                    setStep(1);
+                    setMappingError('');
+                    setPreviewError('');
+                    if (fileInputRef.current) {fileInputRef.current.value = '';}
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back
+                </button>
+                <button
+                  onClick={loadPreview}
+                  disabled={previewLoading}
+                  className="flex items-center gap-1.5 px-5 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {previewLoading ? (
+                    <>
+                      <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                      Loading…
+                    </>
+                  ) : (
+                    <>
+                      Preview Import
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 3: Preview ───────────────────────────────────────────── */}
+          {step === 3 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Import Preview</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Review the users to be imported. Rows with missing required fields are shown but will be skipped.
+              </p>
+
+              {/* Summary */}
+              <div className="flex gap-3 mb-5 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-50 border border-green-200 text-green-700 rounded-full text-xs font-medium">
+                  <Check className="w-3.5 h-3.5" />
+                  {newCount} new
+                </span>
+                {conflictCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-full text-xs font-medium">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    {conflictCount} conflict{conflictCount !== 1 ? 's' : ''}
+                  </span>
+                )}
+                {invalidCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 border border-red-200 text-red-700 rounded-full text-xs font-medium">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    {invalidCount} invalid (will skip)
+                  </span>
+                )}
+              </div>
+
+              {/* Options */}
+              <div className="flex flex-wrap gap-6 mb-5 p-4 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                <fieldset>
+                  <legend className="font-medium text-gray-700 mb-2">For existing users:</legend>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="conflictAction"
+                        value="skip"
+                        checked={conflictAction === 'skip'}
+                        onChange={() => setConflictAction('skip')}
+                        className="text-primary-600 focus:ring-primary-500"
+                      />
+                      <span>Skip</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="conflictAction"
+                        value="overwrite"
+                        checked={conflictAction === 'overwrite'}
+                        onChange={() => setConflictAction('overwrite')}
+                        className="text-primary-600 focus:ring-primary-500"
+                      />
+                      <span>Overwrite (email, first/last name, student ID)</span>
+                    </label>
+                  </div>
+                </fieldset>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto rounded-lg border border-gray-200 mb-5">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                        #
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Username
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Email
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        First Name
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Last Name
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Student ID
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {previewRows.map((row) => {
+                      const status = row._missing.length > 0 ? 'invalid' : getConflictStatus(row);
+                      const rowCls =
+                        status === 'invalid'
+                          ? 'bg-red-50'
+                          : status === 'skip'
+                            ? 'bg-yellow-50'
+                            : status === 'overwrite'
+                              ? 'bg-blue-50'
+                              : status === 'protected'
+                                ? 'bg-orange-50'
+                                : '';
+                      return (
+                        <tr key={row._rowIndex} className={rowCls}>
+                          <td className="px-3 py-2 text-gray-400 text-xs">{row._rowIndex}</td>
+                          <td className="px-3 py-2 text-gray-700">
+                            {row.username || <span className="text-red-400">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-gray-700">
+                            {row.email || <span className="text-red-400">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-gray-700">
+                            {row.firstName || <span className="text-red-400">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-gray-700">
+                            {row.lastName || <span className="text-red-400">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-gray-500">{row.studentId || '—'}</td>
+                          <td className="px-3 py-2">
+                            {status === 'new' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                <Check className="w-3 h-3" /> New
+                              </span>
+                            )}
+                            {status === 'skip' && (
+                              <span className="inline-flex items-center px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
+                                Existing – skip
+                              </span>
+                            )}
+                            {status === 'overwrite' && (
+                              <span className="inline-flex items-center px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                                Existing – overwrite
+                              </span>
+                            )}
+                            {status === 'protected' && (
+                              <span className="inline-flex items-center px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
+                                Protected – skip
+                              </span>
+                            )}
+                            {status === 'invalid' && (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium"
+                                title={`Missing: ${row._missing.join(', ')}`}
+                              >
+                                <AlertTriangle className="w-3 h-3" />
+                                Missing: {row._missing.join(', ')}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {submitError && (
+                <div className="mb-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  {submitError}
+                </div>
+              )}
+
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={() => {
+                    setStep(2);
+                    setSubmitError('');
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back
+                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => navigate('/users')}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleImport}
+                    disabled={submitting || newCount + (conflictAction === 'overwrite' ? conflictCount : 0) === 0}
+                    className="flex items-center gap-1.5 px-5 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {submitting ? (
+                      <>
+                        <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                        Importing…
+                      </>
+                    ) : (
+                      'Import'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 4: Result ────────────────────────────────────────────── */}
+          {step === 4 && result && (
+            <div className="bg-white rounded-lg border border-gray-200 p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <Check className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Import Complete</h3>
+                  <p className="text-sm text-gray-500">
+                    {result.imported} imported · {result.skipped} skipped · {result.skippedInvalid ?? 0} invalid
+                  </p>
+                </div>
+              </div>
+
+              {result.errors?.length > 0 && (
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Errors ({result.errors.length})</h4>
+                  <div className="rounded-lg border border-red-200 overflow-hidden">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-red-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-red-700">Row</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-red-700">Identifier</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-red-700">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-red-100">
+                        {result.errors.map((e, i) => (
+                          <tr key={i}>
+                            <td className="px-3 py-2 text-gray-500">{e.row}</td>
+                            <td className="px-3 py-2 text-gray-700">{e.identifier}</td>
+                            <td className="px-3 py-2 text-red-600">{e.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={resetAll}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                >
+                  Import Another File
+                </button>
+                <button
+                  onClick={() => navigate('/users')}
+                  className="px-5 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                >
+                  Back to Users
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}

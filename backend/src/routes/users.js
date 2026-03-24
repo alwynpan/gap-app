@@ -427,6 +427,106 @@ async function usersRoutes(fastify, _options) {
       }
     }
   );
+
+  // Bulk import users from CSV (admin/assignment_manager only)
+  fastify.post(
+    '/users/import',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
+        if (!allowed) {
+          return reply;
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { users: usersToImport, conflictAction = 'skip', sendSetupEmail = false } = request.body || {};
+
+        if (!Array.isArray(usersToImport) || usersToImport.length === 0) {
+          return reply.code(400).send({ error: 'No users to import' });
+        }
+
+        const Role = require('../models/Role');
+        const roleRecord = await Role.findByName('user');
+        if (!roleRecord) {
+          return reply.code(500).send({ error: 'User role not found' });
+        }
+
+        let imported = 0;
+        let skipped = 0;
+        const errors = [];
+        let rowNum = 0;
+
+        for (const { username, email, firstName, lastName, studentId } of usersToImport) {
+          rowNum++;
+          const rowLabel = username || email || `row ${rowNum}`;
+
+          if (!username || !email || !firstName || !lastName) {
+            errors.push({ row: rowNum, identifier: rowLabel, reason: 'Missing required fields' });
+            continue;
+          }
+
+          try {
+            const existing = await User.findByUsername(username);
+
+            if (existing) {
+              if (conflictAction === 'skip') {
+                skipped++;
+                continue;
+              }
+              // overwrite — skip privileged accounts
+              if (existing.role_name === 'admin' || existing.role_name === 'assignment_manager') {
+                errors.push({
+                  row: rowNum,
+                  identifier: rowLabel,
+                  reason: 'Cannot overwrite admin or assignment manager account',
+                });
+                continue;
+              }
+              await User.update(existing.id, { email, firstName, lastName, studentId: studentId || undefined });
+              imported++;
+              continue;
+            }
+
+            // New user
+            const { sendPasswordSetupEmail } = require('../services/email');
+            const newUser = await User.create({
+              username,
+              email,
+              password: null,
+              firstName,
+              lastName,
+              studentId: studentId || undefined,
+              roleId: roleRecord.id,
+            });
+
+            if (sendSetupEmail) {
+              try {
+                await PasswordResetToken.deleteStaleForUser(newUser.id);
+                const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
+                await sendPasswordSetupEmail(newUser, tokenRecord.token);
+              } catch (emailError) {
+                console.error('Failed to send setup email:', emailError);
+              }
+            }
+
+            imported++;
+          } catch (rowError) {
+            errors.push({ row: rowNum, identifier: rowLabel, reason: rowError.message });
+          }
+        }
+
+        return reply.send({ imported, skipped, errors });
+      } catch (error) {
+        console.error('Import error:', error);
+        return reply.code(500).send({ error: 'Import failed' });
+      }
+    }
+  );
 }
 
 module.exports = usersRoutes;
