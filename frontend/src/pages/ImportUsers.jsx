@@ -19,6 +19,77 @@ const FIELD_OPTIONS = [
 
 const REQUIRED_FIELDS = ['username', 'email', 'firstName', 'lastName'];
 
+// Name fields form a mutually-exclusive group: selecting any one of them
+// removes related options from other column dropdowns.
+const NAME_FIELDS = new Set(['firstName', 'lastName', 'fullNameFL', 'fullNameLF']);
+const FULL_NAME_FIELDS = new Set(['fullNameFL', 'fullNameLF']);
+
+/**
+ * Return the FIELD_OPTIONS available for a given column, excluding values
+ * already selected in other columns.  Name fields use group logic:
+ *  – if firstName or lastName is taken → hide that field + both fullName options
+ *  – if a fullName option is taken → hide firstName, lastName, and both fullName options
+ */
+/**
+ * @param {number}  columnIndex    – the column we're computing options for
+ * @param {Object}  currentMapping – full mapping state
+ * @param {boolean} strict         – when true, apply strict name-group rules
+ *   (used by the clearing logic). When false (default, used for rendering),
+ *   a column that already holds a name field sees all name options so the
+ *   user can switch between them.
+ */
+function getAvailableOptions(columnIndex, currentMapping, strict = false) {
+  const currentValue = currentMapping[columnIndex] || ''; // eslint-disable-line security/detect-object-injection
+  // When rendering, if this column already has a name field we show all name
+  // options so the user can switch (the onChange cascade-clears conflicts).
+  const allowNameSwitch = !strict && NAME_FIELDS.has(currentValue);
+
+  // Collect values used by OTHER columns
+  const usedElsewhere = new Set();
+  // Track which name-group exclusions are triggered by other columns
+  const excludeNameFields = new Set();
+
+  for (const [idx, value] of Object.entries(currentMapping)) {
+    if (Number(idx) === columnIndex || !value) {
+      continue;
+    }
+    usedElsewhere.add(value);
+
+    if (NAME_FIELDS.has(value)) {
+      if (FULL_NAME_FIELDS.has(value)) {
+        excludeNameFields.add('firstName');
+        excludeNameFields.add('lastName');
+        excludeNameFields.add('fullNameFL');
+        excludeNameFields.add('fullNameLF');
+      } else {
+        excludeNameFields.add(value);
+        excludeNameFields.add('fullNameFL');
+        excludeNameFields.add('fullNameLF');
+      }
+    }
+  }
+
+  return FIELD_OPTIONS.filter((o) => {
+    if (!o.value) {
+      return true;
+    } // always show "— Skip —"
+    if (NAME_FIELDS.has(o.value)) {
+      if (allowNameSwitch) {
+        return true;
+      }
+      if (excludeNameFields.has(o.value)) {
+        return false;
+      }
+      return true;
+    }
+    // Non-name field: hide if taken by another column
+    if (usedElsewhere.has(o.value)) {
+      return false;
+    }
+    return true;
+  });
+}
+
 const HEADER_SYNONYMS = {
   username: ['username', 'user', 'login', 'user name'],
   email: ['email', 'e-mail', 'mail', 'email address'],
@@ -65,15 +136,31 @@ function parseCsv(text) {
 
 function autoDetect(headers) {
   const result = {};
+  const assigned = new Set();
   headers.forEach((h, i) => {
     const norm = h.toLowerCase().trim();
+    let matched = false;
     for (const [field, synonyms] of Object.entries(HEADER_SYNONYMS)) {
-      if (synonyms.includes(norm)) {
+      if (synonyms.includes(norm) && !assigned.has(field)) {
         result[i] = field; // eslint-disable-line security/detect-object-injection
+        assigned.add(field);
+        // If a name field is assigned, block conflicting name fields
+        if (FULL_NAME_FIELDS.has(field)) {
+          assigned.add('firstName');
+          assigned.add('lastName');
+          assigned.add('fullNameFL');
+          assigned.add('fullNameLF');
+        } else if (field === 'firstName' || field === 'lastName') {
+          assigned.add('fullNameFL');
+          assigned.add('fullNameLF');
+        }
+        matched = true;
         return;
       }
     }
-    result[i] = ''; // eslint-disable-line security/detect-object-injection
+    if (!matched) {
+      result[i] = ''; // eslint-disable-line security/detect-object-injection
+    }
   });
   return result;
 }
@@ -523,16 +610,33 @@ export default function ImportUsers() {
                     <tr className="bg-primary-50">
                       {csvHeaders.map((_, i) => {
                         const colMapping = mapping[i] || ''; // eslint-disable-line security/detect-object-injection
+                        const availableOpts = getAvailableOptions(i, mapping);
                         return (
                           <th key={i} className="px-3 py-2 border-b border-gray-200">
                             <div className="relative">
                               <select
                                 value={colMapping}
-                                onChange={(e) => setMapping((prev) => ({ ...prev, [i]: e.target.value }))}
+                                onChange={(e) => {
+                                  const newValue = e.target.value;
+                                  setMapping((prev) => {
+                                    const next = { ...prev, [i]: newValue };
+                                    // Clear other columns whose values are no longer valid
+                                    for (const [idx, val] of Object.entries(next)) {
+                                      if (Number(idx) === i || !val) {
+                                        continue;
+                                      }
+                                      const available = getAvailableOptions(Number(idx), next, true);
+                                      if (!available.some((o) => o.value === val)) {
+                                        next[idx] = ''; // eslint-disable-line security/detect-object-injection
+                                      }
+                                    }
+                                    return next;
+                                  });
+                                }}
                                 aria-label={`Map column ${i + 1}`}
                                 className="w-full appearance-none border border-gray-300 rounded-md pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
                               >
-                                {FIELD_OPTIONS.map((o) => (
+                                {availableOpts.map((o) => (
                                   <option key={o.value} value={o.value}>
                                     {o.label}
                                   </option>

@@ -405,6 +405,103 @@ describe('ImportUsers page', () => {
     });
   });
 
+  // ── Dynamic dropdown exclusion ─────────────────────────────────────────────
+
+  describe('Dynamic dropdown exclusion', () => {
+    const fiveColCsv = 'colA,colB,colC,colD,colE\n1,2,3,4,5';
+
+    function getOptionsForColumn(colIndex) {
+      const selects = screen.getAllByRole('combobox');
+      return Array.from(selects[colIndex].options).map((o) => o.value);
+    }
+
+    it('hides a selected field from other column dropdowns', async () => {
+      renderPage();
+      uploadCsv(fiveColCsv);
+      await waitForStep2();
+
+      // Map column 0 to "username"
+      fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'username' } });
+
+      // Column 1 should not offer "username"
+      expect(getOptionsForColumn(1)).not.toContain('username');
+      // But column 0 should still show it (it's the current value)
+      expect(getOptionsForColumn(0)).toContain('username');
+    });
+
+    it('hides fullName options when firstName is selected', async () => {
+      renderPage();
+      uploadCsv(fiveColCsv);
+      await waitForStep2();
+
+      fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'firstName' } });
+
+      const otherOpts = getOptionsForColumn(1);
+      expect(otherOpts).not.toContain('firstName');
+      expect(otherOpts).not.toContain('fullNameFL');
+      expect(otherOpts).not.toContain('fullNameLF');
+      // lastName should still be available
+      expect(otherOpts).toContain('lastName');
+    });
+
+    it('hides firstName, lastName, and both fullName options when fullNameFL is selected', async () => {
+      renderPage();
+      uploadCsv(fiveColCsv);
+      await waitForStep2();
+
+      fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'fullNameFL' } });
+
+      const otherOpts = getOptionsForColumn(1);
+      expect(otherOpts).not.toContain('firstName');
+      expect(otherOpts).not.toContain('lastName');
+      expect(otherOpts).not.toContain('fullNameFL');
+      expect(otherOpts).not.toContain('fullNameLF');
+    });
+
+    it('clears conflicting selections when a new value creates a conflict', async () => {
+      renderPage();
+      uploadCsv(fiveColCsv);
+      await waitForStep2();
+
+      // Re-query combobox references after each change (React re-renders replace DOM nodes)
+      fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'firstName' } });
+      fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'lastName' } });
+
+      // Verify both are set before the conflicting change
+      expect(screen.getAllByRole('combobox')[0].value).toBe('firstName');
+      expect(screen.getAllByRole('combobox')[1].value).toBe('lastName');
+
+      // Now change column 0 to fullNameFL — this should clear column 1 (lastName conflicts)
+      fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'fullNameFL' } });
+
+      expect(screen.getAllByRole('combobox')[0].value).toBe('fullNameFL');
+      expect(screen.getAllByRole('combobox')[1].value).toBe('');
+    });
+
+    it('autoDetect does not assign duplicate fields to multiple columns', async () => {
+      renderPage();
+      // Two columns named "email" — only the first should get the mapping
+      uploadCsv('email,email,firstName,lastName\na@t.com,b@t.com,John,Doe');
+      await waitForStep2();
+
+      const selects = screen.getAllByRole('combobox');
+      expect(selects[0].value).toBe('email');
+      expect(selects[1].value).toBe('');
+    });
+
+    it('autoDetect blocks fullName when firstName/lastName are already assigned', async () => {
+      renderPage();
+      uploadCsv('firstName,lastName,name\nJohn,Doe,John Doe');
+      await waitForStep2();
+
+      const selects = screen.getAllByRole('combobox');
+      expect(selects[0].value).toBe('firstName');
+      expect(selects[1].value).toBe('lastName');
+      // "name" would auto-detect to fullNameFL, but it conflicts
+      expect(selects[2].value).toBe('');
+    });
+  });
+
   // ── Duplicate and conflict detection ──────────────────────────────────────
 
   describe('Duplicate and conflict detection', () => {
