@@ -487,12 +487,55 @@ async function usersRoutes(fastify, _options) {
                 });
                 continue;
               }
+              // Check if email would conflict with a different user
+              const emailOwner = await User.findByEmail(email);
+              if (emailOwner && emailOwner.id !== existing.id) {
+                errors.push({
+                  row: rowNum,
+                  identifier: rowLabel,
+                  reason: 'Email already in use by another user',
+                });
+                continue;
+              }
+              // Check if student ID would conflict with a different user
+              if (studentId) {
+                const sidOwner = await User.findByStudentId(studentId);
+                if (sidOwner && sidOwner.id !== existing.id) {
+                  errors.push({
+                    row: rowNum,
+                    identifier: rowLabel,
+                    reason: 'Student ID already in use by another user',
+                  });
+                  continue;
+                }
+              }
               await User.update(existing.id, { email, firstName, lastName, studentId: studentId || undefined });
               imported++;
               continue;
             }
 
-            // New user
+            // New user — check email and student ID uniqueness
+            const emailOwner = await User.findByEmail(email);
+            if (emailOwner) {
+              errors.push({
+                row: rowNum,
+                identifier: rowLabel,
+                reason: 'Email already in use by another user',
+              });
+              continue;
+            }
+            if (studentId) {
+              const sidOwner = await User.findByStudentId(studentId);
+              if (sidOwner) {
+                errors.push({
+                  row: rowNum,
+                  identifier: rowLabel,
+                  reason: 'Student ID already in use by another user',
+                });
+                continue;
+              }
+            }
+
             const { sendPasswordSetupEmail } = require('../services/email');
             const newUser = await User.create({
               username,
@@ -524,6 +567,56 @@ async function usersRoutes(fastify, _options) {
       } catch (error) {
         console.error('Import error:', error);
         return reply.code(500).send({ error: 'Import failed' });
+      }
+    }
+  );
+
+  // Send setup email to pending users (admin/assignment_manager only)
+  fastify.post(
+    '/users/send-setup-emails',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
+        if (!allowed) {
+          return reply;
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { userIds } = request.body || {};
+        // If userIds provided, send only to those; otherwise send to all pending users
+        let targets;
+        if (Array.isArray(userIds) && userIds.length > 0) {
+          targets = await Promise.all(userIds.map((id) => User.findById(id)));
+          targets = targets.filter((u) => u && u.status === 'pending');
+        } else {
+          const all = await User.findAll({ status: 'pending' });
+          targets = all;
+        }
+
+        let sent = 0;
+        const errors = [];
+        for (const u of targets) {
+          try {
+            await PasswordResetToken.deleteStaleForUser(u.id);
+            const tokenRecord = await PasswordResetToken.create(u.id, 'setup', 24);
+            const { sendPasswordSetupEmail } = require('../services/email');
+            await sendPasswordSetupEmail(u, tokenRecord.token);
+            sent++;
+          } catch (emailError) {
+            console.error(`Failed to send setup email to ${u.username}:`, emailError);
+            errors.push({ userId: u.id, username: u.username, reason: emailError.message });
+          }
+        }
+
+        return reply.send({ sent, errors });
+      } catch (error) {
+        console.error('Send setup emails error:', error);
+        return reply.code(500).send({ error: 'Failed to send setup emails' });
       }
     }
   );

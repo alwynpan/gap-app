@@ -37,7 +37,9 @@ function setupFileReaderMock() {
     readAsText(file) {
       const text = file.__testContent !== undefined ? file.__testContent : '';
       this.result = text;
-      if (this.onload) {this.onload({ target: { result: text } });}
+      if (this.onload) {
+        this.onload({ target: { result: text } });
+      }
     }
   }
 
@@ -374,6 +376,17 @@ describe('ImportUsers page', () => {
       expect(screen.getByText('Doe')).toBeInTheDocument();
     });
 
+    it('splits "First, Last" comma format correctly for fullNameFL', async () => {
+      axios.get.mockResolvedValue({ data: { users: [] } });
+      renderPage();
+      uploadCsv('username,email,name\njdoe,jdoe@test.com,"John, Doe"');
+      await waitForStep2();
+      await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
+      await waitForStep3();
+      expect(screen.getByText('John')).toBeInTheDocument();
+      expect(screen.getByText('Doe')).toBeInTheDocument();
+    });
+
     it('splits "Last, First" format correctly when mapped to fullNameLF', async () => {
       axios.get.mockResolvedValue({ data: { users: [] } });
       renderPage();
@@ -389,6 +402,74 @@ describe('ImportUsers page', () => {
       await waitForStep3();
       expect(screen.getByText('John')).toBeInTheDocument();
       expect(screen.getByText('Doe')).toBeInTheDocument();
+    });
+  });
+
+  // ── Duplicate and conflict detection ──────────────────────────────────────
+
+  describe('Duplicate and conflict detection', () => {
+    it('shows "Duplicate in file" badge for intra-CSV duplicate usernames', async () => {
+      axios.get.mockResolvedValue({ data: { users: [] } });
+      renderPage();
+      uploadCsv('username,email,firstName,lastName\njdoe,jdoe@a.com,John,Doe\njdoe,jdoe@b.com,Jane,Doe');
+      await waitForStep2();
+      await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
+      await waitForStep3();
+      expect(screen.getByText('Duplicate in file')).toBeInTheDocument();
+    });
+
+    it('shows "Duplicate in file" badge for intra-CSV duplicate emails', async () => {
+      axios.get.mockResolvedValue({ data: { users: [] } });
+      renderPage();
+      uploadCsv('username,email,firstName,lastName\njdoe,same@test.com,John,Doe\njane,same@test.com,Jane,Smith');
+      await waitForStep2();
+      await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
+      await waitForStep3();
+      expect(screen.getByText('Duplicate in file')).toBeInTheDocument();
+    });
+
+    it('shows "Conflict (email/ID taken)" for email conflict with existing user', async () => {
+      axios.get.mockResolvedValue({
+        data: {
+          users: [{ username: 'other', email: 'taken@test.com', role_name: 'user' }],
+        },
+      });
+      renderPage();
+      uploadCsv('username,email,firstName,lastName\nnewuser,taken@test.com,New,User');
+      await waitForStep2();
+      await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
+      await waitForStep3();
+      expect(screen.getByText('Conflict (email/ID taken)')).toBeInTheDocument();
+    });
+
+    it('shows "Conflict (email/ID taken)" for student ID conflict with existing user', async () => {
+      axios.get.mockResolvedValue({
+        data: {
+          users: [{ username: 'other', email: 'other@test.com', role_name: 'user', student_id: 'S123' }],
+        },
+      });
+      renderPage();
+      uploadCsv('username,email,firstName,lastName,student id\nnewuser,new@test.com,New,User,S123');
+      await waitForStep2();
+      await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
+      await waitForStep3();
+      expect(screen.getByText('Conflict (email/ID taken)')).toBeInTheDocument();
+    });
+
+    it('does not send conflict rows to the import API', async () => {
+      axios.get.mockResolvedValue({
+        data: {
+          users: [{ username: 'other', email: 'taken@test.com', role_name: 'user' }],
+        },
+      });
+      axios.post.mockResolvedValue({ data: { imported: 0, skipped: 0, errors: [] } });
+      renderPage();
+      uploadCsv('username,email,firstName,lastName\nnewuser,taken@test.com,New,User');
+      await waitForStep2();
+      await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
+      await waitForStep3();
+      // Import button should be disabled since the only row is a conflict
+      expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
     });
   });
 });

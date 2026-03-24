@@ -1191,4 +1191,116 @@ describe('Users page', () => {
       });
     });
   });
+
+  describe('Send setup emails', () => {
+    const pendingUser = {
+      ...initialUsers[0],
+      id: 'u0000000-0000-0000-0000-000000000010',
+      username: 'pending1',
+      email: 'pending1@test.com',
+      status: 'pending',
+    };
+    const activeUser = {
+      ...initialUsers[0],
+      id: 'u0000000-0000-0000-0000-000000000011',
+      username: 'active1',
+      email: 'active1@test.com',
+      status: 'active',
+    };
+
+    it('shows "Send Setup Email" button when pending users exist', async () => {
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [pendingUser] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /send setup email/i })).toBeInTheDocument();
+      });
+    });
+
+    it('does not show "Send Setup Email" button when no pending users exist', async () => {
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [activeUser] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
+      });
+      expect(screen.queryByRole('button', { name: /send setup email/i })).not.toBeInTheDocument();
+    });
+
+    it('calls send-setup-emails API for all pending users', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [pendingUser, activeUser] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      axios.post.mockResolvedValue({ data: { sent: 1, errors: [] } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /send setup email/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /send setup email/i }));
+
+      await waitFor(() => {
+        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/users/send-setup-emails'), {});
+      });
+    });
+
+    it('sends only to selected pending users when selection is active', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const pendingUser2 = {
+        ...pendingUser,
+        id: 'u0000000-0000-0000-0000-000000000012',
+        username: 'pending2',
+        email: 'pending2@test.com',
+      };
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [pendingUser, pendingUser2] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      axios.post.mockResolvedValue({ data: { sent: 1, errors: [] } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
+      });
+
+      // Select just the first pending user
+      const checkbox = screen.getByRole('checkbox', { name: /select pending1/i });
+      await user.click(checkbox);
+
+      await user.click(screen.getByRole('button', { name: /send setup email/i }));
+
+      await waitFor(() => {
+        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/users/send-setup-emails'), {
+          userIds: ['u0000000-0000-0000-0000-000000000010'],
+        });
+      });
+    });
+  });
 });

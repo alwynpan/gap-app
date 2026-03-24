@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Pencil, UserPlus, Check, X, Download, Trash2, Upload } from 'lucide-react';
+import { Pencil, UserPlus, Check, X, Download, Trash2, Upload, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
@@ -33,6 +33,7 @@ function Users() {
   const [newUser, setNewUser] = useState({ ...emptyNewUser });
   const [editingUser, setEditingUser] = useState(null);
   const [formError, setFormError] = useState('');
+  const [sendingEmails, setSendingEmails] = useState(false);
 
   // Row selection & delete
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -251,6 +252,26 @@ function Users() {
     }
     setDeleteModal(null);
     fetchData();
+  };
+
+  const handleSendSetupEmails = async () => {
+    const pendingUsers = users.filter((u) => u.status === 'pending');
+    const targets =
+      selectedIds.size > 0 ? users.filter((u) => selectedIds.has(u.id) && u.status === 'pending') : pendingUsers;
+    if (targets.length === 0) {
+      showError('No pending users to send setup emails to.');
+      return;
+    }
+    setSendingEmails(true);
+    try {
+      const body = selectedIds.size > 0 ? { userIds: targets.map((u) => u.id) } : {};
+      const res = await axios.post(`${API_BASE}/users/send-setup-emails`, body);
+      showSuccess(`Setup email sent to ${res.data.sent} user${res.data.sent !== 1 ? 's' : ''}.`);
+    } catch (err) {
+      showError(err.response?.data?.error || 'Failed to send setup emails.');
+    } finally {
+      setSendingEmails(false);
+    }
   };
 
   const exportToCsv = (exportUsers, filename) => {
@@ -589,6 +610,28 @@ function Users() {
                   Import Users
                 </button>
               )}
+              {isAssignmentManager &&
+                (() => {
+                  const pendingCount =
+                    selectedIds.size > 0
+                      ? users.filter((u) => selectedIds.has(u.id) && u.status === 'pending').length
+                      : users.filter((u) => u.status === 'pending').length;
+                  if (pendingCount === 0) {
+                    return null;
+                  }
+                  return (
+                    <button
+                      onClick={handleSendSetupEmails}
+                      disabled={sendingEmails}
+                      className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+                    >
+                      <Mail className="h-4 w-4" />
+                      {sendingEmails
+                        ? 'Sending…'
+                        : `Send Setup Email${pendingCount !== 1 ? 's' : ''} (${pendingCount})`}
+                    </button>
+                  );
+                })()}
               {isAssignmentManager && (
                 <button
                   onClick={() => {
