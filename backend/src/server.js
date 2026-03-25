@@ -70,37 +70,47 @@ async function buildServer() {
     return { status: 'ok', timestamp: new Date().toISOString() };
   });
 
-  // API Info endpoint
-  fastify.get('/api', async (_request, _reply) => {
-    return {
-      name: 'G.A.P. Portal API',
-      version: '1.0.0',
-      endpoints: {
-        auth: {
-          register: 'POST /auth/register',
-          login: 'POST /auth/login',
-          logout: 'POST /auth/logout',
-          me: 'GET /auth/me',
-        },
-        users: {
-          list: 'GET /users (admin/assignment_manager)',
-          get: 'GET /users/:id',
-          create: 'POST /users (admin/assignment_manager)',
-          update: 'PUT /users/:id (admin, or self)',
-          updateGroup: 'PUT /users/:id/group (admin/assignment_manager)',
-          delete: 'DELETE /users/:id (admin)',
-        },
-        groups: {
-          list: 'GET /groups',
-          enabled: 'GET /groups/enabled',
-          get: 'GET /groups/:id',
-          create: 'POST /groups (admin)',
-          update: 'PUT /groups/:id (admin)',
-          delete: 'DELETE /groups/:id (admin)',
-        },
+  // API Info endpoint (authenticated only — avoids leaking endpoint structure)
+  fastify.get(
+    '/api',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
       },
-    };
-  });
+    },
+    async (_request, _reply) => {
+      return {
+        name: 'G.A.P. Portal API',
+        version: '1.0.0',
+        endpoints: {
+          auth: {
+            register: 'POST /auth/register',
+            login: 'POST /auth/login',
+            logout: 'POST /auth/logout',
+            me: 'GET /auth/me',
+          },
+          users: {
+            list: 'GET /users (admin/assignment_manager)',
+            get: 'GET /users/:id',
+            create: 'POST /users (admin/assignment_manager)',
+            update: 'PUT /users/:id (admin, or self)',
+            updateGroup: 'PUT /users/:id/group (admin/assignment_manager)',
+            delete: 'DELETE /users/:id (admin)',
+          },
+          groups: {
+            list: 'GET /groups',
+            enabled: 'GET /groups/enabled',
+            get: 'GET /groups/:id',
+            create: 'POST /groups (admin)',
+            update: 'PUT /groups/:id (admin)',
+            delete: 'DELETE /groups/:id (admin)',
+          },
+        },
+      };
+    }
+  );
 
   // Register routes
   await fastify.register(authRoutes);

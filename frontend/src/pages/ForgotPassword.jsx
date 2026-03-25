@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { forgotPasswordSchema, parseBody } from '../utils/schemas.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -15,14 +16,15 @@ function ForgotPassword() {
     setError('');
     setSuccess('');
 
-    if (!email.trim()) {
-      setError('Email is required.');
+    const { data: body, error: validationError } = parseBody(forgotPasswordSchema, { email: email.trim() });
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE}/auth/forgot-password`, { email: email.trim() });
+      const response = await axios.post(`${API_BASE}/auth/forgot-password`, { email: body.email });
       setSuccess(response.data.message || 'If that email is registered, a reset link has been sent.');
     } catch (err) {
       // Show generic message even on error to avoid leaking information

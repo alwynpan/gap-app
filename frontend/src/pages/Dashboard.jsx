@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { newPasswordSchema } from '../utils/schemas.js';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
@@ -93,8 +94,9 @@ function Dashboard() {
       setPasswordError('New passwords do not match');
       return;
     }
-    if (passwordForm.newPassword.length < 6) {
-      setPasswordError('New password must be at least 6 characters');
+    const pwResult = newPasswordSchema.safeParse(passwordForm.newPassword);
+    if (!pwResult.success) {
+      setPasswordError(pwResult.error.issues[0]?.message || 'Invalid password');
       return;
     }
 

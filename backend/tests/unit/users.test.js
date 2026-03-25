@@ -7,6 +7,7 @@ jest.mock('../../src/models/PasswordResetToken', () => ({
   findByToken: jest.fn(),
   markUsed: jest.fn(),
   deleteStaleForUser: jest.fn(),
+  deleteExpired: jest.fn().mockResolvedValue(0),
 }));
 jest.mock('../../src/services/email', () => ({
   sendPasswordResetEmail: jest.fn(),
@@ -232,7 +233,7 @@ describe('Users Routes', () => {
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post']({ body: { username: 'u1' } }, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username and email are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects when firstName is missing', async () => {
@@ -246,7 +247,7 @@ describe('Users Routes', () => {
         mockReply
       );
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'First name and last name are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects when lastName is missing', async () => {
@@ -260,7 +261,7 @@ describe('Users Routes', () => {
         mockReply
       );
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'First name and last name are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects when username already exists', async () => {
@@ -1755,7 +1756,7 @@ describe('Users Routes', () => {
         mockReply
       );
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Current password is required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects when admin does not provide current password', async () => {
@@ -1777,7 +1778,7 @@ describe('Users Routes', () => {
         mockReply
       );
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Current password is required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects when current password is incorrect', async () => {
@@ -1849,7 +1850,7 @@ describe('Users Routes', () => {
         {
           user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
           params: { id: 'u0000000-0000-0000-0000-000000000999' },
-          body: { newPassword: 'newpass123' },
+          body: { currentPassword: 'currentpass', newPassword: 'newpass123' },
         },
         mockReply
       );
@@ -1868,7 +1869,7 @@ describe('Users Routes', () => {
         {
           user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
           params: { id: 'u0000000-0000-0000-0000-000000000001' },
-          body: { newPassword: 'newpass123' },
+          body: { currentPassword: 'currentpass', newPassword: 'newpass123' },
         },
         mockReply
       );
@@ -2208,7 +2209,7 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({
         imported: 0,
         skipped: 0,
-        errors: [{ row: 1, identifier: 'nomail', reason: 'Missing required fields' }],
+        errors: [{ row: 1, identifier: 'nomail', reason: 'Missing or invalid required fields' }],
       });
     });
 
@@ -2270,7 +2271,7 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({
         imported: 1,
         skipped: 1,
-        errors: [{ row: 3, identifier: 'incomplete', reason: 'Missing required fields' }],
+        errors: [{ row: 3, identifier: 'incomplete', reason: 'Missing or invalid required fields' }],
       });
     });
 

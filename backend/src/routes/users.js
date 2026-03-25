@@ -2,6 +2,13 @@ const User = require('../models/User');
 const Group = require('../models/Group');
 const PasswordResetToken = require('../models/PasswordResetToken');
 const { sendPasswordSetupEmail } = require('../services/email');
+const {
+  parseBody,
+  createUserSchema,
+  updateUserSchema,
+  changePasswordSchema,
+  importUserRowSchema,
+} = require('../utils/schemas');
 
 async function usersRoutes(fastify, _options) {
   // Get all users (admin/assignment_manager only) — supports ?role=, ?status=, ?groupId= filters
@@ -85,21 +92,12 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const { username, email, password, firstName, lastName, studentId, groupId, role } = request.body;
-
-        if (!username || !email) {
-          return reply.code(400).send({ error: 'Username and email are required' });
+        const { data: body, error: validationError } = parseBody(createUserSchema, request.body);
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
         }
 
-        // Validate firstName and lastName are provided
-        if (!firstName || !lastName) {
-          return reply.code(400).send({ error: 'First name and last name are required' });
-        }
-
-        // If a password is provided, validate its length
-        if (password && password.length < 6) {
-          return reply.code(400).send({ error: 'Password must be at least 6 characters' });
-        }
+        const { username, email, firstName, lastName, studentId, password, groupId, role } = body;
 
         // Only admins can create admin users
         if (role === 'admin' && request.user.role !== 'admin') {
@@ -271,7 +269,13 @@ async function usersRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const userId = request.params.id;
-        const { username, email, firstName, lastName, studentId, groupId, role, enabled } = request.body;
+        const { data: body, error: validationError } = parseBody(updateUserSchema, request.body);
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
+        }
+
+        const { email, firstName, lastName, studentId, role, enabled } = body;
+        const { username, groupId } = request.body;
 
         const user = await User.findById(userId);
         if (!user) {
@@ -360,11 +364,11 @@ async function usersRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const userId = request.params.id;
-        const { currentPassword, newPassword } = request.body;
-
-        if (!newPassword || newPassword.length < 6) {
-          return reply.code(400).send({ error: 'New password must be at least 6 characters' });
+        const { data: body, error: validationError } = parseBody(changePasswordSchema, request.body);
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
         }
+        const { currentPassword, newPassword } = body;
 
         const user = await User.findById(userId);
         if (!user) {
@@ -372,9 +376,6 @@ async function usersRoutes(fastify, _options) {
         }
 
         // All users must verify their current password before changing it
-        if (!currentPassword) {
-          return reply.code(400).send({ error: 'Current password is required' });
-        }
         const userWithPassword = await User.findByUsername(user.username);
         const valid = await User.verifyPassword(currentPassword, userWithPassword.password_hash);
         if (!valid) {
@@ -461,14 +462,18 @@ async function usersRoutes(fastify, _options) {
         const errors = [];
         let rowNum = 0;
 
-        for (const { username, email, firstName, lastName, studentId } of usersToImport) {
+        for (const rawRow of usersToImport) {
           rowNum++;
-          const rowLabel = username || email || `row ${rowNum}`;
 
-          if (!username || !email || !firstName || !lastName) {
-            errors.push({ row: rowNum, identifier: rowLabel, reason: 'Missing required fields' });
+          const parseResult = importUserRowSchema.safeParse(rawRow);
+          if (!parseResult.success) {
+            const rowLabel = rawRow.username || rawRow.email || `row ${rowNum}`;
+            errors.push({ row: rowNum, identifier: rowLabel, reason: 'Missing or invalid required fields' });
             continue;
           }
+
+          const { username, email, firstName, lastName, studentId } = parseResult.data;
+          const rowLabel = username || email || `row ${rowNum}`;
 
           try {
             const existing = await User.findByUsername(username);
@@ -587,6 +592,9 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
+        // Housekeeping: purge expired / used tokens
+        await PasswordResetToken.deleteExpired();
+
         const { userIds } = request.body || {};
         // If userIds provided, send only to those; otherwise send to all pending users
         let targets;

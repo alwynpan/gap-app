@@ -48,6 +48,12 @@ class PasswordResetToken {
   static async deleteStaleForUser(userId) {
     await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId]);
   }
+
+  /** Delete all expired or used tokens from the database. Returns the count of deleted rows. */
+  static async deleteExpired() {
+    const result = await pool.query('DELETE FROM password_reset_tokens WHERE used = true OR expires_at < NOW()');
+    return result.rowCount;
+  }
 }
 
 module.exports = PasswordResetToken;

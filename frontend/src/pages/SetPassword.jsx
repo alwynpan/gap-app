@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import { passwordSchema } from '../utils/schemas.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -23,8 +24,9 @@ function SetPassword() {
       setError('Invalid or missing token. Please use the link from your email.');
       return;
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.');
+    const pwResult = passwordSchema.safeParse(password);
+    if (!pwResult.success) {
+      setError(pwResult.error.issues[0]?.message || 'Invalid password');
       return;
     }
     if (password !== confirmPassword) {

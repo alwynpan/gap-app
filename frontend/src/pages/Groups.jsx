@@ -5,6 +5,7 @@ import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
 import { Power, Gauge, Trash2, UserMinus, ChevronDown, ChevronRight, Check, Pencil } from 'lucide-react';
 import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
+import { parseBody, createGroupSchema, updateGroupSchema } from '../utils/schemas.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -125,15 +126,18 @@ function Groups() {
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
-    if (!newGroupName.trim()) {
+    const { data: body, error: validationError } = parseBody(createGroupSchema, { name: newGroupName });
+    if (validationError) {
+      showError(validationError);
       return;
     }
+    const body_name = body.name;
     try {
-      const body = { name: newGroupName.trim() };
+      const requestBody = { name: body_name };
       if (newGroupMaxMembers !== '') {
-        body.maxMembers = parseInt(newGroupMaxMembers, 10);
+        requestBody.maxMembers = parseInt(newGroupMaxMembers, 10);
       }
-      await axios.post(`${API_BASE}/groups`, body);
+      await axios.post(`${API_BASE}/groups`, requestBody);
       showSuccess('Group created successfully');
       setNewGroupName('');
       setNewGroupMaxMembers('');
@@ -155,7 +159,13 @@ function Groups() {
 
   const handleEditGroup = async (e) => {
     e.preventDefault();
-    if (!editingGroup || !editingGroup.name.trim()) {
+    if (!editingGroup) {
+      return;
+    }
+
+    const { data: body, error: validationError } = parseBody(updateGroupSchema, { name: editingGroup.name });
+    if (validationError) {
+      showError(validationError);
       return;
     }
 
@@ -168,7 +178,7 @@ function Groups() {
 
     try {
       await axios.put(`${API_BASE}/groups/${editingGroup.id}`, {
-        name: editingGroup.name.trim(),
+        name: body.name,
         maxMembers,
       });
       showSuccess('Group updated successfully');
