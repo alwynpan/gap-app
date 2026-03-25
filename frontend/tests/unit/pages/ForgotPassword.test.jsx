@@ -37,7 +37,7 @@ describe('ForgotPassword page', () => {
     fireEvent.submit(screen.getByRole('button', { name: /send reset link/i }).closest('form'));
 
     await waitFor(() => {
-      expect(screen.getByText('Email is required.')).toBeInTheDocument();
+      expect(screen.getByText('Email is required')).toBeInTheDocument();
     });
     expect(axios.post).not.toHaveBeenCalled();
   });

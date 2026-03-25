@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Upload, ArrowLeft, ArrowRight, Check, AlertTriangle, ChevronDown } from 'lucide-react';
 import Header from '../components/Header.jsx';
+import { sanitize } from '../utils/sanitize.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -465,7 +466,13 @@ export default function ImportUsers() {
           const st = getConflictStatus(r);
           return st !== 'conflict';
         })
-        .map(({ _rowIndex, _missing, _duplicate, ...user }) => user);
+        .map(({ _rowIndex, _missing, _duplicate, ...user }) => {
+          const clean = {};
+          for (const [k, v] of Object.entries(user)) {
+            clean[k] = typeof v === 'string' ? sanitize(v) : v; // eslint-disable-line security/detect-object-injection
+          }
+          return clean;
+        });
 
       const res = await axios.post(`${API_BASE}/users/import`, {
         users: validUsers,

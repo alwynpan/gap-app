@@ -3,6 +3,7 @@ const Role = require('../models/Role');
 const PasswordResetToken = require('../models/PasswordResetToken');
 const { sendPasswordResetEmail, sendPasswordSetupEmail } = require('../services/email');
 const config = require('../config/index');
+const { parseBody, registerSchema, loginSchema, forgotPasswordSchema, setPasswordSchema } = require('../utils/schemas');
 
 async function authRoutes(fastify, _options) {
   const isDev = config.app.nodeEnv === 'development';
@@ -23,28 +24,12 @@ async function authRoutes(fastify, _options) {
         return reply.code(403).send({ error: 'Registration is currently disabled' });
       }
 
-      const { username, email, password, firstName, lastName, studentId } = request.body;
-
-      // Validate required fields
-      if (!username || !email) {
-        return reply.code(400).send({ error: 'Username and email are required' });
+      const { data: body, error: validationError } = parseBody(registerSchema, request.body);
+      if (validationError) {
+        return reply.code(400).send({ error: validationError });
       }
 
-      // Validate firstName and lastName are provided
-      if (!firstName || !lastName) {
-        return reply.code(400).send({ error: 'First name and last name are required' });
-      }
-
-      // Validate password length if provided (password is optional for registration via email link flow)
-      if (password && password.length < 6) {
-        return reply.code(400).send({ error: 'Password must be at least 6 characters' });
-      }
-
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        return reply.code(400).send({ error: 'Invalid email format' });
-      }
+      const { username, email, firstName, lastName, studentId, password } = body;
 
       // Reject any attempt to register with admin or assignment_manager role
       if (request.body.role && request.body.role !== 'user') {
@@ -124,11 +109,11 @@ async function authRoutes(fastify, _options) {
       },
     },
     async (request, reply) => {
-      const { username, password } = request.body;
-
-      if (!username || !password) {
-        return reply.code(400).send({ error: 'Username and password are required' });
+      const { data: body, error: validationError } = parseBody(loginSchema, request.body);
+      if (validationError) {
+        return reply.code(400).send({ error: validationError });
       }
+      const { username, password } = body;
 
       try {
         // Find user by username
@@ -241,16 +226,19 @@ async function authRoutes(fastify, _options) {
       },
     },
     async (request, reply) => {
-      const { email: rawEmail } = request.body || {};
-      if (!rawEmail) {
-        return reply.code(400).send({ error: 'Email is required' });
+      const { data: body, error: validationError } = parseBody(forgotPasswordSchema, request.body || {});
+      if (validationError) {
+        return reply.code(400).send({ error: validationError });
       }
-      const email = rawEmail.trim();
+      const email = body.email;
 
       // Always return success to avoid leaking which emails are registered
       const successMsg = { message: 'If that email is registered, a reset link has been sent.' };
 
       try {
+        // Housekeeping: purge expired / used tokens
+        await PasswordResetToken.deleteExpired();
+
         const user = await User.findByEmail(email);
         if (user) {
           await PasswordResetToken.deleteStaleForUser(user.id);
@@ -275,16 +263,16 @@ async function authRoutes(fastify, _options) {
 
   // Set / reset password using a token (public)
   fastify.post('/auth/set-password', async (request, reply) => {
-    const { token, password } = request.body || {};
-
-    if (!token || !password) {
-      return reply.code(400).send({ error: 'Token and password are required' });
+    const { data: body, error: validationError } = parseBody(setPasswordSchema, request.body || {});
+    if (validationError) {
+      return reply.code(400).send({ error: validationError });
     }
-    if (password.length < 6) {
-      return reply.code(400).send({ error: 'Password must be at least 6 characters' });
-    }
+    const { token, password } = body;
 
     try {
+      // Housekeeping: purge expired / used tokens before lookup
+      await PasswordResetToken.deleteExpired();
+
       const tokenRecord = await PasswordResetToken.findByToken(token);
 
       if (!tokenRecord || tokenRecord.used || new Date(tokenRecord.expires_at) < new Date()) {

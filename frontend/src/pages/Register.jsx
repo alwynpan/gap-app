@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { parseBody, registerSchema } from '../utils/schemas.js';
 
 function Register() {
   const [formData, setFormData] = useState({
@@ -28,13 +29,19 @@ function Register() {
     setError('');
     setSuccess('');
 
+    const { data: body, error: validationError } = parseBody(registerSchema, formData);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
 
     // Register without password - user will receive email to set password
-    const result = await register(formData.username, formData.email, null, {
-      firstName: formData.firstName || undefined,
-      lastName: formData.lastName || undefined,
-      studentId: formData.studentId || undefined,
+    const result = await register(body.username, body.email, null, {
+      firstName: body.firstName || undefined,
+      lastName: body.lastName || undefined,
+      studentId: body.studentId || undefined,
     });
 
     if (result.success) {

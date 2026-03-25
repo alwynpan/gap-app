@@ -1,6 +1,9 @@
 module.exports = {
   testEnvironment: 'node',
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
+  moduleNameMapper: {
+    '^isomorphic-dompurify$': '<rootDir>/tests/__mocks__/isomorphic-dompurify.js',
+  },
   coverageThreshold: {
     global: {
       branches: 80,

@@ -55,7 +55,7 @@ describe('SetPassword page', () => {
     await user.click(screen.getByRole('button', { name: /set password/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Password must be at least 6 characters.')).toBeInTheDocument();
+      expect(screen.getByText('Password must be at least 6 characters')).toBeInTheDocument();
     });
     expect(axios.post).not.toHaveBeenCalled();
   });

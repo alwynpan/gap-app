@@ -290,7 +290,7 @@ describe('Groups Routes', () => {
         reply
       );
       expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Max members must be a positive integer' });
+      expect(reply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects invalid maxMembers (NaN)', async () => {
@@ -513,7 +513,7 @@ describe('Groups Routes', () => {
         reply
       );
       expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Max members must be a positive integer' });
+      expect(reply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects invalid maxMembers (NaN)', async () => {

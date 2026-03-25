@@ -1,5 +1,6 @@
 const Group = require('../models/Group');
 const User = require('../models/User');
+const { parseBody, createGroupSchema, updateGroupSchema } = require('../utils/schemas');
 
 async function groupsRoutes(fastify, _options) {
   // Get all groups (authenticated users)
@@ -101,18 +102,12 @@ async function groupsRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const { name, enabled, maxMembers } = request.body;
-
-        if (!name) {
-          return reply.code(400).send({ error: 'Group name is required' });
+        const { data: body, error: validationError } = parseBody(createGroupSchema, request.body);
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
         }
 
-        if (maxMembers !== undefined && maxMembers !== null) {
-          const parsed = parseInt(maxMembers, 10);
-          if (isNaN(parsed) || parsed < 1) {
-            return reply.code(400).send({ error: 'Max members must be a positive integer' });
-          }
-        }
+        const { name, enabled, maxMembers } = body;
 
         // Check if group name already exists
         const existingGroups = await Group.findAll();
@@ -121,8 +116,7 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(409).send({ error: 'Group name already exists' });
         }
 
-        const parsedMax = maxMembers !== null && maxMembers !== undefined ? parseInt(maxMembers, 10) : null;
-        const newGroup = await Group.create(name, enabled !== false, parsedMax);
+        const newGroup = await Group.create(name, enabled !== false, maxMembers ?? null);
 
         return reply.code(201).send({
           message: 'Group created successfully',
@@ -157,7 +151,12 @@ async function groupsRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const groupId = request.params.id;
-        const { name, enabled, maxMembers } = request.body;
+        const { data: body, error: validationError } = parseBody(updateGroupSchema, request.body);
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
+        }
+
+        const { name, enabled, maxMembers } = body;
 
         const group = await Group.findById(groupId);
         if (!group) {
@@ -166,22 +165,18 @@ async function groupsRoutes(fastify, _options) {
 
         // Validate maxMembers if provided
         if (maxMembers !== undefined && maxMembers !== null) {
-          const parsed = parseInt(maxMembers, 10);
-          if (isNaN(parsed) || parsed < 1) {
-            return reply.code(400).send({ error: 'Max members must be a positive integer' });
-          }
           // Check current member count doesn't exceed new limit
           const memberCount = await Group.getMemberCount(groupId);
-          if (memberCount > parsed) {
+          if (memberCount > maxMembers) {
             return reply
               .code(400)
-              .send({ error: `Group already has ${memberCount} members, cannot set limit to ${parsed}` });
+              .send({ error: `Group already has ${memberCount} members, cannot set limit to ${maxMembers}` });
           }
         }
 
         const updates = { name, enabled };
         if (maxMembers !== undefined) {
-          updates.maxMembers = maxMembers !== null && maxMembers !== undefined ? parseInt(maxMembers, 10) : null;
+          updates.maxMembers = maxMembers;
         }
 
         const updatedGroup = await Group.update(groupId, updates);

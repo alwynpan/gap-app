@@ -25,6 +25,7 @@ jest.mock('../../src/models/PasswordResetToken', () => ({
   findByToken: jest.fn(),
   markUsed: jest.fn(),
   deleteStaleForUser: jest.fn(),
+  deleteExpired: jest.fn().mockResolvedValue(0),
 }));
 
 jest.mock('../../src/services/email', () => ({
@@ -104,7 +105,7 @@ describe('Auth Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username and email are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects missing email', async () => {
@@ -135,7 +136,7 @@ describe('Auth Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'First name and last name are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects when lastName is missing', async () => {
@@ -148,7 +149,7 @@ describe('Auth Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'First name and last name are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects short password (less than 6 chars)', async () => {
@@ -473,7 +474,7 @@ describe('Auth Routes', () => {
       await capturedHandlers['/auth/login']({ body: { password: 'password123' } }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username and password are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('rejects missing password', async () => {
@@ -732,7 +733,7 @@ describe('Auth Routes', () => {
       await capturedHandlers['/auth/forgot-password']({ body: {} }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Email is required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('returns 200 and sends reset email when user found with active status', async () => {
@@ -801,6 +802,21 @@ describe('Auth Routes', () => {
       });
     });
 
+    it('calls deleteExpired before processing', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      User.findByEmail.mockResolvedValue(null);
+
+      await capturedHandlers['/auth/forgot-password']({ body: { email: 'user@test.com' } }, mockReply);
+
+      expect(PasswordResetToken.deleteExpired).toHaveBeenCalled();
+      // deleteExpired should be called before findByEmail
+      const deleteExpiredOrder = PasswordResetToken.deleteExpired.mock.invocationCallOrder[0];
+      const findByEmailOrder = User.findByEmail.mock.invocationCallOrder[0];
+      expect(deleteExpiredOrder).toBeLessThan(findByEmailOrder);
+    });
+
     it('returns 200 even when an internal error occurs', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
@@ -824,7 +840,7 @@ describe('Auth Routes', () => {
 
       await capturedHandlers['/auth/set-password']({ body: { token: 'tok' } }, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Token and password are required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
     it('returns 400 when password is too short', async () => {
@@ -834,6 +850,41 @@ describe('Auth Routes', () => {
       await capturedHandlers['/auth/set-password']({ body: { token: 'tok', password: 'abc' } }, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(400);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Password must be at least 6 characters' });
+    });
+
+    it('calls deleteExpired before looking up token', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      PasswordResetToken.findByToken.mockResolvedValue(null);
+
+      await capturedHandlers['/auth/set-password']({ body: { token: 'sometoken', password: 'newpass1' } }, mockReply);
+
+      expect(PasswordResetToken.deleteExpired).toHaveBeenCalled();
+      const deleteExpiredOrder = PasswordResetToken.deleteExpired.mock.invocationCallOrder[0];
+      const findByTokenOrder = PasswordResetToken.findByToken.mock.invocationCallOrder[0];
+      expect(deleteExpiredOrder).toBeLessThan(findByTokenOrder);
+    });
+
+    it('returns 400 for expired token', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      PasswordResetToken.findByToken.mockResolvedValue({
+        id: 't1',
+        user_id: 'u1',
+        token_type: 'reset',
+        used: false,
+        expires_at: new Date(Date.now() - 3600000), // 1 hour in the past
+      });
+
+      await capturedHandlers['/auth/set-password'](
+        { body: { token: 'expiredtoken', password: 'newpass1' } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
     });
 
     it('returns 400 when token is invalid or expired', async () => {

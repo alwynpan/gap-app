@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
 import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
+import { parseBody, createUserSchema, updateUserSchema } from '../utils/schemas.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -89,19 +90,23 @@ function Users() {
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
-    if (!newUser.username.trim() || !newUser.email.trim()) {
+    setFormError('');
+
+    const { data: body, error: validationError } = parseBody(createUserSchema, newUser);
+    if (validationError) {
+      setFormError(validationError);
       return;
     }
 
     try {
       await axios.post(`${API_BASE}/users`, {
-        username: newUser.username.trim(),
-        email: newUser.email.trim(),
-        firstName: newUser.firstName.trim() || undefined,
-        lastName: newUser.lastName.trim() || undefined,
-        studentId: newUser.studentId.trim() || undefined,
-        groupId: newUser.groupId || undefined,
-        role: newUser.role,
+        username: body.username,
+        email: body.email,
+        firstName: body.firstName || undefined,
+        lastName: body.lastName || undefined,
+        studentId: body.studentId || undefined,
+        groupId: body.groupId || undefined,
+        role: body.role,
       });
       showSuccess('User created successfully');
       setNewUser({ ...emptyNewUser });
@@ -122,20 +127,34 @@ function Users() {
 
   const handleEditUser = async (e) => {
     e.preventDefault();
-    if (!editingUser || !editingUser.email.trim()) {
+    setFormError('');
+    if (!editingUser) {
+      return;
+    }
+
+    const { data: body, error: validationError } = parseBody(updateUserSchema, {
+      email: editingUser.email,
+      firstName: editingUser.firstName || '',
+      lastName: editingUser.lastName || '',
+      studentId: editingUser.studentId || '',
+      enabled: editingUser.enabled,
+      role: editingUser.roleName !== editingUser.originalRoleName ? editingUser.roleName : undefined,
+    });
+    if (validationError) {
+      setFormError(validationError);
       return;
     }
 
     try {
       const payload = {
-        email: editingUser.email.trim(),
-        firstName: editingUser.firstName?.trim() || null,
-        lastName: editingUser.lastName?.trim() || null,
+        email: body.email,
+        firstName: body.firstName || null,
+        lastName: body.lastName || null,
       };
 
       // Only include studentId for regular users
       if (editingUser.roleName === 'user') {
-        payload.studentId = editingUser.studentId?.trim() || null;
+        payload.studentId = body.studentId || null;
       }
 
       if (isAdmin) {
@@ -147,7 +166,7 @@ function Users() {
 
       // Admins and assignment managers can enable/disable users
       if ((isAdmin || isAssignmentManager) && editingUser.roleName !== 'admin') {
-        payload.enabled = editingUser.enabled;
+        payload.enabled = body.enabled;
       }
 
       await axios.put(`${API_BASE}/users/${editingUser.id}`, payload);
