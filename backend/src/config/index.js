@@ -1,22 +1,14 @@
 require('dotenv').config();
 
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
+
 module.exports = {
   // JWT Configuration
   jwt: {
     secret: process.env.JWT_SECRET,
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
-  },
-
-  // Database Configuration
-  database: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT) || 5432,
-    database: process.env.DB_NAME || 'gap_db',
-    user: process.env.DB_USER || 'gap_user',
-    password: process.env.DB_PASSWORD || 'password',
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
   },
 
   // Application Configuration

@@ -40,13 +40,13 @@ async function authRoutes(fastify, _options) {
         // Check if username already exists
         const existingUsername = await User.findByUsername(username);
         if (existingUsername) {
-          return reply.code(409).send({ error: 'Username already exists' });
+          return reply.code(409).send({ error: 'An account with those details already exists' });
         }
 
         // Check if email already exists
         const existingEmail = await User.findByEmail(email);
         if (existingEmail) {
-          return reply.code(409).send({ error: 'Email already exists' });
+          return reply.code(409).send({ error: 'An account with those details already exists' });
         }
 
         // Get default user role
@@ -68,7 +68,6 @@ async function authRoutes(fastify, _options) {
           try {
             await PasswordResetToken.deleteStaleForUser(newUser.id);
             const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
-            const { sendPasswordSetupEmail } = require('../services/email');
             await sendPasswordSetupEmail(newUser, tokenRecord.token);
           } catch (emailError) {
             console.error('Failed to send setup email:', emailError);
@@ -262,40 +261,51 @@ async function authRoutes(fastify, _options) {
   );
 
   // Set / reset password using a token (public)
-  fastify.post('/auth/set-password', async (request, reply) => {
-    const { data: body, error: validationError } = parseBody(setPasswordSchema, request.body || {});
-    if (validationError) {
-      return reply.code(400).send({ error: validationError });
-    }
-    const { token, password } = body;
-
-    try {
-      // Housekeeping: purge expired / used tokens before lookup
-      await PasswordResetToken.deleteExpired();
-
-      const tokenRecord = await PasswordResetToken.findByToken(token);
-
-      if (!tokenRecord || tokenRecord.used || new Date(tokenRecord.expires_at) < new Date()) {
-        return reply.code(400).send({ error: 'Invalid or expired token' });
+  fastify.post(
+    '/auth/set-password',
+    {
+      config: {
+        rateLimit: {
+          max: isDev ? 500 : 10,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (request, reply) => {
+      const { data: body, error: validationError } = parseBody(setPasswordSchema, request.body || {});
+      if (validationError) {
+        return reply.code(400).send({ error: validationError });
       }
+      const { token, password } = body;
 
-      // Consume the token first — if the password update fails the user requests a new link;
-      // this prevents a valid token from persisting after a successful password change.
-      await PasswordResetToken.markUsed(tokenRecord.id);
+      try {
+        // Housekeeping: purge expired / used tokens before lookup
+        await PasswordResetToken.deleteExpired();
 
-      await User.updatePassword(tokenRecord.user_id, password);
+        const tokenRecord = await PasswordResetToken.findByToken(token);
 
-      // Activate the account if this was a first-time setup token
-      if (tokenRecord.token_type === 'setup') {
-        await User.activate(tokenRecord.user_id);
+        if (!tokenRecord || tokenRecord.used || new Date(tokenRecord.expires_at) < new Date()) {
+          return reply.code(400).send({ error: 'Invalid or expired token' });
+        }
+
+        // Consume the token first — if the password update fails the user requests a new link;
+        // this prevents a valid token from persisting after a successful password change.
+        await PasswordResetToken.markUsed(tokenRecord.id);
+
+        await User.updatePassword(tokenRecord.user_id, password);
+
+        // Activate the account if this was a first-time setup token
+        if (tokenRecord.token_type === 'setup') {
+          await User.activate(tokenRecord.user_id);
+        }
+
+        return reply.send({ message: 'Password set successfully. You can now log in.' });
+      } catch (error) {
+        console.error('Set password error:', error);
+        return reply.code(500).send({ error: 'Failed to set password' });
       }
-
-      return reply.send({ message: 'Password set successfully. You can now log in.' });
-    } catch (error) {
-      console.error('Set password error:', error);
-      return reply.code(500).send({ error: 'Failed to set password' });
     }
-  });
+  );
 }
 
 module.exports = authRoutes;

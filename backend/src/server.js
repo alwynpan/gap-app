@@ -124,6 +124,7 @@ async function buildServer() {
 async function start() {
   try {
     const fastify = await buildServer();
+    _serverInstance = fastify;
 
     await fastify.listen({
       port: config.app.port,
@@ -140,13 +141,21 @@ async function start() {
 }
 
 // Handle graceful shutdown
+let _serverInstance = null;
+
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  if (_serverInstance) {
+    await _serverInstance.close();
+  }
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  if (_serverInstance) {
+    await _serverInstance.close();
+  }
   process.exit(0);
 });
 

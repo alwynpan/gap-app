@@ -5,8 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { Link } from 'react-router-dom';
 import { formatRoleName } from '../utils/formatting.js';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_BASE } from '../config.js';
 
 function Dashboard() {
   const { user, isAdmin, isAssignmentManager, refreshUser } = useAuth();
@@ -20,6 +19,9 @@ function Dashboard() {
   const [groupSuccess, setGroupSuccess] = useState('');
   const [groupMembers, setGroupMembers] = useState([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [joiningGroup, setJoiningGroup] = useState(false);
+  const [leavingGroup, setLeavingGroup] = useState(false);
+  const [loading, setLoading] = useState(false);
   const isNormalUser = !isAdmin && !isAssignmentManager;
 
   useEffect(() => {
@@ -60,6 +62,7 @@ function Dashboard() {
   };
 
   const handleJoinGroup = async (groupId) => {
+    setJoiningGroup(true);
     try {
       await axios.post(`${API_BASE}/groups/${groupId}/join`);
       setGroupSuccess('Successfully joined group');
@@ -68,6 +71,8 @@ function Dashboard() {
     } catch (err) {
       setGroupError(err.response?.data?.error || 'Failed to join group');
       setTimeout(() => setGroupError(''), 3000);
+    } finally {
+      setJoiningGroup(false);
     }
   };
 
@@ -75,6 +80,7 @@ function Dashboard() {
     if (!user?.groupId) {
       return;
     }
+    setLeavingGroup(true);
     try {
       await axios.post(`${API_BASE}/groups/${user.groupId}/leave`);
       setGroupSuccess('Successfully left group');
@@ -83,6 +89,8 @@ function Dashboard() {
     } catch (err) {
       setGroupError(err.response?.data?.error || 'Failed to leave group');
       setTimeout(() => setGroupError(''), 3000);
+    } finally {
+      setLeavingGroup(false);
     }
   };
 
@@ -100,6 +108,7 @@ function Dashboard() {
       return;
     }
 
+    setLoading(true);
     try {
       await axios.put(`${API_BASE}/users/${user.id}/password`, {
         currentPassword: passwordForm.currentPassword,
@@ -111,6 +120,8 @@ function Dashboard() {
       setTimeout(() => setPasswordSuccess(''), 2000);
     } catch (err) {
       setPasswordError(err.response?.data?.error || 'Failed to change password');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -218,9 +229,10 @@ function Dashboard() {
                       </p>
                       <button
                         onClick={handleLeaveGroup}
-                        className="text-sm text-red-600 hover:text-red-800 font-medium"
+                        disabled={leavingGroup}
+                        className="text-sm text-red-600 hover:text-red-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Leave Group
+                        {leavingGroup ? 'Leaving...' : 'Leave Group'}
                       </button>
                     </div>
 
@@ -274,9 +286,10 @@ function Dashboard() {
                             </div>
                             <button
                               onClick={() => handleJoinGroup(group.id)}
-                              className="text-sm bg-primary-600 text-white px-3 py-1 rounded-md hover:bg-primary-700"
+                              disabled={joiningGroup}
+                              className="text-sm bg-primary-600 text-white px-3 py-1 rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              Join
+                              {joiningGroup ? 'Joining...' : 'Join'}
                             </button>
                           </li>
                         ))}
@@ -367,8 +380,12 @@ function Dashboard() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
-                  Change Password
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Changing...' : 'Change Password'}
                 </button>
               </div>
             </form>

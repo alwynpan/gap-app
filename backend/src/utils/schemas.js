@@ -9,6 +9,13 @@ const { sanitize } = require('./sanitize');
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
+ * Validate that a string is a well-formed UUID (v4 format).
+ */
+function validateUUID(id) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+/**
  * Parse and validate a request body against a Zod schema.
  * Returns { data, error } where error is the first error message string or null.
  */
@@ -105,16 +112,16 @@ const createUserSchema = z.object({
   groupId: z.string().optional().nullable(),
 });
 
-const updateUserSchema = z
-  .object({
-    email: emailSchema.optional(),
-    firstName: nameSchema('First name').optional().nullable(),
-    lastName: nameSchema('Last name').optional().nullable(),
-    studentId: studentIdSchema,
-    role: z.string().optional(),
-    enabled: z.boolean().optional(),
-  })
-  .partial();
+const updateUserSchema = z.object({
+  email: emailSchema.optional(),
+  firstName: nameSchema('First name').optional().nullable(),
+  lastName: nameSchema('Last name').optional().nullable(),
+  studentId: studentIdSchema,
+  role: z.string().optional(),
+  enabled: z.boolean().optional(),
+  username: usernameSchema.optional(),
+  groupId: z.string().uuid().optional().nullable(),
+});
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
@@ -135,16 +142,14 @@ const createGroupSchema = z.object({
   maxMembers: z.number().int().positive().optional().nullable(),
 });
 
-const updateGroupSchema = z
-  .object({
-    name: groupNameSchema,
-    enabled: z.boolean().optional(),
-    maxMembers: z.number().int().positive().optional().nullable(),
-  })
-  .partial();
+const updateGroupSchema = z.object({
+  name: groupNameSchema.optional(),
+  enabled: z.boolean().optional(),
+  maxMembers: z.number().int().positive().optional().nullable(),
+});
 
 const forgotPasswordSchema = z.object({
-  email: sanitizedString.pipe(z.string().min(1, 'Email is required')),
+  email: emailSchema,
 });
 
 const setPasswordSchema = z.object({
@@ -155,6 +160,7 @@ const setPasswordSchema = z.object({
 module.exports = {
   sanitize,
   parseBody,
+  validateUUID,
   usernameSchema,
   emailSchema,
   passwordSchema,

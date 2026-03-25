@@ -61,18 +61,18 @@ describe('Groups Routes', () => {
     it('allows authenticated request', () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
-      handlers['/groups_get_pre']({ user: { id: 'u0000000-0000-0000-0000-000000000001' } }, reply);
+      handlers['/groups_get_pre']({ user: { id: '00000000-0000-4000-8000-000000000001' } }, reply);
       expect(reply.code).not.toHaveBeenCalled();
     });
 
     it('returns all groups successfully', async () => {
       const { handlers } = setupRoute();
-      Group.findAll.mockResolvedValue([{ id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', enabled: true }]);
+      Group.findAll.mockResolvedValue([{ id: '10000000-0000-4000-8000-000000000001', name: 'Team A', enabled: true }]);
       const reply = mockReply();
       await handlers['/groups_get']({}, reply);
       expect(Group.findAll).toHaveBeenCalled();
       expect(reply.send).toHaveBeenCalledWith({
-        groups: [{ id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', enabled: true }],
+        groups: [{ id: '10000000-0000-4000-8000-000000000001', name: 'Team A', enabled: true }],
       });
     });
 
@@ -99,7 +99,7 @@ describe('Groups Routes', () => {
     it('returns enabled groups successfully', async () => {
       const { handlers } = setupRoute();
       Group.findEnabled.mockResolvedValue([
-        { id: 'g0000000-0000-0000-0000-000000000001', name: 'Active Team', enabled: true },
+        { id: '10000000-0000-4000-8000-000000000001', name: 'Active Team', enabled: true },
       ]);
       const reply = mockReply();
       await handlers['/groups/enabled_get']({}, reply);
@@ -129,7 +129,7 @@ describe('Groups Routes', () => {
     it('returns group by id with members', async () => {
       const { handlers } = setupRoute();
       const mockGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Test Group',
         enabled: true,
         max_members: 10,
@@ -137,13 +137,13 @@ describe('Groups Routes', () => {
         created_at: new Date(),
         updated_at: new Date(),
       };
-      const mockMembers = [{ id: 'u0000000-0000-0000-0000-000000000001', username: 'user1', role_name: 'user' }];
+      const mockMembers = [{ id: '00000000-0000-4000-8000-000000000001', username: 'user1', role_name: 'user' }];
       Group.findById.mockResolvedValue(mockGroup);
       Group.getMembers.mockResolvedValue(mockMembers);
       const reply = mockReply();
-      await handlers['/groups/:id_get']({ params: { id: 'g0000000-0000-0000-0000-000000000001' } }, reply);
-      expect(Group.findById).toHaveBeenCalledWith('g0000000-0000-0000-0000-000000000001');
-      expect(Group.getMembers).toHaveBeenCalledWith('g0000000-0000-0000-0000-000000000001');
+      await handlers['/groups/:id_get']({ params: { id: '10000000-0000-4000-8000-000000000001' } }, reply);
+      expect(Group.findById).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001');
+      expect(Group.getMembers).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001');
       expect(reply.send).toHaveBeenCalledWith({
         group: expect.objectContaining({ maxMembers: 10, memberCount: 3 }),
         members: mockMembers,
@@ -154,7 +154,7 @@ describe('Groups Routes', () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue(null);
       const reply = mockReply();
-      await handlers['/groups/:id_get']({ params: { id: 'g0000000-0000-0000-0000-000000000999' } }, reply);
+      await handlers['/groups/:id_get']({ params: { id: '10000000-0000-4000-8000-000000000999' } }, reply);
       expect(reply.code).toHaveBeenCalledWith(404);
     });
 
@@ -163,7 +163,7 @@ describe('Groups Routes', () => {
       Group.findById.mockRejectedValue(new Error('Database error'));
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
-      await handlers['/groups/:id_get']({ params: { id: 'g0000000-0000-0000-0000-000000000001' } }, reply);
+      await handlers['/groups/:id_get']({ params: { id: '10000000-0000-4000-8000-000000000001' } }, reply);
       expect(consoleSpy).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
       consoleSpy.mockRestore();
@@ -182,7 +182,7 @@ describe('Groups Routes', () => {
       const { mockFastify, handlers } = setupRoute();
       mockFastify.requireAdmin.mockResolvedValue(false);
       const reply = mockReply();
-      const request = { user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'user' } };
+      const request = { user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' } };
       const result = await handlers['/groups_post_pre'](request, reply);
       expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
       expect(result).toBe(reply);
@@ -192,7 +192,7 @@ describe('Groups Routes', () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
       await handlers['/groups_post'](
-        { user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' }, body: {} },
+        { user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' }, body: {} },
         reply
       );
       expect(reply.code).toHaveBeenCalledWith(400);
@@ -201,12 +201,12 @@ describe('Groups Routes', () => {
     it('rejects when group name already exists', async () => {
       const { handlers } = setupRoute();
       Group.findAll.mockResolvedValue([
-        { id: 'g0000000-0000-0000-0000-000000000001', name: 'Existing Group', enabled: true },
+        { id: '10000000-0000-4000-8000-000000000001', name: 'Existing Group', enabled: true },
       ]);
       const reply = mockReply();
       await handlers['/groups_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
           body: { name: 'existing group' },
         },
         reply
@@ -218,7 +218,7 @@ describe('Groups Routes', () => {
       const { handlers } = setupRoute();
       Group.findAll.mockResolvedValue([]);
       Group.create.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'New Group',
         enabled: true,
         max_members: null,
@@ -226,7 +226,7 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
           body: { name: 'New Group' },
         },
         reply
@@ -239,7 +239,7 @@ describe('Groups Routes', () => {
       const { handlers } = setupRoute();
       Group.findAll.mockResolvedValue([]);
       Group.create.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Disabled Group',
         enabled: false,
         max_members: null,
@@ -247,7 +247,7 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
           body: { name: 'Disabled Group', enabled: false },
         },
         reply
@@ -259,7 +259,7 @@ describe('Groups Routes', () => {
       const { handlers } = setupRoute();
       Group.findAll.mockResolvedValue([]);
       Group.create.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Limited',
         enabled: true,
         max_members: 5,
@@ -267,7 +267,7 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
           body: { name: 'Limited', maxMembers: 5 },
         },
         reply
@@ -284,7 +284,7 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
           body: { name: 'Bad', maxMembers: 0 },
         },
         reply
@@ -298,7 +298,7 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
           body: { name: 'Bad', maxMembers: 'abc' },
         },
         reply
@@ -314,7 +314,7 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
           body: { name: 'New Group' },
         },
         reply
@@ -338,8 +338,8 @@ describe('Groups Routes', () => {
       mockFastify.requireAdmin.mockResolvedValue(false);
       const reply = mockReply();
       const request = {
-        user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'user' },
-        params: { id: 'g0000000-0000-0000-0000-000000000001' },
+        user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' },
+        params: { id: '10000000-0000-4000-8000-000000000001' },
       };
       const result = await handlers['/groups/:id_put_pre'](request, reply);
       expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
@@ -352,8 +352,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000999' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000999' },
           body: { name: 'New Name' },
         },
         reply
@@ -364,26 +364,26 @@ describe('Groups Routes', () => {
     it('updates group successfully', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Old Name',
         enabled: true,
         member_count: 0,
       });
       Group.update.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'New Name',
         enabled: false,
       });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
           body: { name: 'New Name', enabled: false },
         },
         reply
       );
-      expect(Group.update).toHaveBeenCalledWith('g0000000-0000-0000-0000-000000000001', {
+      expect(Group.update).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001', {
         name: 'New Name',
         enabled: false,
       });
@@ -392,26 +392,26 @@ describe('Groups Routes', () => {
     it('updates group with partial fields', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Old Name',
         enabled: true,
         member_count: 0,
       });
       Group.update.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Old Name',
         enabled: false,
       });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
           body: { enabled: false },
         },
         reply
       );
-      expect(Group.update).toHaveBeenCalledWith('g0000000-0000-0000-0000-000000000001', {
+      expect(Group.update).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001', {
         enabled: false,
       });
     });
@@ -419,28 +419,28 @@ describe('Groups Routes', () => {
     it('updates group with maxMembers', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Group',
         enabled: true,
         member_count: 2,
       });
       Group.getMemberCount.mockResolvedValue(2);
       Group.update.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Group',
         max_members: 5,
       });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
           body: { maxMembers: 5 },
         },
         reply
       );
-      expect(Group.getMemberCount).toHaveBeenCalledWith('g0000000-0000-0000-0000-000000000001');
-      expect(Group.update).toHaveBeenCalledWith('g0000000-0000-0000-0000-000000000001', {
+      expect(Group.getMemberCount).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001');
+      expect(Group.update).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001', {
         maxMembers: 5,
       });
     });
@@ -448,26 +448,26 @@ describe('Groups Routes', () => {
     it('sets maxMembers to null (unlimited)', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Group',
         enabled: true,
         max_members: 5,
       });
       Group.update.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Group',
         max_members: null,
       });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
           body: { maxMembers: null },
         },
         reply
       );
-      expect(Group.update).toHaveBeenCalledWith('g0000000-0000-0000-0000-000000000001', {
+      expect(Group.update).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001', {
         maxMembers: null,
       });
     });
@@ -475,7 +475,7 @@ describe('Groups Routes', () => {
     it('rejects maxMembers less than current member count', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Group',
         enabled: true,
         member_count: 5,
@@ -484,8 +484,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
           body: { maxMembers: 3 },
         },
         reply
@@ -499,15 +499,15 @@ describe('Groups Routes', () => {
     it('rejects invalid maxMembers (non-positive)', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Group',
         enabled: true,
       });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
           body: { maxMembers: 0 },
         },
         reply
@@ -519,15 +519,15 @@ describe('Groups Routes', () => {
     it('rejects invalid maxMembers (NaN)', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Group',
         enabled: true,
       });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
           body: { maxMembers: 'abc' },
         },
         reply
@@ -538,7 +538,7 @@ describe('Groups Routes', () => {
     it('handles error when updating group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Old Name',
         enabled: true,
       });
@@ -547,8 +547,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
           body: { name: 'New Name' },
         },
         reply
@@ -572,8 +572,8 @@ describe('Groups Routes', () => {
       mockFastify.requireAdmin.mockResolvedValue(false);
       const reply = mockReply();
       const request = {
-        user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'user' },
-        params: { id: 'g0000000-0000-0000-0000-000000000001' },
+        user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' },
+        params: { id: '10000000-0000-4000-8000-000000000001' },
       };
       const result = await handlers['/groups/:id_delete_pre'](request, reply);
       expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
@@ -583,19 +583,19 @@ describe('Groups Routes', () => {
     it('deletes group successfully', async () => {
       const { handlers } = setupRoute();
       Group.delete.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Deleted Group',
         enabled: true,
       });
       const reply = mockReply();
       await handlers['/groups/:id_delete'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
-      expect(Group.delete).toHaveBeenCalledWith('g0000000-0000-0000-0000-000000000001');
+      expect(Group.delete).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001');
       expect(reply.send).toHaveBeenCalledWith({ message: 'Group deleted successfully' });
     });
 
@@ -605,8 +605,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id_delete'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000999' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000999' },
         },
         reply
       );
@@ -620,8 +620,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id_delete'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000001', role: 'admin' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
@@ -642,32 +642,32 @@ describe('Groups Routes', () => {
     it('joins group successfully', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Team A',
         enabled: true,
         max_members: 5,
         member_count: 2,
       });
       User.findById.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000010',
+        id: '00000000-0000-4000-8000-000000000010',
         group_id: null,
       });
-      User.updateGroup.mockResolvedValue({});
+      Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
-      expect(User.updateGroup).toHaveBeenCalledWith(
-        'u0000000-0000-0000-0000-000000000010',
-        'g0000000-0000-0000-0000-000000000001'
+      expect(Group.assignUserToGroup).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000010',
+        '10000000-0000-4000-8000-000000000001'
       );
       expect(reply.send).toHaveBeenCalledWith({
         message: 'Successfully joined group',
-        groupId: 'g0000000-0000-0000-0000-000000000001',
+        groupId: '10000000-0000-4000-8000-000000000001',
         groupName: 'Team A',
       });
     });
@@ -675,28 +675,28 @@ describe('Groups Routes', () => {
     it('joins group with unlimited capacity', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Open Team',
         enabled: true,
         max_members: null,
         member_count: 100,
       });
       User.findById.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000010',
+        id: '00000000-0000-4000-8000-000000000010',
         group_id: null,
       });
-      User.updateGroup.mockResolvedValue({});
+      Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
-      expect(User.updateGroup).toHaveBeenCalledWith(
-        'u0000000-0000-0000-0000-000000000010',
-        'g0000000-0000-0000-0000-000000000001'
+      expect(Group.assignUserToGroup).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000010',
+        '10000000-0000-4000-8000-000000000001'
       );
     });
 
@@ -706,8 +706,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000999' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000999' },
         },
         reply
       );
@@ -718,7 +718,7 @@ describe('Groups Routes', () => {
     it('returns 404 when user not found', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Team A',
         enabled: true,
         max_members: null,
@@ -728,8 +728,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000099' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000099' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
@@ -740,7 +740,7 @@ describe('Groups Routes', () => {
     it('rejects joining a disabled group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Disabled',
         enabled: false,
         max_members: null,
@@ -749,8 +749,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
@@ -761,21 +761,21 @@ describe('Groups Routes', () => {
     it('rejects when user is already in a group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000002',
+        id: '10000000-0000-4000-8000-000000000002',
         name: 'Team B',
         enabled: true,
         max_members: null,
         member_count: 1,
       });
       User.findById.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000010',
-        group_id: 'g0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000010',
+        group_id: '10000000-0000-4000-8000-000000000001',
       });
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000002' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000002' },
         },
         reply
       );
@@ -788,21 +788,21 @@ describe('Groups Routes', () => {
     it('rejects when group is full', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Full Team',
         enabled: true,
         max_members: 3,
         member_count: 3,
       });
       User.findById.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000010',
+        id: '00000000-0000-4000-8000-000000000010',
         group_id: null,
       });
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
@@ -817,8 +817,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
@@ -839,24 +839,24 @@ describe('Groups Routes', () => {
     it('leaves group successfully', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Team A',
         enabled: true,
       });
       User.findById.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000010',
-        group_id: 'g0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000010',
+        group_id: '10000000-0000-4000-8000-000000000001',
       });
       User.updateGroup.mockResolvedValue({});
       const reply = mockReply();
       await handlers['/groups/:id/leave_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
-      expect(User.updateGroup).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000010', null);
+      expect(User.updateGroup).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000010', null);
       expect(reply.send).toHaveBeenCalledWith({ message: 'Successfully left group' });
     });
 
@@ -866,8 +866,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id/leave_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000999' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000999' },
         },
         reply
       );
@@ -878,7 +878,7 @@ describe('Groups Routes', () => {
     it('returns 404 when user not found', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Team A',
         enabled: true,
       });
@@ -886,8 +886,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id/leave_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000099' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000099' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
@@ -898,19 +898,19 @@ describe('Groups Routes', () => {
     it('rejects when user is not in this group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000002',
+        id: '10000000-0000-4000-8000-000000000002',
         name: 'Team B',
         enabled: true,
       });
       User.findById.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000010',
-        group_id: 'g0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000010',
+        group_id: '10000000-0000-4000-8000-000000000001',
       });
       const reply = mockReply();
       await handlers['/groups/:id/leave_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000002' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000002' },
         },
         reply
       );
@@ -921,19 +921,19 @@ describe('Groups Routes', () => {
     it('rejects when user is not in any group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Team A',
         enabled: true,
       });
       User.findById.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000010',
+        id: '00000000-0000-4000-8000-000000000010',
         group_id: null,
       });
       const reply = mockReply();
       await handlers['/groups/:id/leave_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );
@@ -948,8 +948,8 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/:id/leave_post'](
         {
-          user: { id: 'u0000000-0000-0000-0000-000000000010' },
-          params: { id: 'g0000000-0000-0000-0000-000000000001' },
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
         },
         reply
       );

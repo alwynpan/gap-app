@@ -1,3 +1,6 @@
+// Ensure JWT_SECRET is set for any test that loads the real config module
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-tests';
+
 // Mock database pool
 const mockPool = {
   query: jest.fn(),
@@ -16,8 +19,6 @@ jest.mock('bcryptjs', () => ({
 
 // Mock fastify plugins
 jest.mock('@fastify/jwt', () => jest.fn());
-
-jest.mock('fastify-bcrypt', () => jest.fn());
 
 // Mock fastify-plugin to pass through the plugin function unwrapped
 jest.mock('fastify-plugin', () => (fn) => fn);

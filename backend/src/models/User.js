@@ -70,12 +70,20 @@ class User {
   }
 
   static async findByEmail(email) {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const result = await pool.query(
+      `SELECT id, username, email, first_name, last_name, student_id, group_id, enabled, status, created_at, updated_at, role_id
+       FROM users WHERE email = $1`,
+      [email]
+    );
     return result.rows[0] || null;
   }
 
   static async findByStudentId(studentId) {
-    const result = await pool.query('SELECT * FROM users WHERE student_id = $1', [studentId]);
+    const result = await pool.query(
+      `SELECT id, username, email, first_name, last_name, student_id, group_id, enabled, status, created_at, updated_at, role_id
+       FROM users WHERE student_id = $1`,
+      [studentId]
+    );
     return result.rows[0] || null;
   }
 
@@ -144,10 +152,11 @@ class User {
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${paramIndex}
+       RETURNING id, username, email, first_name, last_name, student_id, group_id, enabled, status, created_at, updated_at, role_id`,
       values
     );
-    return result.rows[0];
+    return result.rows[0] || null;
   }
 
   static async updateGroup(userId, groupId) {

@@ -1,0 +1,14 @@
+.env
+.env.*
+.git
+.gitignore
+node_modules
+tests/
+coverage/
+*.md
+Dockerfile
+Dockerfile.dev
+.dockerignore
+eslint.config.js
+jest.config.cjs
+vite.config.js

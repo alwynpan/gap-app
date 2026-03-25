@@ -1,13 +1,18 @@
 FROM node:24-slim
 
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 --ingroup nodejs nodeuser
+
 WORKDIR /app
 
 # Install dependencies
-COPY package*.json ./
-RUN npm ci --only=production
+COPY --chown=nodeuser:nodejs package*.json ./
+RUN npm ci --omit=dev
 
 # Copy source code
-COPY . .
+COPY --chown=nodeuser:nodejs . .
+
+USER nodeuser
 
 # Expose port
 EXPOSE 3001

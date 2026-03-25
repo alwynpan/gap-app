@@ -89,7 +89,7 @@ describe('ForgotPassword page', () => {
     expect(screen.getByRole('button', { name: /send reset link/i })).toBeDisabled();
   });
 
-  it('shows error message on API failure', async () => {
+  it('shows generic error message on API failure (does not leak backend error)', async () => {
     const user = userEvent.setup();
 
     axios.post.mockRejectedValue({
@@ -106,8 +106,10 @@ describe('ForgotPassword page', () => {
     await user.click(screen.getByRole('button', { name: /send reset link/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Too many requests. Please try again later.')).toBeInTheDocument();
+      expect(screen.getByText('Something went wrong. Please try again later.')).toBeInTheDocument();
     });
+    // Backend-specific error must NOT be shown
+    expect(screen.queryByText('Too many requests. Please try again later.')).not.toBeInTheDocument();
   });
 
   it('shows generic error when no response body on failure', async () => {
@@ -125,7 +127,7 @@ describe('ForgotPassword page', () => {
     await user.click(screen.getByRole('button', { name: /send reset link/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Something went wrong. Please try again.')).toBeInTheDocument();
+      expect(screen.getByText('Something went wrong. Please try again later.')).toBeInTheDocument();
     });
   });
 

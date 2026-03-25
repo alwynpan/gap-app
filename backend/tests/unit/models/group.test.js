@@ -4,6 +4,7 @@ const Group = require('../../../src/models/Group');
 jest.mock('../../../src/db/migrate', () => ({
   pool: {
     query: jest.fn(),
+    connect: jest.fn(),
   },
 }));
 
@@ -18,14 +19,14 @@ describe('Group Model', () => {
     it('returns all groups with member_count ordered by name', async () => {
       const mockGroups = [
         {
-          id: 'g0000000-0000-0000-0000-000000000001',
+          id: '10000000-0000-4000-8000-000000000001',
           name: 'Alpha Team',
           enabled: true,
           max_members: null,
           member_count: 3,
         },
         {
-          id: 'g0000000-0000-0000-0000-000000000002',
+          id: '10000000-0000-4000-8000-000000000002',
           name: 'Beta Team',
           enabled: true,
           max_members: 5,
@@ -53,7 +54,7 @@ describe('Group Model', () => {
   describe('findById', () => {
     it('returns group by id with member_count', async () => {
       const mockGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Test Group',
         enabled: true,
         max_members: 10,
@@ -61,10 +62,10 @@ describe('Group Model', () => {
       };
       pool.query.mockResolvedValue({ rows: [mockGroup] });
 
-      const result = await Group.findById('g0000000-0000-0000-0000-000000000001');
+      const result = await Group.findById('10000000-0000-4000-8000-000000000001');
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('member_count'), [
-        'g0000000-0000-0000-0000-000000000001',
+        '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toEqual(mockGroup);
     });
@@ -72,7 +73,7 @@ describe('Group Model', () => {
     it('returns undefined when group not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await Group.findById('g0000000-0000-0000-0000-000000000999');
+      const result = await Group.findById('10000000-0000-4000-8000-000000000999');
 
       expect(result).toBeUndefined();
     });
@@ -82,7 +83,7 @@ describe('Group Model', () => {
     it('returns only enabled groups with member_count', async () => {
       const mockGroups = [
         {
-          id: 'g0000000-0000-0000-0000-000000000001',
+          id: '10000000-0000-4000-8000-000000000001',
           name: 'Active Team',
           enabled: true,
           max_members: null,
@@ -110,7 +111,7 @@ describe('Group Model', () => {
   describe('create', () => {
     it('creates group with defaults (enabled=true, maxMembers=null)', async () => {
       const mockGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'New Group',
         enabled: true,
         max_members: null,
@@ -125,7 +126,7 @@ describe('Group Model', () => {
 
     it('creates group with enabled=false', async () => {
       const mockGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Disabled Group',
         enabled: false,
         max_members: null,
@@ -144,7 +145,7 @@ describe('Group Model', () => {
 
     it('creates group with maxMembers', async () => {
       const mockGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Limited Group',
         enabled: true,
         max_members: 5,
@@ -165,14 +166,14 @@ describe('Group Model', () => {
   describe('update', () => {
     it('updates group with all fields including maxMembers', async () => {
       const mockUpdatedGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Updated',
         enabled: false,
         max_members: 10,
       };
       pool.query.mockResolvedValue({ rows: [mockUpdatedGroup] });
 
-      const result = await Group.update('g0000000-0000-0000-0000-000000000001', {
+      const result = await Group.update('10000000-0000-4000-8000-000000000001', {
         name: 'Updated',
         enabled: false,
         maxMembers: 10,
@@ -182,71 +183,71 @@ describe('Group Model', () => {
         'Updated',
         false,
         10,
-        'g0000000-0000-0000-0000-000000000001',
+        '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toEqual(mockUpdatedGroup);
     });
 
     it('updates group with name only', async () => {
       const mockUpdatedGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'New Name',
         enabled: true,
       };
       pool.query.mockResolvedValue({ rows: [mockUpdatedGroup] });
 
-      const result = await Group.update('g0000000-0000-0000-0000-000000000001', { name: 'New Name' });
+      const result = await Group.update('10000000-0000-4000-8000-000000000001', { name: 'New Name' });
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE groups'), [
         'New Name',
-        'g0000000-0000-0000-0000-000000000001',
+        '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toEqual(mockUpdatedGroup);
     });
 
     it('updates group with enabled only', async () => {
       const mockUpdatedGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Original',
         enabled: false,
       };
       pool.query.mockResolvedValue({ rows: [mockUpdatedGroup] });
 
-      const result = await Group.update('g0000000-0000-0000-0000-000000000001', { enabled: false });
+      const result = await Group.update('10000000-0000-4000-8000-000000000001', { enabled: false });
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE groups'), [
         false,
-        'g0000000-0000-0000-0000-000000000001',
+        '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toEqual(mockUpdatedGroup);
     });
 
     it('can set maxMembers to null (unlimited)', async () => {
       const mockUpdatedGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Group',
         max_members: null,
       };
       pool.query.mockResolvedValue({ rows: [mockUpdatedGroup] });
 
-      const result = await Group.update('g0000000-0000-0000-0000-000000000001', { maxMembers: null });
+      const result = await Group.update('10000000-0000-4000-8000-000000000001', { maxMembers: null });
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('max_members'), [
         null,
-        'g0000000-0000-0000-0000-000000000001',
+        '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toEqual(mockUpdatedGroup);
     });
 
     it('returns result from findById when no fields to update', async () => {
       const mockGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Group',
         member_count: 2,
       };
       pool.query.mockResolvedValue({ rows: [mockGroup] });
 
-      const result = await Group.update('g0000000-0000-0000-0000-000000000001', {});
+      const result = await Group.update('10000000-0000-4000-8000-000000000001', {});
 
       expect(result).toEqual(mockGroup);
     });
@@ -254,7 +255,7 @@ describe('Group Model', () => {
     it('returns undefined when group not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await Group.update('g0000000-0000-0000-0000-000000000999', { name: 'New Name' });
+      const result = await Group.update('10000000-0000-4000-8000-000000000999', { name: 'New Name' });
 
       expect(result).toBeUndefined();
     });
@@ -263,16 +264,16 @@ describe('Group Model', () => {
   describe('delete', () => {
     it('deletes group and returns deleted group', async () => {
       const mockDeletedGroup = {
-        id: 'g0000000-0000-0000-0000-000000000001',
+        id: '10000000-0000-4000-8000-000000000001',
         name: 'Deleted Group',
         enabled: true,
       };
       pool.query.mockResolvedValue({ rows: [mockDeletedGroup] });
 
-      const result = await Group.delete('g0000000-0000-0000-0000-000000000001');
+      const result = await Group.delete('10000000-0000-4000-8000-000000000001');
 
       expect(pool.query).toHaveBeenCalledWith('DELETE FROM groups WHERE id = $1 RETURNING *', [
-        'g0000000-0000-0000-0000-000000000001',
+        '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toEqual(mockDeletedGroup);
     });
@@ -280,7 +281,7 @@ describe('Group Model', () => {
     it('returns undefined when group not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await Group.delete('g0000000-0000-0000-0000-000000000999');
+      const result = await Group.delete('10000000-0000-4000-8000-000000000999');
 
       expect(result).toBeUndefined();
     });
@@ -290,10 +291,10 @@ describe('Group Model', () => {
     it('returns count of members in group', async () => {
       pool.query.mockResolvedValue({ rows: [{ count: 5 }] });
 
-      const result = await Group.getMemberCount('g0000000-0000-0000-0000-000000000001');
+      const result = await Group.getMemberCount('10000000-0000-4000-8000-000000000001');
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('COUNT'), [
-        'g0000000-0000-0000-0000-000000000001',
+        '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toBe(5);
     });
@@ -301,7 +302,7 @@ describe('Group Model', () => {
     it('returns 0 for empty group', async () => {
       pool.query.mockResolvedValue({ rows: [{ count: 0 }] });
 
-      const result = await Group.getMemberCount('g0000000-0000-0000-0000-000000000002');
+      const result = await Group.getMemberCount('10000000-0000-4000-8000-000000000002');
 
       expect(result).toBe(0);
     });
@@ -311,7 +312,7 @@ describe('Group Model', () => {
     it('returns group members with role info', async () => {
       const mockMembers = [
         {
-          id: 'u0000000-0000-0000-0000-000000000001',
+          id: '00000000-0000-4000-8000-000000000001',
           username: 'user1',
           email: 'user1@test.com',
           student_id: 'S001',
@@ -319,7 +320,7 @@ describe('Group Model', () => {
           role_name: 'user',
         },
         {
-          id: 'u0000000-0000-0000-0000-000000000002',
+          id: '00000000-0000-4000-8000-000000000002',
           username: 'user2',
           email: 'user2@test.com',
           student_id: 'S002',
@@ -329,10 +330,10 @@ describe('Group Model', () => {
       ];
       pool.query.mockResolvedValue({ rows: mockMembers });
 
-      const result = await Group.getMembers('g0000000-0000-0000-0000-000000000001');
+      const result = await Group.getMembers('10000000-0000-4000-8000-000000000001');
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('SELECT u.id, u.username, u.email'), [
-        'g0000000-0000-0000-0000-000000000001',
+        '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toEqual(mockMembers);
     });
@@ -340,24 +341,127 @@ describe('Group Model', () => {
     it('returns empty array when group has no members', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await Group.getMembers('g0000000-0000-0000-0000-000000000001');
+      const result = await Group.getMembers('10000000-0000-4000-8000-000000000001');
 
       expect(result).toEqual([]);
     });
 
     it('orders members by username', async () => {
       const mockMembers = [
-        { id: 'u0000000-0000-0000-0000-000000000002', username: 'alice', email: 'alice@test.com', role_name: 'user' },
-        { id: 'u0000000-0000-0000-0000-000000000001', username: 'bob', email: 'bob@test.com', role_name: 'admin' },
+        { id: '00000000-0000-4000-8000-000000000002', username: 'alice', email: 'alice@test.com', role_name: 'user' },
+        { id: '00000000-0000-4000-8000-000000000001', username: 'bob', email: 'bob@test.com', role_name: 'admin' },
       ];
       pool.query.mockResolvedValue({ rows: mockMembers });
 
-      const result = await Group.getMembers('g0000000-0000-0000-0000-000000000001');
+      const result = await Group.getMembers('10000000-0000-4000-8000-000000000001');
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('ORDER BY u.username'), [
-        'g0000000-0000-0000-0000-000000000001',
+        '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toEqual(mockMembers);
+    });
+  });
+
+  describe('assignUserToGroup', () => {
+    let mockClient;
+
+    beforeEach(() => {
+      mockClient = {
+        query: jest.fn(),
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValue(mockClient);
+    });
+
+    it('assigns user to group successfully within a transaction', async () => {
+      // BEGIN, SELECT FOR UPDATE (group found, not full), UPDATE users, COMMIT
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '10000000-0000-4000-8000-000000000001',
+              max_members: 5,
+              member_count: 2,
+            },
+          ],
+        }) // SELECT ... FOR UPDATE
+        .mockResolvedValueOnce() // UPDATE users
+        .mockResolvedValueOnce(); // COMMIT
+
+      await Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001');
+
+      expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+      expect(mockClient.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FOR UPDATE'), [
+        '10000000-0000-4000-8000-000000000001',
+      ]);
+      expect(mockClient.query).toHaveBeenNthCalledWith(3, expect.stringContaining('UPDATE users SET group_id'), [
+        '10000000-0000-4000-8000-000000000001',
+        '00000000-0000-4000-8000-000000000001',
+      ]);
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('throws 404 error and rolls back if group not found', async () => {
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockResolvedValueOnce({ rows: [] }) // SELECT FOR UPDATE — no rows
+        .mockResolvedValueOnce(); // ROLLBACK
+
+      await expect(
+        Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000999')
+      ).rejects.toMatchObject({ message: 'Group not found', statusCode: 404 });
+
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('throws 409 error and rolls back if group is full', async () => {
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockResolvedValueOnce({
+          rows: [{ id: '10000000-0000-4000-8000-000000000001', max_members: 3, member_count: 3 }],
+        }) // SELECT FOR UPDATE — group is full
+        .mockResolvedValueOnce(); // ROLLBACK
+
+      await expect(
+        Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001')
+      ).rejects.toMatchObject({ message: 'Group is full', statusCode: 409 });
+
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('allows assigning user when group has unlimited capacity (max_members null)', async () => {
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockResolvedValueOnce({
+          rows: [{ id: '10000000-0000-4000-8000-000000000001', max_members: null, member_count: 999 }],
+        }) // SELECT FOR UPDATE
+        .mockResolvedValueOnce() // UPDATE users
+        .mockResolvedValueOnce(); // COMMIT
+
+      await expect(
+        Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001')
+      ).resolves.toBeUndefined();
+
+      expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('rolls back and rethrows on unexpected DB error', async () => {
+      const dbError = new Error('Connection lost');
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockRejectedValueOnce(dbError) // SELECT FOR UPDATE fails
+        .mockResolvedValueOnce(); // ROLLBACK
+
+      await expect(
+        Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001')
+      ).rejects.toThrow('Connection lost');
+
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
     });
   });
 });

@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { passwordSchema } from '../utils/schemas.js';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { setPasswordSchema, parseBody } from '../utils/schemas.js';
+import { API_BASE } from '../config.js';
 
 function SetPassword() {
   const [searchParams] = useSearchParams();
@@ -24,9 +23,9 @@ function SetPassword() {
       setError('Invalid or missing token. Please use the link from your email.');
       return;
     }
-    const pwResult = passwordSchema.safeParse(password);
-    if (!pwResult.success) {
-      setError(pwResult.error.issues[0]?.message || 'Invalid password');
+    const { error: pwError } = parseBody(setPasswordSchema, { password });
+    if (pwError) {
+      setError(pwError);
       return;
     }
     if (password !== confirmPassword) {

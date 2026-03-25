@@ -81,6 +81,11 @@ export const groupNameSchema = sanitizedString.pipe(
 
 // ── Endpoint schemas ─────────────────────────────────────────────────────────
 
+export const loginSchema = z.object({
+  username: sanitizedString.pipe(z.string().min(1, 'Username is required')),
+  password: z.string().min(1, 'Password is required'),
+});
+
 export const registerSchema = z.object({
   username: usernameSchema,
   email: emailSchema,
@@ -99,15 +104,14 @@ export const createUserSchema = z.object({
   groupId: z.string().optional().nullable(),
 });
 
-export const updateUserSchema = z
-  .object({
-    email: emailSchema.optional(),
-    firstName: nameSchema('First name').optional().nullable(),
-    lastName: nameSchema('Last name').optional().nullable(),
-    studentId: studentIdSchema,
-    enabled: z.boolean().optional(),
-  })
-  .partial();
+export const updateUserSchema = z.object({
+  email: emailSchema.optional(),
+  firstName: nameSchema('First name').optional().nullable(),
+  lastName: nameSchema('Last name').optional().nullable(),
+  studentId: studentIdSchema,
+  enabled: z.boolean().optional(),
+  role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
+});
 
 export const changePasswordSchema = z.object({
   newPassword: newPasswordSchema,
@@ -117,11 +121,9 @@ export const createGroupSchema = z.object({
   name: groupNameSchema,
 });
 
-export const updateGroupSchema = z
-  .object({
-    name: groupNameSchema,
-  })
-  .partial();
+export const updateGroupSchema = z.object({
+  name: groupNameSchema.optional(),
+});
 
 export const forgotPasswordSchema = z.object({
   email: emailSchema,

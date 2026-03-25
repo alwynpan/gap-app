@@ -4,8 +4,7 @@ import axios from 'axios';
 import { Upload, ArrowLeft, ArrowRight, Check, AlertTriangle, ChevronDown } from 'lucide-react';
 import Header from '../components/Header.jsx';
 import { sanitize } from '../utils/sanitize.js';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_BASE } from '../config.js';
 
 const FIELD_OPTIONS = [
   { value: '', label: '— Skip —' },
@@ -346,6 +345,9 @@ export default function ImportUsers() {
       } catch {
         setParseError('Failed to parse the CSV file. Please check it is valid UTF-8.');
       }
+    };
+    reader.onerror = () => {
+      setParseError('Failed to read file. Please try again.');
     };
     reader.readAsText(file);
   };

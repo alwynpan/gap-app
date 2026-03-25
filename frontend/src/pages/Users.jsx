@@ -7,8 +7,7 @@ import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
 import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
 import { parseBody, createUserSchema, updateUserSchema } from '../utils/schemas.js';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_BASE } from '../config.js';
 
 const emptyNewUser = {
   username: '',
@@ -35,6 +34,9 @@ function Users() {
   const [editingUser, setEditingUser] = useState(null);
   const [formError, setFormError] = useState('');
   const [sendingEmails, setSendingEmails] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Row selection & delete
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -98,6 +100,7 @@ function Users() {
       return;
     }
 
+    setCreating(true);
     try {
       await axios.post(`${API_BASE}/users`, {
         username: body.username,
@@ -122,6 +125,8 @@ function Users() {
       } else {
         setFormError('Failed to create user. Please try again.');
       }
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -145,6 +150,7 @@ function Users() {
       return;
     }
 
+    setSaving(true);
     try {
       const payload = {
         email: body.email,
@@ -159,8 +165,8 @@ function Users() {
 
       if (isAdmin) {
         // Only include role if it's different from the original
-        if (editingUser.roleName !== editingUser.originalRoleName) {
-          payload.role = editingUser.roleName;
+        if (body.role !== undefined) {
+          payload.role = body.role;
         }
       }
 
@@ -175,6 +181,8 @@ function Users() {
       fetchData();
     } catch (err) {
       setFormError(err.response?.data?.error || 'Failed to update user');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -251,26 +259,31 @@ function Users() {
       setDeleteModal(null);
       return;
     }
-    const results = await Promise.allSettled(
-      toDelete.map((u) => axios.delete(`${API_BASE}/users/${u.id}`).then(() => u))
-    );
-    const succeeded = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
-    const failed = results.filter((r) => r.status === 'rejected');
+    setDeleting(true);
+    try {
+      const results = await Promise.allSettled(
+        toDelete.map((u) => axios.delete(`${API_BASE}/users/${u.id}`).then(() => u))
+      );
+      const succeeded = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+      const failed = results.filter((r) => r.status === 'rejected');
 
-    if (succeeded.length > 0) {
-      showSuccess(succeeded.length === 1 ? 'User deleted successfully' : `Deleted ${succeeded.length} users`);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        succeeded.forEach((u) => next.delete(u.id));
-        return next;
-      });
+      if (succeeded.length > 0) {
+        showSuccess(succeeded.length === 1 ? 'User deleted successfully' : `Deleted ${succeeded.length} users`);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          succeeded.forEach((u) => next.delete(u.id));
+          return next;
+        });
+      }
+      if (failed.length > 0) {
+        const err = failed[0].reason;
+        showError(err?.response?.data?.error || `Failed to delete ${failed.length} user(s)`);
+      }
+      setDeleteModal(null);
+      fetchData();
+    } finally {
+      setDeleting(false);
     }
-    if (failed.length > 0) {
-      const err = failed[0].reason;
-      showError(err?.response?.data?.error || `Failed to delete ${failed.length} user(s)`);
-    }
-    setDeleteModal(null);
-    fetchData();
   };
 
   const handleSendSetupEmails = async () => {
@@ -879,8 +892,12 @@ function Users() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
-                  Create
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {creating ? 'Creating...' : 'Create'}
                 </button>
               </div>
             </form>
@@ -1001,8 +1018,12 @@ function Users() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
-                  Save
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </form>
@@ -1043,9 +1064,10 @@ function Users() {
               <button
                 type="button"
                 onClick={handleDeleteConfirmed}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Delete {deleteModal.length} user{deleteModal.length > 1 ? 's' : ''}
+                {deleting ? 'Deleting...' : `Delete ${deleteModal.length} user${deleteModal.length > 1 ? 's' : ''}`}
               </button>
             </div>
           </div>

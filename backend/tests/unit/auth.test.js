@@ -223,9 +223,9 @@ describe('Auth Routes', () => {
     it('accepts valid email format', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
       User.create.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'valid@example.com',
         student_id: null,
@@ -255,7 +255,7 @@ describe('Auth Routes', () => {
     });
 
     it('rejects when username already exists', async () => {
-      User.findByUsername.mockResolvedValue({ id: 'u0000000-0000-0000-0000-000000000001', username: 'existing' });
+      User.findByUsername.mockResolvedValue({ id: '00000000-0000-4000-8000-000000000001', username: 'existing' });
       User.findByEmail.mockResolvedValue(null);
 
       const authRoutes = require('../../src/routes/auth');
@@ -275,13 +275,13 @@ describe('Auth Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(409);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username already exists' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'An account with those details already exists' });
     });
 
     it('rejects when email already exists', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         email: 'existing@test.com',
       });
 
@@ -302,15 +302,15 @@ describe('Auth Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(409);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Email already exists' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'An account with those details already exists' });
     });
 
     it('successfully creates user with default role', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
       User.create.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         username: 'newuser',
         email: 'new@test.com',
         student_id: 'S123',
@@ -340,13 +340,13 @@ describe('Auth Routes', () => {
         firstName: 'Test',
         lastName: 'User',
         studentId: 'S123',
-        roleId: 'r0000000-0000-0000-0000-000000000003',
+        roleId: '20000000-0000-4000-8000-000000000003',
       });
       expect(mockReply.code).toHaveBeenCalledWith(201);
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'User registered successfully',
         user: {
-          id: 'u0000000-0000-0000-0000-000000000001',
+          id: '00000000-0000-4000-8000-000000000001',
           username: 'newuser',
           email: 'new@test.com',
           studentId: 'S123',
@@ -407,9 +407,9 @@ describe('Auth Routes', () => {
     it('successfully creates user without studentId', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
       User.create.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         username: 'newuser',
         email: 'new@test.com',
         student_id: null,
@@ -437,7 +437,7 @@ describe('Auth Routes', () => {
     it('handles registration error', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue({ id: 'r0000000-0000-0000-0000-000000000003', name: 'user' });
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
       User.create.mockRejectedValue(new Error('Database error'));
 
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
@@ -500,7 +500,7 @@ describe('Auth Routes', () => {
 
     it('rejects when user is disabled', async () => {
       User.findByUsername.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         username: 'test',
         enabled: false,
         password_hash: 'hash',
@@ -517,7 +517,7 @@ describe('Auth Routes', () => {
 
     it('rejects when user status is pending', async () => {
       User.findByUsername.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         username: 'test',
         enabled: true,
         status: 'pending',
@@ -537,7 +537,7 @@ describe('Auth Routes', () => {
 
     it('rejects when password is incorrect', async () => {
       User.findByUsername.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         username: 'test',
         enabled: true,
         password_hash: 'hash',
@@ -559,13 +559,13 @@ describe('Auth Routes', () => {
 
     it('successfully logs in user', async () => {
       const mockUser = {
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
         enabled: true,
         password_hash: 'hash',
         role_name: 'admin',
-        group_id: 'g0000000-0000-0000-0000-000000000001',
+        group_id: '10000000-0000-4000-8000-000000000001',
         group_name: 'Team A',
         student_id: 'S123',
       };
@@ -579,22 +579,22 @@ describe('Auth Routes', () => {
       await capturedHandlers['/auth/login']({ body: { username: 'testuser', password: 'correctpassword' } }, mockReply);
 
       expect(mockFastify.generateToken).toHaveBeenCalledWith({
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
         role: 'admin',
-        groupId: 'g0000000-0000-0000-0000-000000000001',
+        groupId: '10000000-0000-4000-8000-000000000001',
         groupName: 'Team A',
       });
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'Login successful',
         token: 'jwt-token-123',
         user: {
-          id: 'u0000000-0000-0000-0000-000000000001',
+          id: '00000000-0000-4000-8000-000000000001',
           username: 'testuser',
           email: 'test@test.com',
           role: 'admin',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupId: '10000000-0000-4000-8000-000000000001',
           groupName: 'Team A',
           studentId: 'S123',
         },
@@ -669,11 +669,11 @@ describe('Auth Routes', () => {
 
       const request = {
         user: {
-          id: 'u0000000-0000-0000-0000-000000000001',
+          id: '00000000-0000-4000-8000-000000000001',
           username: 'test',
           email: 'test@test.com',
           role: 'user',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupId: '10000000-0000-4000-8000-000000000001',
           groupName: 'Team',
         },
       };
@@ -688,36 +688,36 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       User.findById.mockResolvedValue({
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
         role_name: 'admin',
-        group_id: 'g0000000-0000-0000-0000-000000000001',
+        group_id: '10000000-0000-4000-8000-000000000001',
         group_name: 'Team A',
         student_id: null,
       });
 
       const request = {
         user: {
-          id: 'u0000000-0000-0000-0000-000000000001',
+          id: '00000000-0000-4000-8000-000000000001',
           username: 'testuser',
           email: 'test@test.com',
           role: 'admin',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupId: '10000000-0000-4000-8000-000000000001',
           groupName: 'Team A',
         },
       };
 
       await capturedHandlers['/auth/me'](request, mockReply);
 
-      expect(User.findById).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001');
+      expect(User.findById).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
       expect(mockReply.send).toHaveBeenCalledWith({
         user: {
-          id: 'u0000000-0000-0000-0000-000000000001',
+          id: '00000000-0000-4000-8000-000000000001',
           username: 'testuser',
           email: 'test@test.com',
           role: 'admin',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupId: '10000000-0000-4000-8000-000000000001',
           groupName: 'Team A',
           studentId: null,
         },
@@ -741,7 +741,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       const mockUser = {
-        id: 'u0000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         email: 'user@test.com',
         username: 'testuser',
         status: 'active',
@@ -754,8 +754,8 @@ describe('Auth Routes', () => {
       await capturedHandlers['/auth/forgot-password']({ body: { email: 'user@test.com' } }, mockReply);
 
       expect(User.findByEmail).toHaveBeenCalledWith('user@test.com');
-      expect(PasswordResetToken.deleteStaleForUser).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001');
-      expect(PasswordResetToken.create).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', 'reset', 1);
+      expect(PasswordResetToken.deleteStaleForUser).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
+      expect(PasswordResetToken.create).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', 'reset', 1);
       expect(sendPasswordResetEmail).toHaveBeenCalledWith(mockUser, 'resettoken123');
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'If that email is registered, a reset link has been sent.',
@@ -923,7 +923,7 @@ describe('Auth Routes', () => {
 
       PasswordResetToken.findByToken.mockResolvedValue({
         id: 't1',
-        user_id: 'u0000000-0000-0000-0000-000000000001',
+        user_id: '00000000-0000-4000-8000-000000000001',
         token_type: 'reset',
         used: false,
         expires_at: new Date(Date.now() + 3600000),
@@ -933,7 +933,7 @@ describe('Auth Routes', () => {
 
       await capturedHandlers['/auth/set-password']({ body: { token: 'validtoken', password: 'newpass1' } }, mockReply);
 
-      expect(User.updatePassword).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000001', 'newpass1');
+      expect(User.updatePassword).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', 'newpass1');
       expect(User.activate).not.toHaveBeenCalled();
       expect(PasswordResetToken.markUsed).toHaveBeenCalledWith('t1');
       expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
@@ -945,7 +945,7 @@ describe('Auth Routes', () => {
 
       PasswordResetToken.findByToken.mockResolvedValue({
         id: 't2',
-        user_id: 'u0000000-0000-0000-0000-000000000002',
+        user_id: '00000000-0000-4000-8000-000000000002',
         token_type: 'setup',
         used: false,
         expires_at: new Date(Date.now() + 3600000),
@@ -956,7 +956,7 @@ describe('Auth Routes', () => {
 
       await capturedHandlers['/auth/set-password']({ body: { token: 'setuptoken', password: 'newpass1' } }, mockReply);
 
-      expect(User.activate).toHaveBeenCalledWith('u0000000-0000-0000-0000-000000000002');
+      expect(User.activate).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002');
       expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
     });
 

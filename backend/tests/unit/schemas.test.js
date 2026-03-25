@@ -25,6 +25,7 @@ const {
   updateGroupSchema,
   forgotPasswordSchema,
   setPasswordSchema,
+  validateUUID,
 } = require('../../src/utils/schemas');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -430,6 +431,31 @@ describe('updateUserSchema', () => {
   it('rejects invalid email in update', () => {
     expect(err(updateUserSchema, { email: 'not-valid' })).toBe('Invalid email format');
   });
+
+  it('accepts optional username field (M1)', () => {
+    const data = ok(updateUserSchema, { username: 'alice' });
+    expect(data.username).toBe('alice');
+  });
+
+  it('rejects invalid username characters (M1)', () => {
+    expect(err(updateUserSchema, { username: 'bad user' })).toBe(
+      'Username may only contain letters, numbers, underscores, hyphens, and dots'
+    );
+  });
+
+  it('accepts optional groupId as UUID (M1)', () => {
+    const data = ok(updateUserSchema, { groupId: '10000000-0000-4000-8000-000000000001' });
+    expect(data.groupId).toBe('10000000-0000-4000-8000-000000000001');
+  });
+
+  it('accepts groupId as null (M1)', () => {
+    const data = ok(updateUserSchema, { groupId: null });
+    expect(data.groupId).toBeNull();
+  });
+
+  it('rejects groupId that is not a UUID (M1)', () => {
+    expect(err(updateUserSchema, { groupId: 'not-a-uuid' })).toEqual(expect.any(String));
+  });
 });
 
 // ── changePasswordSchema ──────────────────────────────────────────────────────
@@ -528,6 +554,42 @@ describe('forgotPasswordSchema', () => {
 
   it('rejects empty email', () => {
     expect(err(forgotPasswordSchema, { email: '' })).toBe('Email is required');
+  });
+
+  it('rejects invalid email format — no @ symbol (M2)', () => {
+    expect(err(forgotPasswordSchema, { email: 'invalidemail' })).toBe('Invalid email format');
+  });
+
+  it('rejects invalid email format — no domain (M2)', () => {
+    expect(err(forgotPasswordSchema, { email: 'user@' })).toBe('Invalid email format');
+  });
+});
+
+// ── validateUUID ──────────────────────────────────────────────────────────────
+
+describe('validateUUID', () => {
+  it('returns true for a valid UUID v4', () => {
+    expect(validateUUID('10000000-0000-4000-8000-000000000001')).toBe(true);
+  });
+
+  it('returns true for a real UUID', () => {
+    expect(validateUUID('550e8400-e29b-41d4-a716-446655440000')).toBe(true);
+  });
+
+  it('returns false for a non-UUID string', () => {
+    expect(validateUUID('not-a-uuid')).toBe(false);
+  });
+
+  it('returns false for an empty string', () => {
+    expect(validateUUID('')).toBe(false);
+  });
+
+  it('returns false for a UUID with wrong segment lengths', () => {
+    expect(validateUUID('10000000-0000-4000-8000-00000000001')).toBe(false);
+  });
+
+  it('is case-insensitive', () => {
+    expect(validateUUID('10000000-0000-4000-8000-000000000001'.toUpperCase())).toBe(true);
   });
 });
 

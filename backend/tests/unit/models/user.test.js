@@ -121,7 +121,9 @@ describe('User Model', () => {
 
       const result = await User.findByEmail('test@test.com');
 
-      expect(pool.query).toHaveBeenCalledWith('SELECT * FROM users WHERE email = $1', ['test@test.com']);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('FROM users WHERE email = $1'), [
+        'test@test.com',
+      ]);
       expect(result).toEqual(mockUser);
     });
 
@@ -304,12 +306,12 @@ describe('User Model', () => {
       expect(result).toEqual(mockUpdatedUser);
     });
 
-    it('returns undefined when user not found', async () => {
+    it('returns null when user not found', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
       const result = await User.update('u0000000-0000-0000-0000-000000000999', { username: 'newname' });
 
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
     });
   });
 

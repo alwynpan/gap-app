@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { loginSchema, parseBody } from '../utils/schemas.js';
 
 function Login() {
   const [username, setUsername] = useState('');
@@ -13,6 +14,13 @@ function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    const { error: validationError } = parseBody(loginSchema, { username, password });
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
 
     const result = await login(username, password);

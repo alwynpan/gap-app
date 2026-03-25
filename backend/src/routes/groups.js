@@ -1,6 +1,6 @@
 const Group = require('../models/Group');
 const User = require('../models/User');
-const { parseBody, createGroupSchema, updateGroupSchema } = require('../utils/schemas');
+const { parseBody, createGroupSchema, updateGroupSchema, validateUUID } = require('../utils/schemas');
 
 async function groupsRoutes(fastify, _options) {
   // Get all groups (authenticated users)
@@ -58,6 +58,9 @@ async function groupsRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const groupId = request.params.id;
+        if (!validateUUID(groupId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
         const group = await Group.findById(groupId);
 
         if (!group) {
@@ -151,6 +154,9 @@ async function groupsRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const groupId = request.params.id;
+        if (!validateUUID(groupId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
         const { data: body, error: validationError } = parseBody(updateGroupSchema, request.body);
         if (validationError) {
           return reply.code(400).send({ error: validationError });
@@ -209,6 +215,9 @@ async function groupsRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const groupId = request.params.id;
+        if (!validateUUID(groupId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
 
         const deletedGroup = await Group.delete(groupId);
 
@@ -237,6 +246,9 @@ async function groupsRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const groupId = request.params.id;
+        if (!validateUUID(groupId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
         const userId = request.user.id;
 
         const group = await Group.findById(groupId);
@@ -257,12 +269,14 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'You are already in a group. Leave your current group first.' });
         }
 
-        // Check group capacity
+        // Optimistic capacity pre-check (fast path) — the transactional lock inside
+        // assignUserToGroup prevents race conditions for near-simultaneous requests
         if (group.max_members !== null && group.member_count >= group.max_members) {
           return reply.code(409).send({ error: 'Group is full' });
         }
 
-        await User.updateGroup(userId, groupId);
+        // Assign user to group inside a transaction with row-level lock to prevent race conditions (H2)
+        await Group.assignUserToGroup(userId, groupId);
 
         return reply.send({ message: 'Successfully joined group', groupId, groupName: group.name });
       } catch (error) {
@@ -285,6 +299,9 @@ async function groupsRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const groupId = request.params.id;
+        if (!validateUUID(groupId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
         const userId = request.user.id;
 
         const group = await Group.findById(groupId);

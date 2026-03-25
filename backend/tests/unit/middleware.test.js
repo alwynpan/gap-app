@@ -23,7 +23,7 @@ describe('Auth Middleware', () => {
     jest.resetModules();
     mockJwt = {
       sign: jest.fn().mockResolvedValue('signed-token'),
-      verify: jest.fn().mockResolvedValue({ id: 'u0000000-0000-0000-0000-000000000001', username: 'test' }),
+      verify: jest.fn().mockResolvedValue({ id: '00000000-0000-4000-8000-000000000001', username: 'test' }),
     };
 
     fastify = {
@@ -62,9 +62,9 @@ describe('Auth Middleware', () => {
     await authPlugin(fastify, {});
 
     const generateToken = fastify.decorate.mock.calls.find((call) => call[0] === 'generateToken')[1];
-    const token = await generateToken({ id: 'u0000000-0000-0000-0000-000000000001' });
+    const token = await generateToken({ id: '00000000-0000-4000-8000-000000000001' });
 
-    expect(mockJwt.sign).toHaveBeenCalledWith({ id: 'u0000000-0000-0000-0000-000000000001' });
+    expect(mockJwt.sign).toHaveBeenCalledWith({ id: '00000000-0000-4000-8000-000000000001' });
     expect(token).toBe('signed-token');
   });
 
@@ -76,37 +76,22 @@ describe('Auth Middleware', () => {
     const result = await verifyToken('test-token');
 
     expect(mockJwt.verify).toHaveBeenCalledWith('test-token');
-    expect(result).toEqual({ id: 'u0000000-0000-0000-0000-000000000001', username: 'test' });
+    expect(result).toEqual({ id: '00000000-0000-4000-8000-000000000001', username: 'test' });
   });
 });
 
 describe('RBAC Middleware', () => {
   let fastify;
-  let mockBcrypt;
 
   beforeEach(() => {
     jest.resetModules();
-    mockBcrypt = {
-      hash: jest.fn().mockResolvedValue('hashed'),
-      compare: jest.fn().mockResolvedValue(true),
-    };
 
     fastify = {
-      register: jest.fn().mockImplementation(async () => {
-        fastify.bcrypt = mockBcrypt;
-      }),
+      register: jest.fn(),
       decorate: jest.fn(),
-      bcrypt: mockBcrypt,
       checkRole: null,
     };
     jest.clearAllMocks();
-  });
-
-  it('registers bcrypt plugin', async () => {
-    const rbacPlugin = require('../../src/middleware/rbac');
-    await rbacPlugin(fastify, {});
-
-    expect(fastify.register).toHaveBeenCalled();
   });
 
   it('decorates with checkRole', async () => {
@@ -128,20 +113,6 @@ describe('RBAC Middleware', () => {
     await rbacPlugin(fastify, {});
 
     expect(fastify.decorate).toHaveBeenCalledWith('requireAssignmentManager', expect.any(Function));
-  });
-
-  it('decorates with hashPassword', async () => {
-    const rbacPlugin = require('../../src/middleware/rbac');
-    await rbacPlugin(fastify, {});
-
-    expect(fastify.decorate).toHaveBeenCalledWith('hashPassword', expect.any(Function));
-  });
-
-  it('decorates with verifyPassword', async () => {
-    const rbacPlugin = require('../../src/middleware/rbac');
-    await rbacPlugin(fastify, {});
-
-    expect(fastify.decorate).toHaveBeenCalledWith('verifyPassword', expect.any(Function));
   });
 
   it('checkRole rejects unauthenticated', async () => {
@@ -178,26 +149,6 @@ describe('RBAC Middleware', () => {
     await checkRole({ user: { role: 'user' } }, mockReply, ['admin']);
 
     expect(mockReply.code).toHaveBeenCalledWith(403);
-  });
-
-  it('hashPassword hashes password', async () => {
-    const rbacPlugin = require('../../src/middleware/rbac');
-    await rbacPlugin(fastify, {});
-
-    const hashPassword = fastify.decorate.mock.calls.find((call) => call[0] === 'hashPassword')[1];
-    await hashPassword('plain');
-
-    expect(mockBcrypt.hash).toHaveBeenCalledWith('plain');
-  });
-
-  it('verifyPassword verifies password', async () => {
-    const rbacPlugin = require('../../src/middleware/rbac');
-    await rbacPlugin(fastify, {});
-
-    const verifyPassword = fastify.decorate.mock.calls.find((call) => call[0] === 'verifyPassword')[1];
-    await verifyPassword('plain', 'hashed');
-
-    expect(mockBcrypt.compare).toHaveBeenCalledWith('plain', 'hashed');
   });
 
   it('requireAssignmentManager allows assignment_manager', async () => {

@@ -1,9 +1,6 @@
 const fp = require('fastify-plugin');
 
 async function rbacPlugin(fastify, _options) {
-  // Register bcrypt plugin
-  await fastify.register(require('fastify-bcrypt'));
-
   // Decorate fastify with RBAC helpers
   fastify.decorate('checkRole', async (request, reply, requiredRoles) => {
     if (!request.user) {
@@ -29,16 +26,6 @@ async function rbacPlugin(fastify, _options) {
   // Helper to check if user is assignment_manager or admin
   fastify.decorate('requireAssignmentManager', async (request, reply) => {
     return fastify.checkRole(request, reply, ['assignment_manager', 'admin']);
-  });
-
-  // Password hashing helper
-  fastify.decorate('hashPassword', async (password) => {
-    return await fastify.bcrypt.hash(password);
-  });
-
-  // Password verification helper
-  fastify.decorate('verifyPassword', async (password, hash) => {
-    return await fastify.bcrypt.compare(password, hash);
   });
 }
 

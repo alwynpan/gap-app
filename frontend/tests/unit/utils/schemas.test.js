@@ -3,6 +3,7 @@
 import { sanitize } from '@/utils/sanitize';
 import {
   parseBody,
+  loginSchema,
   usernameSchema,
   emailSchema,
   passwordSchema,
@@ -14,6 +15,7 @@ import {
   changePasswordSchema,
   createGroupSchema,
   updateGroupSchema,
+  updateUserSchema,
   forgotPasswordSchema,
   setPasswordSchema,
 } from '@/utils/schemas';
@@ -365,6 +367,36 @@ describe('groupNameSchema', () => {
   });
 });
 
+// ── loginSchema ───────────────────────────────────────────────────────────────
+
+describe('loginSchema', () => {
+  it('accepts valid username and password', () => {
+    const data = ok(loginSchema, { username: 'alice', password: 'secret' });
+    expect(data.username).toBe('alice');
+    expect(data.password).toBe('secret');
+  });
+
+  it('rejects empty username', () => {
+    expect(err(loginSchema, { username: '', password: 'secret' })).toBe('Username is required');
+  });
+
+  it('rejects empty password', () => {
+    expect(err(loginSchema, { username: 'alice', password: '' })).toBe('Password is required');
+  });
+
+  it('sanitizes username (strips HTML)', () => {
+    // DOMPurify strips script tags, leaving empty string → fails min(1)
+    expect(err(loginSchema, { username: '<script>alert(1)</script>', password: 'secret' })).toBe(
+      'Username is required'
+    );
+  });
+
+  it('does not sanitize password (preserves special characters)', () => {
+    const data = ok(loginSchema, { username: 'alice', password: 'p@$$<w>ord' });
+    expect(data.password).toBe('p@$$<w>ord');
+  });
+});
+
 // ── registerSchema ────────────────────────────────────────────────────────────
 
 describe('registerSchema', () => {
@@ -414,12 +446,40 @@ describe('createGroupSchema', () => {
 });
 
 describe('updateGroupSchema', () => {
-  it('accepts empty body', () => {
+  it('accepts empty body (name is optional)', () => {
     expect(ok(updateGroupSchema, {})).toBeDefined();
   });
 
-  it('accepts partial update', () => {
+  it('accepts partial update with name', () => {
     expect(ok(updateGroupSchema, { name: 'Beta' }).name).toBe('Beta');
+  });
+
+  it('rejects empty string for name when provided', () => {
+    expect(err(updateGroupSchema, { name: '' })).toBe('Group name is required');
+  });
+});
+
+// ── updateUserSchema ──────────────────────────────────────────────────────────
+
+describe('updateUserSchema', () => {
+  it('accepts empty body (all fields optional)', () => {
+    expect(ok(updateUserSchema, {})).toBeDefined();
+  });
+
+  it('accepts valid role values', () => {
+    expect(ok(updateUserSchema, { role: 'admin' }).role).toBe('admin');
+    expect(ok(updateUserSchema, { role: 'assignment_manager' }).role).toBe('assignment_manager');
+    expect(ok(updateUserSchema, { role: 'user' }).role).toBe('user');
+  });
+
+  it('rejects invalid role value', () => {
+    expect(err(updateUserSchema, { role: 'superuser' })).toEqual(expect.any(String));
+  });
+
+  it('accepts update without role (role is optional)', () => {
+    const result = ok(updateUserSchema, { email: 'new@example.com' });
+    expect(result.email).toBe('new@example.com');
+    expect(result.role).toBeUndefined();
   });
 });
 

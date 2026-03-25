@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext.jsx';
+import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Footer from './components/Footer.jsx';
 
@@ -13,63 +13,106 @@ import Users from './pages/Users.jsx';
 import ImportUsers from './pages/ImportUsers.jsx';
 import Groups from './pages/Groups.jsx';
 
+function PublicRoute({ children }) {
+  const { user } = useAuth();
+  return user ? <Navigate to="/dashboard" replace /> : children;
+}
+
+function AppRoutes() {
+  const { registrationEnabled } = useAuth();
+
+  return (
+    <Routes>
+      {/* Public Routes */}
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <Login />
+          </PublicRoute>
+        }
+      />
+      {registrationEnabled && (
+        <Route
+          path="/register"
+          element={
+            <PublicRoute>
+              <Register />
+            </PublicRoute>
+          }
+        />
+      )}
+      <Route
+        path="/forgot-password"
+        element={
+          <PublicRoute>
+            <ForgotPassword />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/set-password"
+        element={
+          <PublicRoute>
+            <SetPassword />
+          </PublicRoute>
+        }
+      />
+
+      {/* Protected Routes */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Admin/Assignment Manager Routes */}
+      <Route
+        path="/users"
+        element={
+          <ProtectedRoute requireAssignmentManager>
+            <Users />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/users/import"
+        element={
+          <ProtectedRoute requireAssignmentManager>
+            <ImportUsers />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Admin Only Routes */}
+      <Route
+        path="/groups"
+        element={
+          <ProtectedRoute requireAdmin>
+            <Groups />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Default redirect */}
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+      {/* 404 - Redirect to dashboard */}
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+}
+
 function App() {
   return (
     <AuthProvider>
       <Router>
         <div className="min-h-screen flex flex-col">
           <div className="flex-1">
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/set-password" element={<SetPassword />} />
-
-              {/* Protected Routes */}
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
-
-              {/* Admin/Assignment Manager Routes */}
-              <Route
-                path="/users"
-                element={
-                  <ProtectedRoute requireAssignmentManager>
-                    <Users />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/users/import"
-                element={
-                  <ProtectedRoute requireAssignmentManager>
-                    <ImportUsers />
-                  </ProtectedRoute>
-                }
-              />
-
-              {/* Admin Only Routes */}
-              <Route
-                path="/groups"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <Groups />
-                  </ProtectedRoute>
-                }
-              />
-
-              {/* Default redirect */}
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
-              {/* 404 - Redirect to dashboard */}
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
+            <AppRoutes />
           </div>
           <Footer />
         </div>

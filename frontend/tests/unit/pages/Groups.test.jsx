@@ -386,9 +386,8 @@ describe('Groups page', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('shows error when create group fails', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  it('shows error inside modal when create group fails', async () => {
+    const user = userEvent.setup();
     await setupPage([]);
     axios.post.mockRejectedValue(new Error('network'));
 
@@ -398,8 +397,9 @@ describe('Groups page', () => {
 
     await waitFor(() => expect(screen.getByText('Failed to create group')).toBeInTheDocument());
 
-    jest.advanceTimersByTime(3000);
-    await waitFor(() => expect(screen.queryByText('Failed to create group')).not.toBeInTheDocument());
+    // Error clears when the modal is cancelled
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.queryByText('Failed to create group')).not.toBeInTheDocument();
   });
 
   it('cancels create modal and resets fields', async () => {
@@ -884,6 +884,35 @@ describe('Groups page', () => {
         expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'Team2' });
         expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'Team3' });
         expect(screen.getByText('Created 3 groups')).toBeInTheDocument();
+      });
+    });
+
+    it('creates groups with member limit when limit is set', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '2');
+      await user.type(screen.getByPlaceholderText(/unlimited/i), '30');
+
+      axios.post.mockResolvedValue({});
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
+
+      await user.click(screen.getByRole('button', { name: /create 2 groups/i }));
+
+      await waitFor(() => {
+        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), {
+          name: 'Team1',
+          maxMembers: 30,
+        });
+        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), {
+          name: 'Team2',
+          maxMembers: 30,
+        });
       });
     });
 

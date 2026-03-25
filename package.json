@@ -19,19 +19,6 @@
     "build": "npm run build:backend && npm run build:frontend",
     "prepare": "husky || true"
   },
-  "lint-staged": {
-    "backend/**/*.js": [
-      "prettier --write",
-      "eslint --fix"
-    ],
-    "frontend/**/*.{js,jsx}": [
-      "prettier --write",
-      "eslint --fix"
-    ],
-    "**/*.{json,md}": [
-      "prettier --write"
-    ]
-  },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "eslint": "^9.28.0",

@@ -80,6 +80,52 @@ class Group {
     return result.rows[0].count;
   }
 
+  /**
+   * Atomically assign a user to a group, checking capacity under a row-level lock.
+   * Throws an error with a `statusCode` property on failure so the caller can respond appropriately.
+   */
+  static async assignUserToGroup(userId, groupId) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Lock the group row and get current capacity info atomically
+      const groupResult = await client.query(
+        `SELECT g.*,
+           (SELECT COUNT(*)::int FROM users WHERE group_id = g.id AND enabled = true) AS member_count
+         FROM groups g
+         WHERE g.id = $1
+         FOR UPDATE`,
+        [groupId]
+      );
+
+      const group = groupResult.rows[0];
+      if (!group) {
+        const err = new Error('Group not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      if (group.max_members !== null && group.member_count >= group.max_members) {
+        const err = new Error('Group is full');
+        err.statusCode = 409;
+        throw err;
+      }
+
+      await client.query('UPDATE users SET group_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [
+        groupId,
+        userId,
+      ]);
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   static async getMembers(groupId) {
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.student_id, u.enabled, u.created_at,

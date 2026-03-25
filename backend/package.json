@@ -16,15 +16,6 @@
     "format:write": "prettier --write .",
     "build": "echo 'Backend build complete'"
   },
-  "lint-staged": {
-    "*.js": [
-      "prettier --write",
-      "eslint --fix"
-    ],
-    "*.{json,md}": [
-      "prettier --write"
-    ]
-  },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
     "@fastify/helmet": "^13.0.2",
@@ -35,7 +26,6 @@
     "dompurify": "^3.3.3",
     "dotenv": "^17.3.1",
     "fastify": "^5.8.2",
-    "fastify-bcrypt": "^1.0.1",
     "fastify-plugin": "^5.1.0",
     "isomorphic-dompurify": "^3.7.1",
     "nodemailer": "^8.0.3",

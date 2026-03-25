@@ -6,8 +6,7 @@ import { formatRoleName } from '../utils/formatting.js';
 import { Power, Gauge, Trash2, UserMinus, ChevronDown, ChevronRight, Check, Pencil } from 'lucide-react';
 import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
 import { parseBody, createGroupSchema, updateGroupSchema } from '../utils/schemas.js';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_BASE } from '../config.js';
 
 function IconBtn({ onClick, label, className, children }) {
   return (
@@ -53,6 +52,15 @@ function Groups() {
 
   // Edit group modal
   const [editingGroup, setEditingGroup] = useState(null); // { id, name, maxMembers }
+
+  // Action loading states
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Form-level errors (shown inside modals, not on the main page)
+  const [createFormError, setCreateFormError] = useState('');
+  const [editFormError, setEditFormError] = useState('');
 
   // Expanded row state
   const [expandedGroup, setExpandedGroup] = useState(null);
@@ -126,12 +134,14 @@ function Groups() {
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
+    setCreateFormError('');
     const { data: body, error: validationError } = parseBody(createGroupSchema, { name: newGroupName });
     if (validationError) {
-      showError(validationError);
+      setCreateFormError(validationError);
       return;
     }
     const body_name = body.name;
+    setCreating(true);
     try {
       const requestBody = { name: body_name };
       if (newGroupMaxMembers !== '') {
@@ -144,7 +154,9 @@ function Groups() {
       setShowCreateModal(false);
       fetchGroups();
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to create group');
+      setCreateFormError(err.response?.data?.error || 'Failed to create group');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -163,19 +175,21 @@ function Groups() {
       return;
     }
 
+    setEditFormError('');
     const { data: body, error: validationError } = parseBody(updateGroupSchema, { name: editingGroup.name });
     if (validationError) {
-      showError(validationError);
+      setEditFormError(validationError);
       return;
     }
 
     const maxMembersVal = editingGroup.maxMembers.trim();
     const maxMembers = maxMembersVal === '' ? null : parseInt(maxMembersVal, 10);
     if (maxMembers !== null && (isNaN(maxMembers) || maxMembers < 1)) {
-      showError('Max members must be a positive number');
+      setEditFormError('Max members must be a positive number');
       return;
     }
 
+    setSaving(true);
     try {
       await axios.put(`${API_BASE}/groups/${editingGroup.id}`, {
         name: body.name,
@@ -185,7 +199,9 @@ function Groups() {
       setEditingGroup(null);
       fetchGroups();
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to update group');
+      setEditFormError(err.response?.data?.error || 'Failed to update group');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -238,7 +254,7 @@ function Groups() {
 
   const handleBulkCreate = async (e) => {
     e.preventDefault();
-    const { prefix, count } = bulkCreateModal;
+    const { prefix, count, maxMembers } = bulkCreateModal;
     if (!prefix.trim()) {
       return;
     }
@@ -246,12 +262,15 @@ function Groups() {
     if (isNaN(n) || n < 1) {
       return;
     }
+    const maxMembersVal = maxMembers.trim() === '' ? null : parseInt(maxMembers, 10);
     const results = await Promise.allSettled(
-      Array.from({ length: n }, (_, i) =>
-        axios.post(`${API_BASE}/groups`, {
-          name: `${prefix.trim()}${String(i + 1).padStart(n < 10 ? 1 : 2, '0')}`,
-        })
-      )
+      Array.from({ length: n }, (_, i) => {
+        const body = { name: `${prefix.trim()}${String(i + 1).padStart(n < 10 ? 1 : 2, '0')}` };
+        if (maxMembersVal !== null) {
+          body.maxMembers = maxMembersVal;
+        }
+        return axios.post(`${API_BASE}/groups`, body);
+      })
     );
     const succeeded = results.filter((r) => r.status === 'fulfilled').length;
     const failed = results.filter((r) => r.status === 'rejected');
@@ -286,6 +305,7 @@ function Groups() {
 
   const handleDeleteConfirmed = async () => {
     const toDelete = deleteModal;
+    setDeleting(true);
     try {
       await Promise.all(toDelete.map((g) => axios.delete(`${API_BASE}/groups/${g.id}`)));
       showSuccess(toDelete.length === 1 ? 'Group deleted successfully' : `Deleted ${toDelete.length} groups`);
@@ -301,6 +321,8 @@ function Groups() {
       fetchGroups();
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to delete group');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -352,6 +374,7 @@ function Groups() {
       if (groupId) {
         fetchGroupMembers(groupId);
       }
+      fetchGroups();
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to remove member');
     }
@@ -369,6 +392,7 @@ function Groups() {
       if (groupId) {
         fetchGroupMembers(groupId);
       }
+      fetchGroups();
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to add member');
     }
@@ -648,7 +672,7 @@ function Groups() {
                 </button>
               )}
               <button
-                onClick={() => setBulkCreateModal({ prefix: '', count: '1' })}
+                onClick={() => setBulkCreateModal({ prefix: '', count: '1', maxMembers: '' })}
                 className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
               >
                 Bulk Create
@@ -721,6 +745,7 @@ function Groups() {
                   placeholder="Leave blank for unlimited"
                 />
               </div>
+              {createFormError && <p className="mb-3 text-sm text-red-600">{createFormError}</p>}
               <div className="flex justify-end space-x-3">
                 <button
                   type="button"
@@ -728,13 +753,18 @@ function Groups() {
                     setShowCreateModal(false);
                     setNewGroupName('');
                     setNewGroupMaxMembers('');
+                    setCreateFormError('');
                   }}
                   className="px-4 py-2 text-gray-700 hover:text-gray-900"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
-                  Create
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {creating ? 'Creating...' : 'Create'}
                 </button>
               </div>
             </form>
@@ -771,16 +801,24 @@ function Groups() {
                   placeholder="Leave blank for unlimited"
                 />
               </div>
+              {editFormError && <p className="mb-3 text-sm text-red-600">{editFormError}</p>}
               <div className="flex justify-end space-x-3">
                 <button
                   type="button"
-                  onClick={() => setEditingGroup(null)}
+                  onClick={() => {
+                    setEditingGroup(null);
+                    setEditFormError('');
+                  }}
                   className="px-4 py-2 text-gray-700 hover:text-gray-900"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
-                  Save
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </form>
@@ -814,6 +852,19 @@ function Groups() {
                   onChange={(e) => setBulkCreateModal({ ...bulkCreateModal, count: e.target.value })}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
                   placeholder="e.g. 10"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Member limit <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={bulkCreateModal.maxMembers}
+                  onChange={(e) => setBulkCreateModal({ ...bulkCreateModal, maxMembers: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Unlimited"
                 />
               </div>
               {preview.length > 0 && (
@@ -927,9 +978,10 @@ function Groups() {
               <button
                 type="button"
                 onClick={handleDeleteConfirmed}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Delete {deleteModal.length} group{deleteModal.length > 1 ? 's' : ''}
+                {deleting ? 'Deleting...' : `Delete ${deleteModal.length} group${deleteModal.length > 1 ? 's' : ''}`}
               </button>
             </div>
           </div>

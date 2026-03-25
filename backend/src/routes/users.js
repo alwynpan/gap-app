@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Group = require('../models/Group');
+const Role = require('../models/Role');
 const PasswordResetToken = require('../models/PasswordResetToken');
 const { sendPasswordSetupEmail } = require('../services/email');
 const {
@@ -8,6 +9,7 @@ const {
   updateUserSchema,
   changePasswordSchema,
   importUserRowSchema,
+  validateUUID,
 } = require('../utils/schemas');
 
 async function usersRoutes(fastify, _options) {
@@ -58,6 +60,9 @@ async function usersRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const userId = request.params.id;
+        if (!validateUUID(userId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
         const user = await User.findById(userId);
 
         if (!user) {
@@ -116,7 +121,6 @@ async function usersRoutes(fastify, _options) {
         }
 
         // Get role ID by name lookup (needed before group check to know effective role)
-        const Role = require('../models/Role');
         const effectiveRole = role || 'user';
         const roleRecord = await Role.findByName(effectiveRole);
         if (!roleRecord) {
@@ -197,6 +201,9 @@ async function usersRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const userId = request.params.id;
+        if (!validateUUID(userId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
         const { groupId } = request.body;
 
         if (groupId === undefined) {
@@ -209,18 +216,14 @@ async function usersRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
-        // If groupId is not null, verify group exists and has capacity
+        // If groupId is not null, assign inside a transaction with row-level lock (H2)
         if (groupId !== null) {
-          const group = await Group.findById(groupId);
-          if (!group) {
-            return reply.code(404).send({ error: 'Group not found' });
-          }
-          if (group.max_members !== null && group.member_count >= group.max_members) {
-            return reply.code(400).send({ error: 'Group is full' });
-          }
+          await Group.assignUserToGroup(userId, groupId);
+        } else {
+          await User.updateGroup(userId, null);
         }
 
-        const updatedUser = await User.updateGroup(userId, groupId);
+        const updatedUser = await User.findById(userId);
 
         return reply.send({
           message: 'User group updated successfully',
@@ -264,20 +267,26 @@ async function usersRoutes(fastify, _options) {
         if (isAssignmentManager && targetUser.role_name === 'admin') {
           return reply.code(403).send({ error: 'Forbidden: Assignment managers cannot edit admin users' });
         }
+
+        // Attach to request so the handler can reuse it without a second DB call
+        request.targetUser = targetUser;
       },
     },
     async (request, reply) => {
       try {
         const userId = request.params.id;
+        if (!validateUUID(userId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
         const { data: body, error: validationError } = parseBody(updateUserSchema, request.body);
         if (validationError) {
           return reply.code(400).send({ error: validationError });
         }
 
-        const { email, firstName, lastName, studentId, role, enabled } = body;
-        const { username, groupId } = request.body;
+        const { email, firstName, lastName, studentId, role, enabled, username, groupId } = body;
 
-        const user = await User.findById(userId);
+        // Reuse the user already fetched in preHandler (M3)
+        const user = request.targetUser;
         if (!user) {
           return reply.code(404).send({ error: 'User not found' });
         }
@@ -313,7 +322,6 @@ async function usersRoutes(fastify, _options) {
           }
           // Resolve role name to roleId if provided and changed
           if (role !== undefined && role !== user.role_name) {
-            const Role = require('../models/Role');
             const roleRecord = await Role.findByName(role);
             if (!roleRecord) {
               return reply.code(400).send({ error: `Invalid role: ${role}` });
@@ -335,9 +343,14 @@ async function usersRoutes(fastify, _options) {
 
         const updatedUser = await User.update(userId, updates);
 
+        if (!updatedUser) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
+
+        const { password_hash: _ph, ...safeUser } = updatedUser;
         return reply.send({
           message: 'User updated successfully',
-          user: updatedUser,
+          user: safeUser,
         });
       } catch (error) {
         console.error('Update user error:', error);
@@ -409,6 +422,9 @@ async function usersRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const userId = request.params.id;
+        if (!validateUUID(userId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
 
         // Prevent deleting yourself
         if (userId === request.user.id) {
@@ -445,13 +461,17 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
+        const MAX_IMPORT_SIZE = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
         const { users: usersToImport, conflictAction = 'skip', sendSetupEmail = false } = request.body || {};
 
         if (!Array.isArray(usersToImport) || usersToImport.length === 0) {
           return reply.code(400).send({ error: 'No users to import' });
         }
 
-        const Role = require('../models/Role');
+        if (usersToImport.length > MAX_IMPORT_SIZE) {
+          return reply.code(400).send({ error: `Import exceeds maximum of ${MAX_IMPORT_SIZE} rows` });
+        }
+
         const roleRecord = await Role.findByName('user');
         if (!roleRecord) {
           return reply.code(500).send({ error: 'User role not found' });
@@ -541,7 +561,6 @@ async function usersRoutes(fastify, _options) {
               }
             }
 
-            const { sendPasswordSetupEmail } = require('../services/email');
             const newUser = await User.create({
               username,
               email,
@@ -612,7 +631,6 @@ async function usersRoutes(fastify, _options) {
           try {
             await PasswordResetToken.deleteStaleForUser(u.id);
             const tokenRecord = await PasswordResetToken.create(u.id, 'setup', 24);
-            const { sendPasswordSetupEmail } = require('../services/email');
             await sendPasswordSetupEmail(u, tokenRecord.token);
             sent++;
           } catch (emailError) {
