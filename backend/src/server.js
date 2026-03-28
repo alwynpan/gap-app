@@ -8,6 +8,7 @@ const config = require('./config/index');
 const authRoutes = require('./routes/auth');
 const usersRoutes = require('./routes/users');
 const groupsRoutes = require('./routes/groups');
+const configRoutes = require('./routes/config');
 
 // Import plugins
 const authPlugin = require('./middleware/auth');
@@ -116,6 +117,7 @@ async function buildServer() {
   await fastify.register(authRoutes, { prefix: '/api' });
   await fastify.register(usersRoutes, { prefix: '/api' });
   await fastify.register(groupsRoutes, { prefix: '/api' });
+  await fastify.register(configRoutes, { prefix: '/api' });
 
   return fastify;
 }

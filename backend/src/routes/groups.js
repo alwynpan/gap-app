@@ -1,5 +1,6 @@
 const Group = require('../models/Group');
 const User = require('../models/User');
+const Config = require('../models/Config');
 const { parseBody, createGroupSchema, updateGroupSchema, validateUUID } = require('../utils/schemas');
 
 async function groupsRoutes(fastify, _options) {
@@ -251,6 +252,17 @@ async function groupsRoutes(fastify, _options) {
         }
         const userId = request.user.id;
 
+        // Check system-level group join lock for normal users
+        const locked = await Config.get('group_join_locked');
+        if (locked === 'true') {
+          const userRole = request.user.role;
+          if (userRole !== 'admin' && userRole !== 'assignment_manager') {
+            return reply
+              .code(403)
+              .send({ error: 'Group joining is currently locked. Please contact the teaching staff.' });
+          }
+        }
+
         const group = await Group.findById(groupId);
         if (!group) {
           return reply.code(404).send({ error: 'Group not found' });
@@ -303,6 +315,17 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'Invalid ID format' });
         }
         const userId = request.user.id;
+
+        // Check system-level group join lock for normal users
+        const locked = await Config.get('group_join_locked');
+        if (locked === 'true') {
+          const userRole = request.user.role;
+          if (userRole !== 'admin' && userRole !== 'assignment_manager') {
+            return reply
+              .code(403)
+              .send({ error: 'Group joining is currently locked. Please contact the teaching staff.' });
+          }
+        }
 
         const group = await Group.findById(groupId);
         if (!group) {
