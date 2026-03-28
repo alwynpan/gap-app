@@ -102,6 +102,7 @@ export const createUserSchema = z.object({
   studentId: studentIdSchema,
   role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
   groupId: z.preprocess((v) => (v === '' ? null : v), z.string().uuid().optional().nullable()),
+  sendSetupEmail: z.boolean().optional(),
 });
 
 export const updateUserSchema = z.object({

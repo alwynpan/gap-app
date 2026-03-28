@@ -167,14 +167,17 @@ async function usersRoutes(fastify, _options) {
           roleId,
         });
 
-        // Always send setup email so the user can verify their address and set a password
-        try {
-          await PasswordResetToken.deleteStaleForUser(newUser.id);
-          const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
-          await sendPasswordSetupEmail(newUser, tokenRecord.token);
-        } catch (emailError) {
-          console.error('Failed to send setup email:', emailError);
-          // Don't fail the request — user was created successfully
+        // Send setup email unless the caller explicitly opts out
+        const shouldSendEmail = body.sendSetupEmail !== false;
+        if (shouldSendEmail) {
+          try {
+            await PasswordResetToken.deleteStaleForUser(newUser.id);
+            const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
+            await sendPasswordSetupEmail(newUser, tokenRecord.token);
+          } catch (emailError) {
+            console.error('Failed to send setup email:', emailError);
+            // Don't fail the request — user was created successfully
+          }
         }
 
         return reply.code(201).send({
