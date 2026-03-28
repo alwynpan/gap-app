@@ -1,9 +1,11 @@
 // Mock models at the top level
 jest.mock('../../src/models/Group');
 jest.mock('../../src/models/User');
+jest.mock('../../src/models/Config');
 
 const Group = require('../../src/models/Group');
 const User = require('../../src/models/User');
+const Config = require('../../src/models/Config');
 
 describe('Groups Routes', () => {
   beforeEach(() => {
@@ -632,6 +634,10 @@ describe('Groups Routes', () => {
   });
 
   describe('POST /groups/:id/join', () => {
+    beforeEach(() => {
+      Config.get.mockResolvedValue('false');
+    });
+
     it('rejects unauthenticated request', () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
@@ -826,9 +832,85 @@ describe('Groups Routes', () => {
       expect(reply.code).toHaveBeenCalledWith(500);
       consoleSpy.mockRestore();
     });
+
+    it('rejects normal user when join lock is enabled', async () => {
+      const { handlers } = setupRoute();
+      Config.get.mockResolvedValue('true');
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000010', role: 'user' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({
+        error: 'Group joining is currently locked. Please contact the teaching staff.',
+      });
+      expect(Group.findById).not.toHaveBeenCalled();
+    });
+
+    it('allows admin to join when lock is enabled', async () => {
+      const { handlers } = setupRoute();
+      Config.get.mockResolvedValue('true');
+      Group.findById.mockResolvedValue({
+        id: '10000000-0000-4000-8000-000000000001',
+        name: 'Team A',
+        enabled: true,
+        max_members: null,
+        member_count: 0,
+      });
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        group_id: null,
+      });
+      Group.assignUserToGroup.mockResolvedValue();
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
+        },
+        reply
+      );
+      expect(Group.assignUserToGroup).toHaveBeenCalled();
+      expect(reply.code).not.toHaveBeenCalledWith(403);
+    });
+
+    it('allows assignment_manager to join when lock is enabled', async () => {
+      const { handlers } = setupRoute();
+      Config.get.mockResolvedValue('true');
+      Group.findById.mockResolvedValue({
+        id: '10000000-0000-4000-8000-000000000001',
+        name: 'Team A',
+        enabled: true,
+        max_members: null,
+        member_count: 0,
+      });
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000002',
+        group_id: null,
+      });
+      Group.assignUserToGroup.mockResolvedValue();
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000002', role: 'assignment_manager' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
+        },
+        reply
+      );
+      expect(Group.assignUserToGroup).toHaveBeenCalled();
+      expect(reply.code).not.toHaveBeenCalledWith(403);
+    });
   });
 
   describe('POST /groups/:id/leave', () => {
+    beforeEach(() => {
+      Config.get.mockResolvedValue('false');
+    });
+
     it('rejects unauthenticated request', () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
@@ -956,6 +1038,49 @@ describe('Groups Routes', () => {
       expect(consoleSpy).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
       consoleSpy.mockRestore();
+    });
+
+    it('rejects normal user when join lock is enabled', async () => {
+      const { handlers } = setupRoute();
+      Config.get.mockResolvedValue('true');
+      const reply = mockReply();
+      await handlers['/groups/:id/leave_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000010', role: 'user' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({
+        error: 'Group joining is currently locked. Please contact the teaching staff.',
+      });
+      expect(Group.findById).not.toHaveBeenCalled();
+    });
+
+    it('allows admin to leave when lock is enabled', async () => {
+      const { handlers } = setupRoute();
+      Config.get.mockResolvedValue('true');
+      Group.findById.mockResolvedValue({
+        id: '10000000-0000-4000-8000-000000000001',
+        name: 'Team A',
+        enabled: true,
+      });
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        group_id: '10000000-0000-4000-8000-000000000001',
+      });
+      User.updateGroup.mockResolvedValue({});
+      const reply = mockReply();
+      await handlers['/groups/:id/leave_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
+        },
+        reply
+      );
+      expect(User.updateGroup).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', null);
+      expect(reply.code).not.toHaveBeenCalledWith(403);
     });
   });
 });

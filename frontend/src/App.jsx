@@ -12,6 +12,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Users from './pages/Users.jsx';
 import ImportUsers from './pages/ImportUsers.jsx';
 import Groups from './pages/Groups.jsx';
+import Settings from './pages/Settings.jsx';
 
 function PublicRoute({ children }) {
   const { user } = useAuth();
@@ -93,6 +94,16 @@ function AppRoutes() {
         element={
           <ProtectedRoute requireAdmin>
             <Groups />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Admin/Assignment Manager Settings */}
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute requireAssignmentManager>
+            <Settings />
           </ProtectedRoute>
         }
       />

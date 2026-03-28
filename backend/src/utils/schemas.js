@@ -147,6 +147,12 @@ const updateGroupSchema = z.object({
   maxMembers: z.number().int().positive().optional().nullable(),
 });
 
+const updateConfigSchema = z.object({
+  value: z
+    .string({ required_error: 'Value is required', invalid_type_error: 'Value must be a string' })
+    .min(1, 'Value is required'),
+});
+
 const forgotPasswordSchema = z.object({
   email: emailSchema,
 });
@@ -160,6 +166,7 @@ module.exports = {
   sanitize,
   parseBody,
   validateUUID,
+  updateConfigSchema,
   usernameSchema,
   emailSchema,
   passwordSchema,

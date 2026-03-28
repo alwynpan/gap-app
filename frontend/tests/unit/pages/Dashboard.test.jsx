@@ -24,6 +24,10 @@ describe('Dashboard page', () => {
     });
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('renders user profile data', () => {
     render(
       <MemoryRouter>
@@ -784,6 +788,271 @@ describe('Dashboard page', () => {
       expect(screen.getByRole('button', { name: /change password/i })).toBeInTheDocument();
       expect(screen.queryByText(/view my progress/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/view assignments/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Settings link (admin/AM)', () => {
+    it('shows settings link for admin users', () => {
+      useAuth.mockReturnValue({
+        user: { username: 'admin', email: 'admin@example.com', role: 'admin' },
+        logout: mockLogout,
+        refreshUser: mockRefreshUser,
+        isAdmin: true,
+        isAssignmentManager: true,
+      });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    it('does not show settings link for normal users', () => {
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("I'm Feeling Lucky", () => {
+    const normalUserNoGroup = {
+      id: 'u0000000-0000-0000-0000-000000000010',
+      username: 'testuser',
+      email: 'test@example.com',
+      role: 'user',
+      groupId: null,
+      groupName: null,
+    };
+
+    beforeEach(() => {
+      useAuth.mockReturnValue({
+        user: normalUserNoGroup,
+        logout: mockLogout,
+        refreshUser: mockRefreshUser,
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+    });
+
+    it('shows "I\'m Feeling Lucky" button when user has no group and lock is off', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url.includes('group-join-locked')) {
+          return Promise.resolve({ data: { locked: false } });
+        }
+        return Promise.resolve({
+          data: {
+            groups: [{ id: 'g1', name: 'Team A', max_members: 5, member_count: 2 }],
+          },
+        });
+      });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /feeling lucky/i })).toBeInTheDocument();
+      });
+    });
+
+    it('assigns to a non-empty group when one exists', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url.includes('group-join-locked')) {
+          return Promise.resolve({ data: { locked: false } });
+        }
+        return Promise.resolve({
+          data: {
+            groups: [
+              { id: 'g1', name: 'Empty Group', max_members: 5, member_count: 0 },
+              { id: 'g2', name: 'Active Group', max_members: 5, member_count: 3 },
+            ],
+          },
+        });
+      });
+      axios.post.mockResolvedValue({});
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => screen.getByRole('button', { name: /feeling lucky/i }));
+
+      await userEvent.click(screen.getByRole('button', { name: /feeling lucky/i }));
+
+      await waitFor(() => {
+        // Should join g2 (non-empty), not g1 (empty)
+        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g2\/join$/));
+      });
+    });
+
+    it('falls back to any group when no non-empty groups exist', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url.includes('group-join-locked')) {
+          return Promise.resolve({ data: { locked: false } });
+        }
+        return Promise.resolve({
+          data: {
+            groups: [{ id: 'g1', name: 'Empty Group', max_members: 5, member_count: 0 }],
+          },
+        });
+      });
+      axios.post.mockResolvedValue({});
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => screen.getByRole('button', { name: /feeling lucky/i }));
+
+      await userEvent.click(screen.getByRole('button', { name: /feeling lucky/i }));
+
+      await waitFor(() => {
+        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g1\/join$/));
+      });
+    });
+
+    it('shows error when no groups are available', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url.includes('group-join-locked')) {
+          return Promise.resolve({ data: { locked: false } });
+        }
+        return Promise.resolve({ data: { groups: [] } });
+      });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => screen.getByRole('button', { name: /feeling lucky/i }));
+
+      await userEvent.click(screen.getByRole('button', { name: /feeling lucky/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('No available group to join')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Group join lock', () => {
+    const normalUserNoGroup = {
+      id: 'u0000000-0000-0000-0000-000000000010',
+      username: 'testuser',
+      email: 'test@example.com',
+      role: 'user',
+      groupId: null,
+      groupName: null,
+    };
+
+    const normalUserInGroup = {
+      id: 'u0000000-0000-0000-0000-000000000010',
+      username: 'testuser',
+      email: 'test@example.com',
+      role: 'user',
+      groupId: 'g0000000-0000-0000-0000-000000000001',
+      groupName: 'Team Alpha',
+    };
+
+    it('shows lock message instead of join UI when lock is enabled and user has no group', async () => {
+      useAuth.mockReturnValue({
+        user: normalUserNoGroup,
+        logout: mockLogout,
+        refreshUser: mockRefreshUser,
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+
+      axios.get.mockImplementation((url) => {
+        if (url.includes('group-join-locked')) {
+          return Promise.resolve({ data: { locked: true } });
+        }
+        return Promise.resolve({ data: { groups: [] } });
+      });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/group joining is locked/i)).toBeInTheDocument();
+      });
+
+      expect(screen.queryByRole('button', { name: /feeling lucky/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^join$/i })).not.toBeInTheDocument();
+    });
+
+    it('hides leave button and shows lock message when user is in a group and lock is enabled', async () => {
+      useAuth.mockReturnValue({
+        user: normalUserInGroup,
+        logout: mockLogout,
+        refreshUser: mockRefreshUser,
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+
+      axios.get.mockImplementation((url) => {
+        if (url.includes('group-join-locked')) {
+          return Promise.resolve({ data: { locked: true } });
+        }
+        return Promise.resolve({ data: { members: [] } });
+      });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/group joining is locked/i)).toBeInTheDocument();
+      });
+
+      expect(screen.queryByRole('button', { name: /leave group/i })).not.toBeInTheDocument();
+    });
+
+    it('shows leave button and join UI when lock is disabled', async () => {
+      useAuth.mockReturnValue({
+        user: normalUserInGroup,
+        logout: mockLogout,
+        refreshUser: mockRefreshUser,
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+
+      axios.get.mockImplementation((url) => {
+        if (url.includes('group-join-locked')) {
+          return Promise.resolve({ data: { locked: false } });
+        }
+        return Promise.resolve({ data: { members: [] } });
+      });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /leave group/i })).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText(/group joining is locked/i)).not.toBeInTheDocument();
     });
   });
 });
