@@ -12,7 +12,8 @@ const {
   validateUUID,
 } = require('../utils/schemas');
 
-const MAX_IMPORT_SIZE = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
+const _parsed = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
+const MAX_IMPORT_SIZE = Number.isNaN(_parsed) ? 2000 : _parsed;
 
 async function usersRoutes(fastify, _options) {
   // Get all users (admin/assignment_manager only) — supports ?role=, ?status=, ?groupId= filters
@@ -135,6 +136,14 @@ async function usersRoutes(fastify, _options) {
         const effectiveStudentId = isUserRole ? studentId : undefined;
         const effectiveGroupId = isUserRole ? groupId : undefined;
 
+        // Check studentId uniqueness
+        if (effectiveStudentId) {
+          const existingStudent = await User.findByStudentId(effectiveStudentId);
+          if (existingStudent) {
+            return reply.code(409).send({ error: 'Student ID already exists' });
+          }
+        }
+
         // If a group is specified, verify it exists and has capacity
         if (effectiveGroupId) {
           const group = await Group.findById(effectiveGroupId);
@@ -212,6 +221,10 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'groupId is required' });
         }
 
+        if (groupId !== null && !validateUUID(groupId)) {
+          return reply.code(400).send({ error: 'Invalid groupId format' });
+        }
+
         // Verify user exists
         const user = await User.findById(userId);
         if (!user) {
@@ -249,6 +262,9 @@ async function usersRoutes(fastify, _options) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
         const userId = request.params.id;
+        if (!validateUUID(userId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
         const isAdmin = request.user.role === 'admin';
         const isAssignmentManager = request.user.role === 'assignment_manager';
 
@@ -368,6 +384,9 @@ async function usersRoutes(fastify, _options) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
         const userId = request.params.id;
+        if (!validateUUID(userId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
+        }
         // Only allow users to change their own password
         if (request.user.id !== userId) {
           return reply.code(403).send({ error: 'Forbidden: You can only change your own password' });
@@ -462,6 +481,13 @@ async function usersRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const { users: usersToImport, conflictAction = 'skip', sendSetupEmail = false } = request.body || {};
+
+        if (conflictAction !== 'skip' && conflictAction !== 'overwrite') {
+          return reply.code(400).send({ error: "Invalid 'conflictAction'. Allowed values are 'skip' or 'overwrite'." });
+        }
+        if (typeof sendSetupEmail !== 'boolean') {
+          return reply.code(400).send({ error: "'sendSetupEmail' must be a boolean." });
+        }
 
         if (!Array.isArray(usersToImport) || usersToImport.length === 0) {
           return reply.code(400).send({ error: 'No users to import' });
@@ -617,6 +643,10 @@ async function usersRoutes(fastify, _options) {
         // If userIds provided, send only to those; otherwise send to all pending users
         let targets;
         if (Array.isArray(userIds) && userIds.length > 0) {
+          const invalidIds = userIds.filter((id) => !validateUUID(id));
+          if (invalidIds.length > 0) {
+            return reply.code(400).send({ error: 'Invalid user ID format', invalidIds });
+          }
           targets = await Promise.all(userIds.map((id) => User.findById(id)));
           targets = targets.filter((u) => u && u.status === 'pending');
         } else {

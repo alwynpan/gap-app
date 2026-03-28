@@ -262,7 +262,12 @@ function Groups() {
     if (isNaN(n) || n < 1) {
       return;
     }
-    const maxMembersVal = maxMembers.trim() === '' ? null : parseInt(maxMembers, 10);
+    const maxMembersRaw = parseInt(maxMembers, 10);
+    const maxMembersVal = maxMembers.trim() === '' ? null : maxMembersRaw;
+    if (maxMembersVal !== null && (Number.isNaN(maxMembersVal) || maxMembersVal < 1)) {
+      showError('Member limit must be a positive number.');
+      return;
+    }
     const results = await Promise.allSettled(
       Array.from({ length: n }, (_, i) => {
         const body = { name: `${prefix.trim()}${String(i + 1).padStart(n < 10 ? 1 : 2, '0')}` };

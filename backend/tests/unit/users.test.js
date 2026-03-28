@@ -2483,9 +2483,11 @@ describe('Users Routes', () => {
     it('sends setup emails only to specified pending userIds', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
+      const uid1 = '11111111-0000-4000-8000-000000000001';
+      const uid2 = '11111111-0000-4000-8000-000000000002';
       User.findById
-        .mockResolvedValueOnce({ id: 'u1', username: 'pending1', status: 'pending' })
-        .mockResolvedValueOnce({ id: 'u2', username: 'active1', status: 'active' });
+        .mockResolvedValueOnce({ id: uid1, username: 'pending1', status: 'pending' })
+        .mockResolvedValueOnce({ id: uid2, username: 'active1', status: 'active' });
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
       PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
       sendPasswordSetupEmail.mockResolvedValue();
@@ -2494,11 +2496,11 @@ describe('Users Routes', () => {
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
 
       await handlers['/users/send-setup-emails_post'](
-        { user: { id: 'admin1', role: 'admin' }, body: { userIds: ['u1', 'u2'] } },
+        { user: { id: 'admin1', role: 'admin' }, body: { userIds: [uid1, uid2] } },
         mockReply
       );
 
-      // Only u1 is pending, so only 1 email sent
+      // Only uid1 is pending, so only 1 email sent
       expect(sendPasswordSetupEmail).toHaveBeenCalledTimes(1);
       expect(mockReply.send).toHaveBeenCalledWith({ sent: 1, errors: [] });
     });

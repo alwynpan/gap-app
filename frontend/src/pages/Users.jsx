@@ -139,9 +139,9 @@ function Users() {
 
     const { data: body, error: validationError } = parseBody(updateUserSchema, {
       email: editingUser.email,
-      firstName: editingUser.firstName || '',
-      lastName: editingUser.lastName || '',
-      studentId: editingUser.studentId || '',
+      firstName: editingUser.firstName || null,
+      lastName: editingUser.lastName || null,
+      studentId: editingUser.studentId || null,
       enabled: editingUser.enabled,
       role: editingUser.roleName !== editingUser.originalRoleName ? editingUser.roleName : undefined,
     });
@@ -298,7 +298,17 @@ function Users() {
     try {
       const body = selectedIds.size > 0 ? { userIds: targets.map((u) => u.id) } : {};
       const res = await axios.post(`${API_BASE}/users/send-setup-emails`, body);
-      showSuccess(`Setup email sent to ${res.data.sent} user${res.data.sent !== 1 ? 's' : ''}.`);
+      const { sent = 0, errors: emailErrors = [] } = res.data || {};
+      const failedCount = emailErrors.length;
+      if (sent > 0 && failedCount === 0) {
+        showSuccess(`Setup email sent to ${sent} user${sent !== 1 ? 's' : ''}.`);
+      } else if (sent > 0 && failedCount > 0) {
+        showSuccess(`Setup emails sent to ${sent} user${sent !== 1 ? 's' : ''}, but failed for ${failedCount}.`);
+      } else if (failedCount > 0) {
+        showError(`Failed to send setup emails for ${failedCount} user${failedCount !== 1 ? 's' : ''}.`);
+      } else {
+        showError('No setup emails were sent.');
+      }
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to send setup emails.');
     } finally {

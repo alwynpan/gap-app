@@ -29,8 +29,7 @@ const FULL_NAME_FIELDS = new Set(['fullNameFL', 'fullNameLF']);
  * already selected in other columns.  Name fields use group logic:
  *  – if firstName or lastName is taken → hide that field + both fullName options
  *  – if a fullName option is taken → hide firstName, lastName, and both fullName options
- */
-/**
+ *
  * @param {number}  columnIndex    – the column we're computing options for
  * @param {Object}  currentMapping – full mapping state
  * @param {boolean} strict         – when true, apply strict name-group rules
@@ -363,14 +362,19 @@ export default function ImportUsers() {
 
   const validateMapping = () => {
     const mapped = new Set(Object.values(mapping));
-    const missing = REQUIRED_FIELDS.filter(
-      (f) => !mapped.has(f) && !mapped.has('fullNameFL') && !mapped.has('fullNameLF')
-    ).filter((f) => {
-      if (f === 'firstName' || f === 'lastName') {
-        return !mapped.has('fullNameFL') && !mapped.has('fullNameLF');
+    // username and email are always required
+    const missing = REQUIRED_FIELDS.filter((f) => f !== 'firstName' && f !== 'lastName' && !mapped.has(f));
+    // Name requirement: either firstName + lastName, or a full-name field
+    const hasFullName = mapped.has('fullNameFL') || mapped.has('fullNameLF');
+    const hasFirstLast = mapped.has('firstName') && mapped.has('lastName');
+    if (!hasFullName && !hasFirstLast) {
+      if (!mapped.has('firstName')) {
+        missing.push('firstName');
       }
-      return true;
-    });
+      if (!mapped.has('lastName')) {
+        missing.push('lastName');
+      }
+    }
     if (missing.length > 0) {
       const labels = missing.map((f) => FIELD_OPTIONS.find((o) => o.value === f)?.label || f);
       return `Required fields not mapped: ${labels.join(', ')}`;
@@ -441,6 +445,15 @@ export default function ImportUsers() {
       }
       if (byUsername.role_name === 'admin' || byUsername.role_name === 'assignment_manager') {
         return 'protected';
+      }
+      // When overwriting, check if the incoming email/studentId belongs to a different user
+      const emailOwner = row.email && existingByEmail.get(row.email.toLowerCase());
+      if (emailOwner && emailOwner.id !== byUsername.id) {
+        return 'conflict';
+      }
+      const sidOwner = row.studentId && existingByStudentId.get(row.studentId.toLowerCase());
+      if (sidOwner && sidOwner.id !== byUsername.id) {
+        return 'conflict';
       }
       return 'overwrite';
     }
@@ -902,7 +915,7 @@ export default function ImportUsers() {
                             )}
                             {status === 'protected' && (
                               <span className="inline-flex items-center px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
-                                Protected – skip
+                                Protected – cannot overwrite
                               </span>
                             )}
                             {status === 'invalid' && (
