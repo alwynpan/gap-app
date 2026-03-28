@@ -12,6 +12,8 @@ const {
   validateUUID,
 } = require('../utils/schemas');
 
+const MAX_IMPORT_SIZE = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
+
 async function usersRoutes(fastify, _options) {
   // Get all users (admin/assignment_manager only) — supports ?role=, ?status=, ?groupId= filters
   fastify.get(
@@ -223,14 +225,12 @@ async function usersRoutes(fastify, _options) {
           await User.updateGroup(userId, null);
         }
 
-        const updatedUser = await User.findById(userId);
-
         return reply.send({
           message: 'User group updated successfully',
           user: {
-            id: updatedUser.id,
-            username: updatedUser.username,
-            groupId: updatedUser.group_id,
+            id: user.id,
+            username: user.username,
+            groupId: groupId,
           },
         });
       } catch (error) {
@@ -461,7 +461,6 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const MAX_IMPORT_SIZE = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
         const { users: usersToImport, conflictAction = 'skip', sendSetupEmail = false } = request.body || {};
 
         if (!Array.isArray(usersToImport) || usersToImport.length === 0) {

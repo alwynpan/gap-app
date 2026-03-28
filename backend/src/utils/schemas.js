@@ -108,7 +108,7 @@ const createUserSchema = z.object({
   lastName: nameSchema('Last name'),
   studentId: studentIdSchema,
   password: passwordSchema.optional(),
-  role: z.string().optional(),
+  role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
   groupId: z.string().optional().nullable(),
 });
 
@@ -117,7 +117,7 @@ const updateUserSchema = z.object({
   firstName: nameSchema('First name').optional().nullable(),
   lastName: nameSchema('Last name').optional().nullable(),
   studentId: studentIdSchema,
-  role: z.string().optional(),
+  role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
   enabled: z.boolean().optional(),
   username: usernameSchema.optional(),
   groupId: z.string().uuid().optional().nullable(),

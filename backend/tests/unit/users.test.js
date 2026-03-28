@@ -479,18 +479,9 @@ describe('Users Routes', () => {
       expect(User.create).not.toHaveBeenCalled();
     });
 
-    it('creates user with unknown role (defaults to user)', async () => {
+    it('rejects user creation with an invalid role', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue(null);
-      User.create.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        username: 'newuser',
-        email: 'new@test.com',
-        student_id: null,
-      });
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -511,7 +502,8 @@ describe('Users Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid role: unknown' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.stringContaining('Invalid') });
+      expect(User.create).not.toHaveBeenCalled();
     });
 
     it('rejects creating user in a full group', async () => {

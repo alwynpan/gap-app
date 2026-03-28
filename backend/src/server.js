@@ -120,6 +120,20 @@ async function buildServer() {
   return fastify;
 }
 
+// Handle graceful shutdown
+let _serverInstance = null;
+
+async function shutdown(signal) {
+  console.log(`${signal} received, shutting down gracefully...`);
+  if (_serverInstance) {
+    await _serverInstance.close();
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 // Start server
 async function start() {
   try {
@@ -139,25 +153,6 @@ async function start() {
     process.exit(1);
   }
 }
-
-// Handle graceful shutdown
-let _serverInstance = null;
-
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully...');
-  if (_serverInstance) {
-    await _serverInstance.close();
-  }
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down gracefully...');
-  if (_serverInstance) {
-    await _serverInstance.close();
-  }
-  process.exit(0);
-});
 
 // Start if run directly
 if (require.main === module) {
