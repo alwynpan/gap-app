@@ -1303,4 +1303,104 @@ describe('Users page', () => {
       });
     });
   });
+
+  describe('User search', () => {
+    const searchUsers = [
+      {
+        id: 'u1',
+        username: 'jdoe',
+        email: 'jdoe@example.com',
+        first_name: 'John',
+        last_name: 'Doe',
+        student_id: 'S001',
+        role_name: 'user',
+        group_name: null,
+        group_id: null,
+        enabled: true,
+        status: 'active',
+      },
+      {
+        id: 'u2',
+        username: 'msmith',
+        email: 'msmith@example.com',
+        first_name: 'Mary',
+        last_name: 'Smith',
+        student_id: 'S002',
+        role_name: 'user',
+        group_name: null,
+        group_id: null,
+        enabled: true,
+        status: 'active',
+      },
+    ];
+
+    const renderSearchPage = async () => {
+      axios.get.mockResolvedValueOnce({ data: { users: searchUsers } }).mockResolvedValueOnce({ data: { groups: [] } });
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+      await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
+    };
+
+    it('shows all users when search is empty', async () => {
+      await renderSearchPage();
+      expect(screen.getByText('jdoe')).toBeInTheDocument();
+      expect(screen.getByText('msmith')).toBeInTheDocument();
+    });
+
+    it('filters users by username', async () => {
+      const user = userEvent.setup();
+      await renderSearchPage();
+
+      await user.type(screen.getByPlaceholderText(/search by name, email/i), 'jdoe');
+
+      expect(screen.getByText('jdoe')).toBeInTheDocument();
+      expect(screen.queryByText('msmith')).not.toBeInTheDocument();
+    });
+
+    it('filters users by email', async () => {
+      const user = userEvent.setup();
+      await renderSearchPage();
+
+      await user.type(screen.getByPlaceholderText(/search by name, email/i), 'msmith@');
+
+      expect(screen.queryByText('jdoe')).not.toBeInTheDocument();
+      expect(screen.getByText('msmith')).toBeInTheDocument();
+    });
+
+    it('filters users by student ID', async () => {
+      const user = userEvent.setup();
+      await renderSearchPage();
+
+      await user.type(screen.getByPlaceholderText(/search by name, email/i), 'S001');
+
+      expect(screen.getByText('jdoe')).toBeInTheDocument();
+      expect(screen.queryByText('msmith')).not.toBeInTheDocument();
+    });
+
+    it('filters users by first name', async () => {
+      const user = userEvent.setup();
+      await renderSearchPage();
+
+      await user.type(screen.getByPlaceholderText(/search by name, email/i), 'mary');
+
+      expect(screen.queryByText('jdoe')).not.toBeInTheDocument();
+      expect(screen.getByText('msmith')).toBeInTheDocument();
+    });
+
+    it('clear filters button also clears search term', async () => {
+      const user = userEvent.setup();
+      await renderSearchPage();
+
+      await user.type(screen.getByPlaceholderText(/search by name, email/i), 'jdoe');
+      expect(screen.queryByText('msmith')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /clear filters/i }));
+
+      expect(screen.getByText('jdoe')).toBeInTheDocument();
+      expect(screen.getByText('msmith')).toBeInTheDocument();
+    });
+  });
 });

@@ -568,7 +568,7 @@ async function usersRoutes(fastify, _options) {
                   continue;
                 }
               }
-              await User.update(existing.id, { email, firstName, lastName, studentId: studentId || undefined });
+              await User.update(existing.id, { email, firstName, lastName, studentId: studentId || null });
               imported++;
               continue;
             }
@@ -601,7 +601,7 @@ async function usersRoutes(fastify, _options) {
               password: null,
               firstName,
               lastName,
-              studentId: studentId || undefined,
+              studentId: studentId || null,
               roleId: roleRecord.id,
             });
 

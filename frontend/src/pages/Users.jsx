@@ -46,6 +46,7 @@ function Users() {
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterGroup, setFilterGroup] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
 
   const successTimeoutRef = useRef(null);
   const errorTimeoutRef = useRef(null);
@@ -345,7 +346,7 @@ function Users() {
     }, 0);
   };
 
-  // Apply filters
+  // Apply filters and search
   const filteredUsers = users.filter((u) => {
     if (filterRole && u.role_name !== filterRole) {
       return false;
@@ -358,6 +359,16 @@ function Users() {
     }
     if (filterGroup && filterGroup !== 'none' && u.group_id !== filterGroup) {
       return false;
+    }
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      const searchable = [u.username, u.email, u.student_id, u.first_name, u.last_name]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      if (!searchable.includes(term)) {
+        return false;
+      }
     }
     return true;
   });
@@ -702,6 +713,14 @@ function Users() {
 
           {/* Filters */}
           <div className="mb-6 flex flex-wrap items-center gap-3">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by name, email, or student ID..."
+              aria-label="Search users"
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 w-72"
+            />
             <span className="text-sm font-medium text-gray-600">Filter:</span>
             <select
               value={filterRole}
@@ -739,12 +758,13 @@ function Users() {
                 </option>
               ))}
             </select>
-            {(filterRole || filterStatus || filterGroup) && (
+            {(filterRole || filterStatus || filterGroup || searchTerm) && (
               <button
                 onClick={() => {
                   setFilterRole('');
                   setFilterStatus('');
                   setFilterGroup('');
+                  setSearchTerm('');
                 }}
                 className="text-sm text-gray-500 hover:text-primary-600 underline"
               >

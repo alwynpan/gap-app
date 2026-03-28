@@ -79,11 +79,11 @@ describe('Server', () => {
     await server.close();
   });
 
-  describe('GET /api', () => {
+  describe('GET /api/info', () => {
     it('returns 401 without auth', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/api',
+        url: '/api/info',
       });
 
       expect(response.statusCode).toBe(401);
@@ -96,7 +96,7 @@ describe('Server', () => {
 
       const response = await server.inject({
         method: 'GET',
-        url: '/api',
+        url: '/api/info',
         headers: {
           authorization: `Bearer ${token}`,
         },

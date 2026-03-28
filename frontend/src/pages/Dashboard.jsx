@@ -248,7 +248,11 @@ function Dashboard() {
                         {groupMembers.map((member) => (
                           <li key={member.id} className="flex items-center gap-3 px-4 py-2">
                             <div className="min-w-0 flex-1">
-                              <span className="text-sm font-medium text-gray-900">{member.username}</span>
+                              <span className="text-sm font-medium text-gray-900">
+                                {member.first_name
+                                  ? `${member.first_name.charAt(0)}. ${member.last_name}`
+                                  : member.username}
+                              </span>
                               {member.id === user.id && (
                                 <span className="ml-2 text-xs text-primary-600 font-medium">(you)</span>
                               )}

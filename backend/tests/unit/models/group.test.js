@@ -309,12 +309,14 @@ describe('Group Model', () => {
   });
 
   describe('getMembers', () => {
-    it('returns group members with role info', async () => {
+    it('returns group members with role info including first_name and last_name', async () => {
       const mockMembers = [
         {
           id: '00000000-0000-4000-8000-000000000001',
           username: 'user1',
           email: 'user1@test.com',
+          first_name: 'Alice',
+          last_name: 'Smith',
           student_id: 'S001',
           enabled: true,
           role_name: 'user',
@@ -323,6 +325,8 @@ describe('Group Model', () => {
           id: '00000000-0000-4000-8000-000000000002',
           username: 'user2',
           email: 'user2@test.com',
+          first_name: 'Bob',
+          last_name: 'Jones',
           student_id: 'S002',
           enabled: true,
           role_name: 'admin',
@@ -332,7 +336,7 @@ describe('Group Model', () => {
 
       const result = await Group.getMembers('10000000-0000-4000-8000-000000000001');
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('SELECT u.id, u.username, u.email'), [
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('u.first_name, u.last_name'), [
         '10000000-0000-4000-8000-000000000001',
       ]);
       expect(result).toEqual(mockMembers);
@@ -348,8 +352,22 @@ describe('Group Model', () => {
 
     it('orders members by username', async () => {
       const mockMembers = [
-        { id: '00000000-0000-4000-8000-000000000002', username: 'alice', email: 'alice@test.com', role_name: 'user' },
-        { id: '00000000-0000-4000-8000-000000000001', username: 'bob', email: 'bob@test.com', role_name: 'admin' },
+        {
+          id: '00000000-0000-4000-8000-000000000002',
+          username: 'alice',
+          email: 'alice@test.com',
+          first_name: 'Alice',
+          last_name: 'A',
+          role_name: 'user',
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          username: 'bob',
+          email: 'bob@test.com',
+          first_name: 'Bob',
+          last_name: 'B',
+          role_name: 'admin',
+        },
       ];
       pool.query.mockResolvedValue({ rows: mockMembers });
 
