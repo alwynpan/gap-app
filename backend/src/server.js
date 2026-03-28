@@ -131,9 +131,6 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-
 // Start server
 async function start() {
   try {
@@ -156,6 +153,8 @@ async function start() {
 
 // Start if run directly
 if (require.main === module) {
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
   start();
 }
 

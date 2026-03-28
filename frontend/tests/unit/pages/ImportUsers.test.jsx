@@ -259,12 +259,12 @@ describe('ImportUsers page', () => {
       expect(screen.getByText('Existing – overwrite')).toBeInTheDocument();
     });
 
-    it('shows "Protected – skip" badge for admin/assignment_manager accounts', async () => {
+    it('shows "Protected – cannot overwrite" badge for admin/assignment_manager accounts', async () => {
       await goToPreview({
         existingUsers: [{ username: 'jdoe', email: 'jdoe@test.com', role_name: 'admin' }],
       });
       await userEvent.click(screen.getByRole('radio', { name: /overwrite/i }));
-      expect(screen.getByText('Protected – skip')).toBeInTheDocument();
+      expect(screen.getByText('Protected – cannot overwrite')).toBeInTheDocument();
     });
 
     it('shows "Missing" badge when required field data is empty', async () => {

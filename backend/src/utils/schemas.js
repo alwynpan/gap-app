@@ -109,7 +109,7 @@ const createUserSchema = z.object({
   studentId: studentIdSchema,
   password: passwordSchema.optional(),
   role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
-  groupId: z.string().optional().nullable(),
+  groupId: z.string().uuid().optional().nullable(),
 });
 
 const updateUserSchema = z.object({

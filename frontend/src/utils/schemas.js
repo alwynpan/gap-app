@@ -100,8 +100,8 @@ export const createUserSchema = z.object({
   firstName: nameSchema('First name'),
   lastName: nameSchema('Last name'),
   studentId: studentIdSchema,
-  role: z.string().optional(),
-  groupId: z.string().optional().nullable(),
+  role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
+  groupId: z.preprocess((v) => (v === '' ? null : v), z.string().uuid().optional().nullable()),
 });
 
 export const updateUserSchema = z.object({
