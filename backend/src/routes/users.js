@@ -189,6 +189,18 @@ async function usersRoutes(fastify, _options) {
           },
         });
       } catch (error) {
+        if (error.code === '23505') {
+          if (error.constraint?.includes('student_id')) {
+            return reply.code(409).send({ error: 'Student ID already exists' });
+          }
+          if (error.constraint?.includes('email')) {
+            return reply.code(409).send({ error: 'Email already exists' });
+          }
+          if (error.constraint?.includes('username')) {
+            return reply.code(409).send({ error: 'Username already exists' });
+          }
+          return reply.code(409).send({ error: 'A user with these details already exists' });
+        }
         console.error('Create user error:', error);
         return reply.code(500).send({ error: 'Failed to create user' });
       }

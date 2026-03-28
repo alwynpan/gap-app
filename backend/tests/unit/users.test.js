@@ -613,6 +613,68 @@ describe('Users Routes', () => {
       expect(mockReply.code).toHaveBeenCalledWith(500);
       consoleSpy.mockRestore();
     });
+
+    it('returns 409 when User.create throws Postgres 23505 unique violation on student_id', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
+      const pgError = Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'users_student_id_key' });
+      User.create.mockRejectedValue(pgError);
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+            studentId: 'S12345',
+          },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(409);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Student ID already exists' });
+    });
+
+    it('returns 409 with generic message when User.create throws 23505 on unknown constraint', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
+      const pgError = Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'users_some_other_key' });
+      User.create.mockRejectedValue(pgError);
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        {
+          body: {
+            username: 'newuser',
+            email: 'new@test.com',
+            password: 'password123',
+            firstName: 'Test',
+            lastName: 'User',
+          },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(409);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'A user with these details already exists' });
+    });
   });
 
   describe('PUT /users/:id/group', () => {
