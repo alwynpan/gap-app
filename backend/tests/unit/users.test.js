@@ -1451,7 +1451,7 @@ describe('Users Routes', () => {
       });
     });
 
-    it('returns 400 for invalid UUID in :id param', async () => {
+    it('returns 400 for invalid UUID in :id param (validated in preHandler)', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
 
@@ -1459,7 +1459,7 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id_put'](
+      await handlers['/users/:id_put_pre'](
         {
           user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
           params: { id: 'not-a-uuid' },

@@ -291,9 +291,6 @@ async function usersRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const userId = request.params.id;
-        if (!validateUUID(userId)) {
-          return reply.code(400).send({ error: 'Invalid ID format' });
-        }
         const { data: body, error: validationError } = parseBody(updateUserSchema, request.body);
         if (validationError) {
           return reply.code(400).send({ error: validationError });

@@ -125,10 +125,15 @@ let _serverInstance = null;
 
 async function shutdown(signal) {
   console.log(`${signal} received, shutting down gracefully...`);
-  if (_serverInstance) {
-    await _serverInstance.close();
+  try {
+    if (_serverInstance) {
+      await _serverInstance.close();
+    }
+    process.exit(0);
+  } catch (err) {
+    console.error('Error during shutdown:', err);
+    process.exit(1);
   }
-  process.exit(0);
 }
 
 // Start server
@@ -153,8 +158,18 @@ async function start() {
 
 // Start if run directly
 if (require.main === module) {
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => {
+    shutdown('SIGTERM').catch((err) => {
+      console.error('Error during graceful shutdown on SIGTERM:', err);
+      process.exit(1);
+    });
+  });
+  process.on('SIGINT', () => {
+    shutdown('SIGINT').catch((err) => {
+      console.error('Error during graceful shutdown on SIGINT:', err);
+      process.exit(1);
+    });
+  });
   start();
 }
 
