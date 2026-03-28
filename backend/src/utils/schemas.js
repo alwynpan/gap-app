@@ -108,6 +108,7 @@ const createUserSchema = z.object({
   studentId: studentIdSchema,
   role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
   groupId: z.string().uuid().optional().nullable(),
+  sendSetupEmail: z.boolean().optional(),
 });
 
 const updateUserSchema = z.object({

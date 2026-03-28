@@ -380,6 +380,62 @@ describe('Users Routes', () => {
       expect(mockReply.code).toHaveBeenCalledWith(201);
     });
 
+    it('does not send setup email when sendSetupEmail is false', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
+      User.create.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'newuser',
+        email: 'new@test.com',
+        student_id: null,
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'admin' }, body: { ...validCreateBody, sendSetupEmail: false } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+      expect(User.create).toHaveBeenCalledWith(expect.objectContaining({ password: null }));
+      expect(PasswordResetToken.create).not.toHaveBeenCalled();
+      expect(sendPasswordSetupEmail).not.toHaveBeenCalled();
+    });
+
+    it('sends setup email when sendSetupEmail is true', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
+      User.create.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'newuser',
+        email: 'new@test.com',
+        student_id: null,
+      });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'admin' }, body: { ...validCreateBody, sendSetupEmail: true } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+      expect(PasswordResetToken.create).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', 'setup', 24);
+      expect(sendPasswordSetupEmail).toHaveBeenCalled();
+    });
+
     it('creates user with custom role when requester is admin', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);

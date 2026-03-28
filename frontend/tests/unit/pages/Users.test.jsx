@@ -468,6 +468,67 @@ describe('Users page', () => {
       });
     });
 
+    it('sendSetupEmail checkbox is unchecked by default', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+
+      const checkbox = screen.getByRole('checkbox', { name: /send.*set password.*email now/i });
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it('passes sendSetupEmail: false when checkbox is unchecked', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupRenderedPage();
+
+      axios.post.mockResolvedValue({ data: { message: 'User created successfully' } });
+      axios.get
+        .mockResolvedValueOnce({ data: { users: initialUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await user.type(screen.getByPlaceholderText('Enter username'), 'newuser');
+      await user.type(screen.getByPlaceholderText('Enter email'), 'new@test.com');
+      await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
+      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+      await waitFor(() => {
+        expect(axios.post).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users$/),
+          expect.objectContaining({ sendSetupEmail: false })
+        );
+      });
+    });
+
+    it('passes sendSetupEmail: true when checkbox is checked', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupRenderedPage();
+
+      axios.post.mockResolvedValue({ data: { message: 'User created successfully' } });
+      axios.get
+        .mockResolvedValueOnce({ data: { users: initialUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await user.type(screen.getByPlaceholderText('Enter username'), 'newuser');
+      await user.type(screen.getByPlaceholderText('Enter email'), 'new@test.com');
+      await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
+      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await user.click(screen.getByRole('checkbox', { name: /send.*set password.*email now/i }));
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+      await waitFor(() => {
+        expect(axios.post).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users$/),
+          expect.objectContaining({ sendSetupEmail: true })
+        );
+      });
+    });
+
     it('assignment_manager does not see admin role option', async () => {
       useAuth.mockReturnValue({
         user: { username: 'manager', role: 'assignment_manager' },
@@ -1241,7 +1302,53 @@ describe('Users page', () => {
       expect(screen.queryByRole('button', { name: /send setup email/i })).not.toBeInTheDocument();
     });
 
-    it('calls send-setup-emails API for all pending users', async () => {
+    it('shows confirmation modal when clicking Send Setup Emails button', async () => {
+      const user = userEvent.setup();
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [pendingUser] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /send setup email/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /send setup email/i }));
+
+      expect(screen.getByRole('heading', { name: /send setup email\??/i })).toBeInTheDocument();
+      expect(screen.getByText(/1 pending user/i)).toBeInTheDocument();
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it('cancels sending when Cancel is clicked in confirmation modal', async () => {
+      const user = userEvent.setup();
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [pendingUser] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /send setup email/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /send setup email/i }));
+      await user.click(screen.getByRole('button', { name: /cancel/i }));
+
+      expect(screen.queryByText(/1 pending user/i)).not.toBeInTheDocument();
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it('calls send-setup-emails API for all pending users after confirming', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       axios.get
@@ -1260,6 +1367,7 @@ describe('Users page', () => {
       });
 
       await user.click(screen.getByRole('button', { name: /send setup email/i }));
+      await user.click(screen.getByRole('button', { name: /^send$/i }));
 
       await waitFor(() => {
         expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/users/send-setup-emails'), {});
@@ -1295,6 +1403,7 @@ describe('Users page', () => {
       await user.click(checkbox);
 
       await user.click(screen.getByRole('button', { name: /send setup email/i }));
+      await user.click(screen.getByRole('button', { name: /^send$/i }));
 
       await waitFor(() => {
         expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/users/send-setup-emails'), {

@@ -17,6 +17,7 @@ const emptyNewUser = {
   studentId: '',
   groupId: '',
   role: 'user',
+  sendSetupEmail: false,
 };
 
 function Users() {
@@ -34,6 +35,7 @@ function Users() {
   const [editingUser, setEditingUser] = useState(null);
   const [formError, setFormError] = useState('');
   const [sendingEmails, setSendingEmails] = useState(false);
+  const [sendEmailsModal, setSendEmailsModal] = useState(null); // null | number (pending count)
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -111,6 +113,7 @@ function Users() {
         studentId: body.studentId || undefined,
         groupId: body.groupId || undefined,
         role: body.role,
+        sendSetupEmail: body.sendSetupEmail,
       });
       showSuccess('User created successfully');
       setNewUser({ ...emptyNewUser });
@@ -674,7 +677,7 @@ function Users() {
                   }
                   return (
                     <button
-                      onClick={handleSendSetupEmails}
+                      onClick={() => setSendEmailsModal(pendingCount)}
                       disabled={sendingEmails}
                       className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
                     >
@@ -866,7 +869,19 @@ function Users() {
                 />
               </div>
               <div className="mb-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
-                The user will receive an email to set their own password.
+                The user will need to set a password via email before they can log in.
+              </div>
+              <div className="mb-3 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="sendSetupEmail"
+                  checked={newUser.sendSetupEmail}
+                  onChange={(e) => setNewUser({ ...newUser, sendSetupEmail: e.target.checked })}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <label htmlFor="sendSetupEmail" className="text-sm text-gray-700">
+                  Send &lsquo;Set Password&rsquo; email now
+                </label>
               </div>
               <div className="mb-3">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1057,6 +1072,39 @@ function Users() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Send Setup Emails Confirmation Modal */}
+      {sendEmailsModal !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">
+              Send setup email{sendEmailsModal !== 1 ? 's' : ''}?
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This will send a &lsquo;Set Password&rsquo; email to {sendEmailsModal} pending user
+              {sendEmailsModal !== 1 ? 's' : ''}. Each user will receive a link to activate their account.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setSendEmailsModal(null)}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSendEmailsModal(null);
+                  handleSendSetupEmails();
+                }}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+              >
+                Send
+              </button>
+            </div>
           </div>
         </div>
       )}
