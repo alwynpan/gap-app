@@ -128,8 +128,8 @@ class Group {
 
   static async getMembers(groupId) {
     const result = await pool.query(
-      `SELECT u.id, u.username, u.email, u.student_id, u.enabled, u.created_at,
-              r.name as role_name
+      `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
+              u.enabled, u.created_at, r.name as role_name
        FROM users u
        JOIN roles r ON u.role_id = r.id
        WHERE u.group_id = $1

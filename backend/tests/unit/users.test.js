@@ -2230,6 +2230,62 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ imported: 1, skipped: 0, errors: [] });
     });
 
+    it('clears studentId when not mapped in CSV during overwrite', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      const existingUser = { id: '00000000-0000-4000-8000-000000000002', username: 'existing', role_name: 'user' };
+      User.findByUsername.mockResolvedValue(existingUser);
+      User.findByEmail.mockResolvedValue(null);
+      User.update.mockResolvedValue({ ...existingUser, email: 'new@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      // Row has no studentId property (unmapped column)
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'existing', email: 'new@test.com', firstName: 'Ex', lastName: 'User' }],
+          conflictAction: 'overwrite',
+        }),
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000002',
+        expect.objectContaining({ studentId: null })
+      );
+    });
+
+    it('preserves studentId when mapped in CSV during overwrite', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      const existingUser = { id: '00000000-0000-4000-8000-000000000002', username: 'existing', role_name: 'user' };
+      User.findByUsername.mockResolvedValue(existingUser);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
+      User.update.mockResolvedValue({ ...existingUser, email: 'new@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [
+            { username: 'existing', email: 'new@test.com', firstName: 'Ex', lastName: 'User', studentId: 'S456' },
+          ],
+          conflictAction: 'overwrite',
+        }),
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000002',
+        expect.objectContaining({ studentId: 'S456' })
+      );
+    });
+
     it('protects admin/assignment_manager accounts from overwrite', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);

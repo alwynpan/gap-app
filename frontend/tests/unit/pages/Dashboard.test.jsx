@@ -282,8 +282,20 @@ describe('Dashboard page', () => {
       axios.get.mockResolvedValue({
         data: {
           members: [
-            { id: 'u0000000-0000-0000-0000-000000000010', username: 'testuser', email: 'test@example.com' },
-            { id: 'u0000000-0000-0000-0000-000000000020', username: 'alice', email: 'alice@example.com' },
+            {
+              id: 'u0000000-0000-0000-0000-000000000010',
+              username: 'testuser',
+              email: 'test@example.com',
+              first_name: 'Test',
+              last_name: 'User',
+            },
+            {
+              id: 'u0000000-0000-0000-0000-000000000020',
+              username: 'alice',
+              email: 'alice@example.com',
+              first_name: 'Alice',
+              last_name: 'Smith',
+            },
           ],
         },
       });
@@ -296,10 +308,86 @@ describe('Dashboard page', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Group Members')).toBeInTheDocument();
-        expect(screen.getByText('alice')).toBeInTheDocument();
+        // shows formatted name "A. Smith" not username "alice"
+        expect(screen.getByText('A. Smith')).toBeInTheDocument();
         expect(screen.getByText('alice@example.com')).toBeInTheDocument();
         // current user is marked with (you)
         expect(screen.getByText('(you)')).toBeInTheDocument();
+      });
+    });
+
+    it('displays member name as "Initial. LastName" format', async () => {
+      useAuth.mockReturnValue({
+        user: {
+          id: 'u0000000-0000-0000-0000-000000000010',
+          username: 'testuser',
+          email: 'test@example.com',
+          role: 'user',
+          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupName: 'Team Alpha',
+        },
+        logout: mockLogout,
+        refreshUser: mockRefreshUser,
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+
+      axios.get.mockResolvedValue({
+        data: {
+          members: [
+            { id: 'u1', username: 'jdoe', email: 'jdoe@example.com', first_name: 'John', last_name: 'Doe' },
+            { id: 'u2', username: 'msmith', email: 'm@example.com', first_name: 'Mary', last_name: 'Smith' },
+          ],
+        },
+      });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('J. Doe')).toBeInTheDocument();
+        expect(screen.getByText('M. Smith')).toBeInTheDocument();
+        // usernames should NOT be shown
+        expect(screen.queryByText('jdoe')).not.toBeInTheDocument();
+        expect(screen.queryByText('msmith')).not.toBeInTheDocument();
+      });
+    });
+
+    it('falls back to username when first_name is missing', async () => {
+      useAuth.mockReturnValue({
+        user: {
+          id: 'u0000000-0000-0000-0000-000000000010',
+          username: 'testuser',
+          email: 'test@example.com',
+          role: 'user',
+          groupId: 'g0000000-0000-0000-0000-000000000001',
+          groupName: 'Team Alpha',
+        },
+        logout: mockLogout,
+        refreshUser: mockRefreshUser,
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+
+      axios.get.mockResolvedValue({
+        data: {
+          members: [
+            { id: 'u1', username: 'legacyuser', email: 'legacy@example.com', first_name: null, last_name: null },
+          ],
+        },
+      });
+
+      render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('legacyuser')).toBeInTheDocument();
       });
     });
 

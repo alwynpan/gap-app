@@ -416,17 +416,36 @@ describe('Groups page', () => {
   // ── Expand row / members ───────────────────────────────────────────────
   describe('Group Members', () => {
     const membersData = [
-      { id: 'u0000000-0000-0000-0000-000000000010', username: 'alice', email: 'alice@test.com', role_name: 'user' },
+      {
+        id: 'u0000000-0000-0000-0000-000000000010',
+        username: 'alice',
+        email: 'alice@test.com',
+        first_name: 'Alice',
+        last_name: 'Smith',
+        student_id: 'S001',
+        role_name: 'user',
+      },
       {
         id: 'u0000000-0000-0000-0000-000000000011',
         username: 'bob',
         email: 'bob@test.com',
+        first_name: 'Bob',
+        last_name: 'Jones',
+        student_id: null,
         role_name: 'assignment_manager',
       },
     ];
     const allUsersData = [
       ...membersData,
-      { id: 'u0000000-0000-0000-0000-000000000012', username: 'charlie', email: 'charlie@test.com', role_name: 'user' },
+      {
+        id: 'u0000000-0000-0000-0000-000000000012',
+        username: 'charlie',
+        email: 'charlie@test.com',
+        first_name: 'Charlie',
+        last_name: 'Brown',
+        student_id: 'S003',
+        role_name: 'user',
+      },
     ];
 
     const expandGroup = async (user) => {
@@ -446,6 +465,24 @@ describe('Groups page', () => {
         expect(screen.getByText('alice')).toBeInTheDocument();
         expect(screen.getByText('bob')).toBeInTheDocument();
         expect(screen.getByText('alice@test.com')).toBeInTheDocument();
+      });
+    });
+
+    it('shows full name and student ID for each member', async () => {
+      const user = userEvent.setup();
+      await setupPage();
+      axios.get
+        .mockResolvedValueOnce({ data: { members: membersData } })
+        .mockResolvedValueOnce({ data: { users: allUsersData } });
+
+      await expandGroup(user);
+
+      await waitFor(() => {
+        expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+        expect(screen.getByText('ID: S001')).toBeInTheDocument();
+        expect(screen.getByText('Bob Jones')).toBeInTheDocument();
+        // bob has no student_id — should not render an "ID:" entry
+        expect(screen.queryByText('ID: null')).not.toBeInTheDocument();
       });
     });
 
@@ -981,6 +1018,49 @@ describe('Groups page', () => {
         expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g2$/), { maxMembers: 8 });
         expect(screen.getByText('Updated limit for 2 groups')).toBeInTheDocument();
       });
+    });
+  });
+
+  // ── Search ─────────────────────────────────────────────────────────────
+  describe('Group search', () => {
+    it('shows all groups when search is empty', async () => {
+      await setupPage([makeGroup({ name: 'Alpha' }), makeGroup({ id: 'g2', name: 'Beta' })]);
+
+      expect(screen.getByText('Alpha')).toBeInTheDocument();
+      expect(screen.getByText('Beta')).toBeInTheDocument();
+    });
+
+    it('filters groups by name when search term is entered', async () => {
+      const user = userEvent.setup();
+      await setupPage([makeGroup({ name: 'Alpha Team' }), makeGroup({ id: 'g2', name: 'Beta Group' })]);
+
+      await user.type(screen.getByPlaceholderText('Search groups...'), 'alpha');
+
+      await waitFor(() => {
+        expect(screen.getByText('Alpha Team')).toBeInTheDocument();
+        expect(screen.queryByText('Beta Group')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows no-results message when search matches nothing', async () => {
+      const user = userEvent.setup();
+      await setupPage([makeGroup({ name: 'Alpha Team' })]);
+
+      await user.type(screen.getByPlaceholderText('Search groups...'), 'zzz');
+
+      await waitFor(() => {
+        expect(screen.getByText('No groups match your search')).toBeInTheDocument();
+        expect(screen.queryByText('Alpha Team')).not.toBeInTheDocument();
+      });
+    });
+
+    it('search is case-insensitive', async () => {
+      const user = userEvent.setup();
+      await setupPage([makeGroup({ name: 'Alpha Team' })]);
+
+      await user.type(screen.getByPlaceholderText('Search groups...'), 'ALPHA');
+
+      await waitFor(() => expect(screen.getByText('Alpha Team')).toBeInTheDocument());
     });
   });
 });

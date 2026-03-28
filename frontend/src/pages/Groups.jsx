@@ -406,12 +406,18 @@ function Groups() {
   const availableForGroup = () =>
     allUsers.filter((u) => !groupMembers.some((m) => m.id === u.id) && u.role_name === 'user');
 
+  // ── Search ──────────────────────────────────────────────────────────────
+  const [searchTerm, setSearchTerm] = useState('');
+
   // ── Derived section data ────────────────────────────────────────────────
 
   const isFull = (g) => g.max_members !== null && g.member_count >= g.max_members;
-  const openGroups = groups.filter((g) => g.enabled && !isFull(g));
-  const fullGroups = groups.filter((g) => g.enabled && isFull(g));
-  const disabledGroups = groups.filter((g) => !g.enabled);
+  const matchingGroups = searchTerm
+    ? groups.filter((g) => g.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    : groups;
+  const openGroups = matchingGroups.filter((g) => g.enabled && !isFull(g));
+  const fullGroups = matchingGroups.filter((g) => g.enabled && isFull(g));
+  const disabledGroups = matchingGroups.filter((g) => !g.enabled);
 
   // ── Render helpers ──────────────────────────────────────────────────────
 
@@ -532,23 +538,36 @@ function Groups() {
                           <ul className="divide-y divide-gray-200 mb-3 max-w-xl">
                             {groupMembers.map((member) => (
                               <li key={member.id} className="flex items-center justify-between gap-3 py-2">
-                                <div className="min-w-0 flex-1 flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-900 truncate" title={member.username}>
-                                    {member.username}
-                                  </span>
-                                  <span
-                                    className={`shrink-0 px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                      member.role_name === 'admin'
-                                        ? 'bg-red-100 text-red-800'
-                                        : member.role_name === 'assignment_manager'
-                                          ? 'bg-blue-100 text-blue-800'
-                                          : 'bg-green-100 text-green-800'
-                                    }`}
-                                  >
-                                    {formatRoleName(member.role_name)}
-                                  </span>
+                                <div className="min-w-0 flex-1 flex flex-col gap-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="text-sm font-medium text-gray-900 truncate"
+                                      title={member.username}
+                                    >
+                                      {member.username}
+                                    </span>
+                                    <span
+                                      className={`shrink-0 px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                        member.role_name === 'admin'
+                                          ? 'bg-red-100 text-red-800'
+                                          : member.role_name === 'assignment_manager'
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : 'bg-green-100 text-green-800'
+                                      }`}
+                                    >
+                                      {formatRoleName(member.role_name)}
+                                    </span>
+                                  </div>
+                                  {(member.first_name || member.last_name) && (
+                                    <span className="text-xs text-gray-600 truncate">
+                                      {[member.first_name, member.last_name].filter(Boolean).join(' ')}
+                                    </span>
+                                  )}
+                                  <span className="text-xs text-gray-500 truncate">{member.email}</span>
+                                  {member.student_id && (
+                                    <span className="text-xs text-gray-400 truncate">ID: {member.student_id}</span>
+                                  )}
                                 </div>
-                                <span className="text-sm text-gray-500 truncate">{member.email}</span>
                                 {isAssignmentManager && (
                                   <button
                                     onClick={() => handleRemoveMember(member.id)}
@@ -702,6 +721,18 @@ function Groups() {
             </div>
           )}
 
+          {/* Search */}
+          <div className="mb-4">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search groups..."
+              aria-label="Search groups"
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 w-72"
+            />
+          </div>
+
           {groups.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-lg shadow">
               <p className="text-gray-500">No groups created yet</p>
@@ -711,6 +742,10 @@ function Groups() {
               >
                 Create your first group
               </button>
+            </div>
+          ) : matchingGroups.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-lg shadow">
+              <p className="text-gray-500">No groups match your search</p>
             </div>
           ) : (
             <>

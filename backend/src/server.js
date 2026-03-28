@@ -72,7 +72,7 @@ async function buildServer() {
 
   // API Info endpoint (authenticated only — avoids leaking endpoint structure)
   fastify.get(
-    '/api',
+    '/api/info',
     {
       preHandler: async (request, reply) => {
         if (!request.user) {
@@ -86,26 +86,26 @@ async function buildServer() {
         version: '1.0.0',
         endpoints: {
           auth: {
-            register: 'POST /auth/register',
-            login: 'POST /auth/login',
-            logout: 'POST /auth/logout',
-            me: 'GET /auth/me',
+            register: 'POST /api/auth/register',
+            login: 'POST /api/auth/login',
+            logout: 'POST /api/auth/logout',
+            me: 'GET /api/auth/me',
           },
           users: {
-            list: 'GET /users (admin/assignment_manager)',
-            get: 'GET /users/:id',
-            create: 'POST /users (admin/assignment_manager)',
-            update: 'PUT /users/:id (admin, or self)',
-            updateGroup: 'PUT /users/:id/group (admin/assignment_manager)',
-            delete: 'DELETE /users/:id (admin)',
+            list: 'GET /api/users (admin/assignment_manager)',
+            get: 'GET /api/users/:id',
+            create: 'POST /api/users (admin/assignment_manager)',
+            update: 'PUT /api/users/:id (admin, or self)',
+            updateGroup: 'PUT /api/users/:id/group (admin/assignment_manager)',
+            delete: 'DELETE /api/users/:id (admin)',
           },
           groups: {
-            list: 'GET /groups',
-            enabled: 'GET /groups/enabled',
-            get: 'GET /groups/:id',
-            create: 'POST /groups (admin)',
-            update: 'PUT /groups/:id (admin)',
-            delete: 'DELETE /groups/:id (admin)',
+            list: 'GET /api/groups',
+            enabled: 'GET /api/groups/enabled',
+            get: 'GET /api/groups/:id',
+            create: 'POST /api/groups (admin)',
+            update: 'PUT /api/groups/:id (admin)',
+            delete: 'DELETE /api/groups/:id (admin)',
           },
         },
       };
@@ -113,9 +113,9 @@ async function buildServer() {
   );
 
   // Register routes
-  await fastify.register(authRoutes);
-  await fastify.register(usersRoutes);
-  await fastify.register(groupsRoutes);
+  await fastify.register(authRoutes, { prefix: '/api' });
+  await fastify.register(usersRoutes, { prefix: '/api' });
+  await fastify.register(groupsRoutes, { prefix: '/api' });
 
   return fastify;
 }

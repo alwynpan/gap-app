@@ -13,29 +13,8 @@ spec:
     - host: gap.local
       http:
         paths:
-          # Backend API routes
+          # Backend API routes (all under /api prefix)
           - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: gap-backend
-                port:
-                  number: 3001
-          - path: /auth
-            pathType: Prefix
-            backend:
-              service:
-                name: gap-backend
-                port:
-                  number: 3001
-          - path: /users
-            pathType: Prefix
-            backend:
-              service:
-                name: gap-backend
-                port:
-                  number: 3001
-          - path: /groups
             pathType: Prefix
             backend:
               service:
