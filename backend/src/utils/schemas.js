@@ -90,7 +90,6 @@ const groupNameSchema = sanitizedString.pipe(
 const registerSchema = z.object({
   username: usernameSchema,
   email: emailSchema,
-  password: passwordSchema.optional(),
   firstName: nameSchema('First name'),
   lastName: nameSchema('Last name'),
   studentId: studentIdSchema,
@@ -107,7 +106,6 @@ const createUserSchema = z.object({
   firstName: nameSchema('First name'),
   lastName: nameSchema('Last name'),
   studentId: studentIdSchema,
-  password: passwordSchema.optional(),
   role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
   groupId: z.string().uuid().optional().nullable(),
 });
