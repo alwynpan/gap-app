@@ -105,7 +105,7 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: validationError });
         }
 
-        const { username, email, firstName, lastName, studentId, password, groupId, role } = body;
+        const { username, email, firstName, lastName, studentId, groupId, role } = body;
 
         // Only admins can create admin users
         if (role === 'admin' && request.user.role !== 'admin') {
@@ -155,10 +155,11 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
+        // Always create user as pending — password must be set via the email link
         const newUser = await User.create({
           username,
           email,
-          password: password || null,
+          password: null,
           firstName,
           lastName,
           studentId: effectiveStudentId,
@@ -166,16 +167,14 @@ async function usersRoutes(fastify, _options) {
           roleId,
         });
 
-        // Send setup email if no password was provided
-        if (!password) {
-          try {
-            await PasswordResetToken.deleteStaleForUser(newUser.id);
-            const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
-            await sendPasswordSetupEmail(newUser, tokenRecord.token);
-          } catch (emailError) {
-            console.error('Failed to send setup email:', emailError);
-            // Don't fail the request — user was created successfully
-          }
+        // Always send setup email so the user can verify their address and set a password
+        try {
+          await PasswordResetToken.deleteStaleForUser(newUser.id);
+          const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
+          await sendPasswordSetupEmail(newUser, tokenRecord.token);
+        } catch (emailError) {
+          console.error('Failed to send setup email:', emailError);
+          // Don't fail the request — user was created successfully
         }
 
         return reply.code(201).send({

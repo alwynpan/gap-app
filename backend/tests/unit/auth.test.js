@@ -81,15 +81,19 @@ describe('Auth Routes', () => {
   });
 
   describe('POST /auth/register', () => {
+    const validRegisterBody = {
+      username: 'newuser',
+      email: 'new@test.com',
+      firstName: 'Test',
+      lastName: 'User',
+    };
+
     it('rejects when registration disabled', async () => {
       config.app.registrationEnabled = false;
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'test@test.com', password: 'password123' } },
-        mockReply
-      );
+      await capturedHandlers['/auth/register']({ body: validRegisterBody }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(403);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Registration is currently disabled' });
@@ -100,7 +104,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { email: 'test@test.com', password: 'password123' } },
+        { body: { email: 'test@test.com', firstName: 'Test', lastName: 'User' } },
         mockReply
       );
 
@@ -112,16 +116,10 @@ describe('Auth Routes', () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/register']({ body: { username: 'test', password: 'password123' } }, mockReply);
-
-      expect(mockReply.code).toHaveBeenCalledWith(400);
-    });
-
-    it('rejects missing password', async () => {
-      const authRoutes = require('../../src/routes/auth');
-      authRoutes(mockFastify, {});
-
-      await capturedHandlers['/auth/register']({ body: { username: 'test', email: 'test@test.com' } }, mockReply);
+      await capturedHandlers['/auth/register'](
+        { body: { username: 'test', firstName: 'Test', lastName: 'User' } },
+        mockReply
+      );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
     });
@@ -131,7 +129,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'test@test.com', password: 'password123', lastName: 'User' } },
+        { body: { username: 'test', email: 'test@test.com', lastName: 'User' } },
         mockReply
       );
 
@@ -144,7 +142,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'test@test.com', password: 'password123', firstName: 'Test' } },
+        { body: { username: 'test', email: 'test@test.com', firstName: 'Test' } },
         mockReply
       );
 
@@ -152,17 +150,27 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
-    it('rejects short password (less than 6 chars)', async () => {
+    it('ignores password field — does not reject or use it', async () => {
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
+      User.create.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'newuser',
+        email: 'new@test.com',
+        student_id: null,
+      });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
+
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'test@test.com', password: '12345', firstName: 'Test', lastName: 'User' } },
-        mockReply
-      );
+      await capturedHandlers['/auth/register']({ body: { ...validRegisterBody, password: 'password123' } }, mockReply);
 
-      expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Password must be at least 6 characters' });
+      // Request succeeds — password is stripped, not rejected
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+      // User is always created with password: null regardless of what was submitted
+      expect(User.create).toHaveBeenCalledWith(expect.objectContaining({ password: null }));
     });
 
     it('rejects invalid email format (no @ symbol)', async () => {
@@ -170,15 +178,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'test',
-            email: 'invalidemail',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
+        { body: { username: 'test', email: 'invalidemail', firstName: 'Test', lastName: 'User' } },
         mockReply
       );
 
@@ -191,7 +191,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        { body: { username: 'test', email: 'test@', password: 'password123', firstName: 'Test', lastName: 'User' } },
+        { body: { username: 'test', email: 'test@', firstName: 'Test', lastName: 'User' } },
         mockReply
       );
 
@@ -204,15 +204,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'test',
-            email: 'test @email.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
+        { body: { username: 'test', email: 'test @email.com', firstName: 'Test', lastName: 'User' } },
         mockReply
       );
 
@@ -230,27 +222,18 @@ describe('Auth Routes', () => {
         email: 'valid@example.com',
         student_id: null,
       });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'test',
-            email: 'valid@example.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
+        { body: { username: 'test', email: 'valid@example.com', firstName: 'Test', lastName: 'User' } },
         mockReply
       );
 
-      // Verify email validation passed (no 400 error for invalid email)
       expect(mockReply.code).not.toHaveBeenCalledWith(400);
       expect(mockReply.send).not.toHaveBeenCalledWith({ error: 'Invalid email format' });
-      // Verify registration proceeded successfully
       expect(mockReply.code).toHaveBeenCalledWith(201);
     });
 
@@ -262,15 +245,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'existing',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
+        { body: { username: 'existing', email: 'new@test.com', firstName: 'Test', lastName: 'User' } },
         mockReply
       );
 
@@ -289,15 +264,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'existing@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
+        { body: { username: 'newuser', email: 'existing@test.com', firstName: 'Test', lastName: 'User' } },
         mockReply
       );
 
@@ -305,7 +272,7 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'An account with those details already exists' });
     });
 
-    it('successfully creates user with default role', async () => {
+    it('successfully creates user as pending and always sends setup email', async () => {
       User.findByUsername.mockResolvedValue(null);
       User.findByEmail.mockResolvedValue(null);
       Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
@@ -315,33 +282,28 @@ describe('Auth Routes', () => {
         email: 'new@test.com',
         student_id: 'S123',
       });
+      PasswordResetToken.create.mockResolvedValue({ token: 'setup-token' });
+
+      const { sendPasswordSetupEmail } = require('../../src/services/email');
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-            studentId: 'S123',
-          },
-        },
-        mockReply
-      );
+      await capturedHandlers['/auth/register']({ body: { ...validRegisterBody, studentId: 'S123' } }, mockReply);
 
+      // User always created with null password
       expect(User.create).toHaveBeenCalledWith({
         username: 'newuser',
         email: 'new@test.com',
-        password: 'password123',
+        password: null,
         firstName: 'Test',
         lastName: 'User',
         studentId: 'S123',
         roleId: '20000000-0000-4000-8000-000000000003',
       });
+      // Setup email always sent
+      expect(PasswordResetToken.create).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', 'setup', 24);
+      expect(sendPasswordSetupEmail).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(201);
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'User registered successfully',
@@ -358,19 +320,7 @@ describe('Auth Routes', () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'newadmin',
-            email: 'admin@test.com',
-            password: 'password123',
-            firstName: 'Admin',
-            lastName: 'User',
-            role: 'admin',
-          },
-        },
-        mockReply
-      );
+      await capturedHandlers['/auth/register']({ body: { ...validRegisterBody, role: 'admin' } }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(403);
       expect(mockReply.send).toHaveBeenCalledWith({
@@ -384,16 +334,7 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'newam',
-            email: 'am@test.com',
-            password: 'password123',
-            firstName: 'AM',
-            lastName: 'User',
-            role: 'assignment_manager',
-          },
-        },
+        { body: { ...validRegisterBody, role: 'assignment_manager' } },
         mockReply
       );
 
@@ -414,22 +355,12 @@ describe('Auth Routes', () => {
         email: 'new@test.com',
         student_id: null,
       });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
-        mockReply
-      );
+      await capturedHandlers['/auth/register']({ body: validRegisterBody }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(201);
     });
@@ -445,18 +376,7 @@ describe('Auth Routes', () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      await capturedHandlers['/auth/register'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
-        mockReply
-      );
+      await capturedHandlers['/auth/register']({ body: validRegisterBody }, mockReply);
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);

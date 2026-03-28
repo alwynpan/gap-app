@@ -29,7 +29,7 @@ async function authRoutes(fastify, _options) {
         return reply.code(400).send({ error: validationError });
       }
 
-      const { username, email, firstName, lastName, studentId, password } = body;
+      const { username, email, firstName, lastName, studentId } = body;
 
       // Reject any attempt to register with admin or assignment_manager role
       if (request.body.role && request.body.role !== 'user') {
@@ -52,27 +52,25 @@ async function authRoutes(fastify, _options) {
         // Get default user role
         const defaultRole = await Role.findByName('user');
 
-        // Create user - if no password provided, user is created as 'pending' and will receive email to set password
+        // Always create user as pending — password must be set via the email link
         const newUser = await User.create({
           username,
           email,
-          password: password || null,
+          password: null,
           firstName,
           lastName,
           studentId,
           roleId: defaultRole.id,
         });
 
-        // Send setup email if no password was provided
-        if (!password) {
-          try {
-            await PasswordResetToken.deleteStaleForUser(newUser.id);
-            const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
-            await sendPasswordSetupEmail(newUser, tokenRecord.token);
-          } catch (emailError) {
-            console.error('Failed to send setup email:', emailError);
-            // Don't fail the request - user was created successfully
-          }
+        // Always send setup email so the user can verify their address and set a password
+        try {
+          await PasswordResetToken.deleteStaleForUser(newUser.id);
+          const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
+          await sendPasswordSetupEmail(newUser, tokenRecord.token);
+        } catch (emailError) {
+          console.error('Failed to send setup email:', emailError);
+          // Don't fail the request - user was created successfully
         }
 
         return reply.code(201).send({

@@ -247,16 +247,20 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
+    const validCreateBody = {
+      username: 'newuser',
+      email: 'new@test.com',
+      firstName: 'Test',
+      lastName: 'User',
+    };
+
     it('rejects when firstName is missing', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users_post'](
-        { body: { username: 'u1', email: 'u1@test.com', password: 'password123', lastName: 'User' } },
-        mockReply
-      );
+      await handlers['/users_post']({ body: { username: 'u1', email: 'u1@test.com', lastName: 'User' } }, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(400);
       expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
@@ -267,12 +271,38 @@ describe('Users Routes', () => {
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users_post'](
-        { body: { username: 'u1', email: 'u1@test.com', password: 'password123', firstName: 'Test' } },
-        mockReply
-      );
+      await handlers['/users_post']({ body: { username: 'u1', email: 'u1@test.com', firstName: 'Test' } }, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(400);
       expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
+    });
+
+    it('ignores password field — does not reject or use it', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
+      User.create.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'newuser',
+        email: 'new@test.com',
+        student_id: null,
+      });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'admin' }, body: { ...validCreateBody, password: 'password123' } },
+        mockReply
+      );
+
+      // Request succeeds — password is stripped by schema, not rejected
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+      // User is always created with password: null regardless of what was submitted
+      expect(User.create).toHaveBeenCalledWith(expect.objectContaining({ password: null }));
     });
 
     it('rejects when username already exists', async () => {
@@ -288,18 +318,7 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users_post'](
-        {
-          body: {
-            username: 'existing',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
-        mockReply
-      );
+      await handlers['/users_post']({ body: { ...validCreateBody, username: 'existing' } }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(409);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Username already exists' });
@@ -318,24 +337,13 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users_post'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'existing@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
-        mockReply
-      );
+      await handlers['/users_post']({ body: { ...validCreateBody, email: 'existing@test.com' } }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(409);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Email already exists' });
     });
 
-    it('creates user with default role', async () => {
+    it('creates user as pending with null password and always sends setup email', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findByUsername.mockResolvedValue(null);
@@ -347,35 +355,28 @@ describe('Users Routes', () => {
         email: 'new@test.com',
         student_id: 'S123',
       });
+      PasswordResetToken.create.mockResolvedValue({ token: 'setup-token' });
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users_post'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-            studentId: 'S123',
-          },
-        },
-        mockReply
-      );
+      await handlers['/users_post']({ body: { ...validCreateBody, studentId: 'S123' } }, mockReply);
 
+      // Always creates with null password (no password allowed at creation time)
       expect(User.create).toHaveBeenCalledWith({
         username: 'newuser',
         email: 'new@test.com',
-        password: 'password123',
+        password: null,
         firstName: 'Test',
         lastName: 'User',
         studentId: 'S123',
         groupId: undefined,
         roleId: '20000000-0000-4000-8000-000000000003',
       });
+      // Always sends setup email
+      expect(PasswordResetToken.create).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', 'setup', 24);
+      expect(sendPasswordSetupEmail).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(201);
     });
 
@@ -391,6 +392,7 @@ describe('Users Routes', () => {
         email: 'admin@test.com',
         student_id: null,
       });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -399,14 +401,7 @@ describe('Users Routes', () => {
       await handlers['/users_post'](
         {
           user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: {
-            username: 'adminuser',
-            email: 'admin@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-            role: 'admin',
-          },
+          body: { username: 'adminuser', email: 'admin@test.com', firstName: 'Test', lastName: 'User', role: 'admin' },
         },
         mockReply
       );
@@ -427,6 +422,7 @@ describe('Users Routes', () => {
         email: 'new@test.com',
         student_id: null,
       });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -435,14 +431,7 @@ describe('Users Routes', () => {
       await handlers['/users_post'](
         {
           user: { id: '00000000-0000-4000-8000-000000000001', role: 'assignment_manager' },
-          body: {
-            username: 'newuser',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-            role: 'user',
-          },
+          body: { ...validCreateBody, role: 'user' },
         },
         mockReply
       );
@@ -462,14 +451,7 @@ describe('Users Routes', () => {
       await handlers['/users_post'](
         {
           user: { id: '00000000-0000-4000-8000-000000000001', role: 'assignment_manager' },
-          body: {
-            username: 'newadmin',
-            email: 'admin@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-            role: 'admin',
-          },
+          body: { username: 'newadmin', email: 'admin@test.com', firstName: 'Test', lastName: 'User', role: 'admin' },
         },
         mockReply
       );
@@ -487,19 +469,7 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users_post'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-            role: 'unknown',
-          },
-        },
-        mockReply
-      );
+      await handlers['/users_post']({ body: { ...validCreateBody, role: 'unknown' } }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
       expect(mockReply.send).toHaveBeenCalledWith({ error: expect.stringContaining('Invalid') });
@@ -524,16 +494,7 @@ describe('Users Routes', () => {
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-            groupId: '10000000-0000-4000-8000-000000000001',
-          },
-        },
+        { body: { ...validCreateBody, groupId: '10000000-0000-4000-8000-000000000001' } },
         mockReply
       );
 
@@ -560,22 +521,14 @@ describe('Users Routes', () => {
         email: 'new@test.com',
         student_id: null,
       });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-            groupId: '10000000-0000-4000-8000-000000000001',
-          },
-        },
+        { body: { ...validCreateBody, groupId: '10000000-0000-4000-8000-000000000001' } },
         mockReply
       );
 
@@ -596,18 +549,7 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users_post'](
-        {
-          body: {
-            username: 'newuser',
-            email: 'new@test.com',
-            password: 'password123',
-            firstName: 'Test',
-            lastName: 'User',
-          },
-        },
-        mockReply
-      );
+      await handlers['/users_post']({ body: validCreateBody }, mockReply);
 
       expect(consoleSpy).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
