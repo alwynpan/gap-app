@@ -868,21 +868,6 @@ function Users() {
                   placeholder="Enter last name"
                 />
               </div>
-              <div className="mb-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
-                The user will need to set a password via email before they can log in.
-              </div>
-              <div className="mb-3 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="sendSetupEmail"
-                  checked={newUser.sendSetupEmail}
-                  onChange={(e) => setNewUser({ ...newUser, sendSetupEmail: e.target.checked })}
-                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <label htmlFor="sendSetupEmail" className="text-sm text-gray-700">
-                  Send &lsquo;Set Password&rsquo; email now
-                </label>
-              </div>
               <div className="mb-3">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Role <span className="text-red-500">*</span>
@@ -926,6 +911,21 @@ function Users() {
                   </div>
                 </>
               )}
+              <div className="mb-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                The user will need to set a password via email before they can log in.
+              </div>
+              <div className="mb-3 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="sendSetupEmail"
+                  checked={newUser.sendSetupEmail}
+                  onChange={(e) => setNewUser({ ...newUser, sendSetupEmail: e.target.checked })}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <label htmlFor="sendSetupEmail" className="text-sm text-gray-700">
+                  Send &lsquo;Set Password&rsquo; email now
+                </label>
+              </div>
               <div className="flex justify-end space-x-3">
                 <button
                   type="button"
