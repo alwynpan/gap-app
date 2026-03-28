@@ -38,7 +38,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: npm install
 
       - name: Run frontend lint
         working-directory: ./frontend
@@ -103,7 +103,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: npm install
 
       - name: Run frontend tests
         working-directory: ./frontend
@@ -143,7 +143,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: npm install
 
       - name: Run frontend format check
         working-directory: ./frontend
@@ -171,7 +171,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: npm install
 
       - name: Run frontend build
         working-directory: ./frontend
