@@ -15,10 +15,8 @@ jobs:
         include:
           - service: backend
             context: ./backend
-            image: ${{ secrets.DOCKERHUB_USERNAME }}/gap-backend
           - service: frontend
             context: ./frontend
-            image: ${{ secrets.DOCKERHUB_USERNAME }}/gap-frontend
 
     steps:
       - name: Checkout code
@@ -37,7 +35,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ matrix.image }}
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/gap-${{ matrix.service }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
