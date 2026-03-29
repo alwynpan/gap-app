@@ -522,8 +522,8 @@ function Users() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-1">
-                    {/* Edit User Profile button for admins and assignment managers (for non-admins) */}
-                    {(isAdmin || (isAssignmentManager && u.role_name !== 'admin')) && (
+                    {/* Edit User Profile button for admins, assignment managers (non-admins), and users editing their own profile */}
+                    {(isAdmin || (isAssignmentManager && u.role_name !== 'admin') || u.id === user?.id) && (
                       <div className="relative group">
                         <button
                           onClick={() => openEditModal(u)}

@@ -44,7 +44,6 @@ Edit `.env` — at minimum, set:
 - `LETSENCRYPT_EMAIL`
 - `DB_PASSWORD`
 - `JWT_SECRET`
-- `ADMIN_USERNAME`
 - `ADMIN_PASSWORD`
 
 **3. Build images and start services:**
@@ -64,25 +63,24 @@ docker compose logs traefik
 
 ## Environment Variables
 
-| Variable               | Required | Default             | Description                                                                                      |
-| ---------------------- | :------: | ------------------- | ------------------------------------------------------------------------------------------------ |
-| `DOMAIN`               |   Yes    | —                   | FQDN for the app (e.g. `gap.example.com`). DNS must point to this server.                        |
-| `LETSENCRYPT_EMAIL`    |   Yes    | —                   | Email for Let's Encrypt registration and expiry notices.                                         |
-| `DB_PASSWORD`          |   Yes    | —                   | Password for the PostgreSQL `gap_user` account.                                                  |
-| `JWT_SECRET`           |   Yes    | —                   | Secret key for JWT signing. Use a long random string (min 32 chars).                             |
-| `ADMIN_USERNAME`       |   Yes    | —                   | Username for the initial admin account (seeded on first migration only).                         |
-| `ADMIN_PASSWORD`       |   Yes    | —                   | Password for the initial admin account (seeded on first migration only).                         |
-| `JWT_EXPIRES_IN`       |    No    | `24h`               | JWT token expiry. Uses ms format (e.g. `24h`, `7d`).                                             |
-| `REGISTRATION_ENABLED` |    No    | `false`             | Allow public self-registration. Recommended to keep `false` in production.                       |
-| `SMTP_HOST`            |    No    | _(empty)_           | SMTP hostname. Leave blank to disable email — links are logged to the backend container instead. |
-| `SMTP_PORT`            |    No    | `587`               | SMTP server port.                                                                                |
-| `SMTP_SECURE`          |    No    | `false`             | Use TLS (SMTPS). Set to `false` for STARTTLS on port 587.                                        |
-| `SMTP_USER`            |    No    | _(empty)_           | SMTP authentication username.                                                                    |
-| `SMTP_PASS`            |    No    | _(empty)_           | SMTP authentication password.                                                                    |
-| `SMTP_FROM`            |    No    | `no-reply@<DOMAIN>` | Sender address for outgoing emails.                                                              |
-| `BACKUP_FREQ`          |    No    | `1440`              | Backup frequency in minutes (default: every 24 hours).                                           |
-| `BACKUP_BEGIN`         |    No    | `0300`              | Time to run the first backup in HHMM format (default: 3:00 AM).                                  |
-| `BACKUP_CLEANUP_TIME`  |    No    | `10080`             | Delete backups older than this many minutes (default: 7 days).                                   |
+| Variable               | Required | Default             | Description                                                                                          |
+| ---------------------- | :------: | ------------------- | ---------------------------------------------------------------------------------------------------- |
+| `DOMAIN`               |   Yes    | —                   | FQDN for the app (e.g. `gap.example.com`). DNS must point to this server.                            |
+| `LETSENCRYPT_EMAIL`    |   Yes    | —                   | Email for Let's Encrypt registration and expiry notices.                                             |
+| `DB_PASSWORD`          |   Yes    | —                   | Password for the PostgreSQL `gap_user` account.                                                      |
+| `JWT_SECRET`           |   Yes    | —                   | Secret key for JWT signing. Use a long random string (min 32 chars).                                 |
+| `ADMIN_PASSWORD`       |   Yes    | —                   | Password for the initial admin account (username is always `admin`, seeded on first migration only). |
+| `JWT_EXPIRES_IN`       |    No    | `24h`               | JWT token expiry. Uses ms format (e.g. `24h`, `7d`).                                                 |
+| `REGISTRATION_ENABLED` |    No    | `false`             | Allow public self-registration. Recommended to keep `false` in production.                           |
+| `SMTP_HOST`            |    No    | _(empty)_           | SMTP hostname. Leave blank to disable email — links are logged to the backend container instead.     |
+| `SMTP_PORT`            |    No    | `587`               | SMTP server port.                                                                                    |
+| `SMTP_SECURE`          |    No    | `false`             | Use TLS (SMTPS). Set to `false` for STARTTLS on port 587.                                            |
+| `SMTP_USER`            |    No    | _(empty)_           | SMTP authentication username.                                                                        |
+| `SMTP_PASS`            |    No    | _(empty)_           | SMTP authentication password.                                                                        |
+| `SMTP_FROM`            |    No    | `no-reply@<DOMAIN>` | Sender address for outgoing emails.                                                                  |
+| `BACKUP_FREQ`          |    No    | `1440`              | Backup frequency in minutes (default: every 24 hours).                                               |
+| `BACKUP_BEGIN`         |    No    | `0300`              | Time to run the first backup in HHMM format (default: 3:00 AM).                                      |
+| `BACKUP_CLEANUP_TIME`  |    No    | `10080`             | Delete backups older than this many minutes (default: 7 days).                                       |
 
 ## Database Backups
 

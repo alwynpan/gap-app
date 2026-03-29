@@ -24,6 +24,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 ## Tech Stack
 
 ### Backend
+
 - **Runtime:** Node.js 20
 - **Framework:** Fastify
 - **Database:** PostgreSQL 15
@@ -31,6 +32,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 - **Password Hashing:** bcrypt (@fastify/bcrypt)
 
 ### Frontend
+
 - **Framework:** React 18
 - **Build Tool:** Vite
 - **Styling:** Tailwind CSS
@@ -38,6 +40,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 - **HTTP Client:** Axios
 
 ### Infrastructure
+
 - **Containerization:** Docker & Docker Compose
 - **Orchestration:** Kubernetes
 - **Ingress:** Traefik
@@ -45,6 +48,7 @@ Group Assignment Portal - A role-based access control system for managing studen
 ## Quick Start (Local Development)
 
 ### Prerequisites
+
 - Node.js 20+
 - Docker & Docker Compose
 - PostgreSQL (if not using Docker)
@@ -96,17 +100,18 @@ npm run dev
 
 ## Default Credentials
 
-After running migrations, the admin username and password are set via environment variables:
-- **Username:** `admin` (or set `ADMIN_USERNAME` before migration)
+After running migrations, the built-in admin account is seeded automatically:
+
+- **Username:** `admin` (hardcoded — cannot be changed via environment)
 - **Password:** Set via `ADMIN_PASSWORD` environment variable before migration
 - **Role:** Admin
 
-⚠️ **Set secure values for `ADMIN_USERNAME` and `ADMIN_PASSWORD` before running migrations in production!**
+⚠️ **Set a secure `ADMIN_PASSWORD` before running migrations in production!**
 
-To set admin credentials:
+To set the admin password:
+
 ```bash
 # In your .env file or environment
-export ADMIN_USERNAME=admin
 export ADMIN_PASSWORD=your-secure-password
 
 # Then run migrations
@@ -116,12 +121,14 @@ npm run migrate
 ## API Endpoints
 
 ### Authentication
+
 - `POST /auth/register` - Register new user
 - `POST /auth/login` - Login
 - `POST /auth/logout` - Logout
 - `GET /auth/me` - Get current user
 
 ### Users (Admin/Assignment Manager)
+
 - `GET /users` - List all users
 - `GET /users/:id` - Get user by ID
 - `POST /users` - Create user (Admin only)
@@ -130,6 +137,7 @@ npm run migrate
 - `DELETE /users/:id` - Delete user (Admin only)
 
 ### Groups
+
 - `GET /groups` - List all groups
 - `GET /groups/enabled` - List enabled groups
 - `GET /groups/:id` - Get group with members
@@ -139,15 +147,16 @@ npm run migrate
 
 ## Role System
 
-| Role | Permissions |
-|------|-------------|
-| **Admin** | Full access to all features, user management, group management |
-| **Assignment Manager** | View all users, assign users to groups |
-| **User** | View own profile, view groups |
+| Role                   | Permissions                                                    |
+| ---------------------- | -------------------------------------------------------------- |
+| **Admin**              | Full access to all features, user management, group management |
+| **Assignment Manager** | View all users, assign users to groups                         |
+| **User**               | View own profile, view groups                                  |
 
 ## Kubernetes Deployment
 
 ### Prerequisites
+
 - Kubernetes cluster (v1.25+)
 - kubectl configured
 - Traefik ingress controller
@@ -191,6 +200,7 @@ kubectl apply -f k8s/gap-ingress.yaml
 ```
 
 ### Add to /etc/hosts
+
 ```
 127.0.0.1 gap.local
 ```
@@ -198,6 +208,7 @@ kubectl apply -f k8s/gap-ingress.yaml
 ## Testing
 
 ### Backend Unit Tests
+
 ```bash
 cd backend
 npm test                              # Run with coverage
@@ -205,6 +216,7 @@ npx jest tests/unit/auth.test.js      # Run a single test file
 ```
 
 ### Frontend Unit Tests
+
 ```bash
 cd frontend
 npm test                              # Run with coverage
@@ -212,6 +224,7 @@ npx jest tests/unit/pages/Login.test.jsx  # Run a single test file
 ```
 
 ### E2E Tests (requires running services)
+
 ```bash
 cd tests
 npm install
@@ -225,24 +238,25 @@ npm run test:coverage       # Run with coverage
 ### Environment Variables
 
 #### Backend
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `JWT_SECRET` | Secret key for JWT signing | (required) |
-| `JWT_EXPIRES_IN` | Token expiration time | `24h` |
-| `DB_HOST` | PostgreSQL host | `localhost` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_NAME` | Database name | `gap_db` |
-| `DB_USER` | Database user | `gap_user` |
-| `DB_PASSWORD` | Database password | (required) |
-| `ADMIN_USERNAME` | Initial admin username | `admin` |
-| `ADMIN_PASSWORD` | Initial admin password (required for migration) | (required) |
-| `REGISTRATION_ENABLED` | Enable user registration | `true` |
-| `PORT` | Server port | `3001` |
-| `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:3000` |
+
+| Variable               | Description                                                                 | Default                 |
+| ---------------------- | --------------------------------------------------------------------------- | ----------------------- |
+| `JWT_SECRET`           | Secret key for JWT signing                                                  | (required)              |
+| `JWT_EXPIRES_IN`       | Token expiration time                                                       | `24h`                   |
+| `DB_HOST`              | PostgreSQL host                                                             | `localhost`             |
+| `DB_PORT`              | PostgreSQL port                                                             | `5432`                  |
+| `DB_NAME`              | Database name                                                               | `gap_db`                |
+| `DB_USER`              | Database user                                                               | `gap_user`              |
+| `DB_PASSWORD`          | Database password                                                           | (required)              |
+| `ADMIN_PASSWORD`       | Initial admin password (required for migration; username is always `admin`) | (required)              |
+| `REGISTRATION_ENABLED` | Enable user registration                                                    | `true`                  |
+| `PORT`                 | Server port                                                                 | `3001`                  |
+| `CORS_ORIGIN`          | Allowed CORS origin                                                         | `http://localhost:3000` |
 
 #### Frontend
-| Variable | Description | Default |
-|----------|-------------|---------|
+
+| Variable       | Description     | Default                 |
+| -------------- | --------------- | ----------------------- |
 | `VITE_API_URL` | Backend API URL | `http://localhost:3001` |
 
 ## Project Structure
@@ -320,6 +334,7 @@ gap-portal/
 ## Troubleshooting
 
 ### Database Connection Issues
+
 ```bash
 # Check PostgreSQL is running
 docker-compose ps postgres
@@ -332,6 +347,7 @@ docker-compose exec backend npm run migrate
 ```
 
 ### Frontend Build Issues
+
 ```bash
 # Clear cache and rebuild
 cd frontend
@@ -341,6 +357,7 @@ npm run build
 ```
 
 ### Kubernetes Deployment Issues
+
 ```bash
 # Check pod status
 kubectl get pods -n gap-portal

@@ -135,7 +135,7 @@ async function runMigrations(client) {
 
 // Full reset: DROP all tables, recreate schema, seed data, run migrations
 async function migrate() {
-  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+  const adminUsername = 'admin';
   const adminPassword = process.env.ADMIN_PASSWORD;
 
   if (!adminPassword) {
@@ -212,7 +212,7 @@ async function migrateUp() {
       "SELECT u.id FROM users u JOIN roles r ON u.role_id = r.id WHERE r.name = 'admin' LIMIT 1"
     );
     if (rows.length === 0) {
-      const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+      const adminUsername = 'admin';
       const adminPassword = process.env.ADMIN_PASSWORD;
 
       if (adminPassword) {

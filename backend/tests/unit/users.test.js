@@ -921,6 +921,10 @@ describe('Users Routes', () => {
     it('allows user to edit own profile', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        role_name: 'user',
+      });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -929,8 +933,7 @@ describe('Users Routes', () => {
         params: { id: '00000000-0000-4000-8000-000000000001' },
       };
       await handlers['/users/:id_put_pre'](request, mockReply);
-      expect(mockReply.code).toHaveBeenCalledWith(403);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Regular users cannot edit user information' });
+      expect(mockReply.code).not.toHaveBeenCalled();
     });
 
     it('rejects non-admin editing another user', async () => {
@@ -945,7 +948,7 @@ describe('Users Routes', () => {
       };
       await handlers['/users/:id_put_pre'](request, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(403);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Regular users cannot edit user information' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: You can only edit your own profile' });
     });
 
     it('rejects assignment_manager editing another user', async () => {
@@ -1094,6 +1097,84 @@ describe('Users Routes', () => {
         enabled: false,
         status: 'inactive',
       });
+    });
+
+    it('regular user self-edit can update studentId', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.update.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'testuser',
+        email: 'test@test.com',
+        student_id: 'S99999',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' },
+          params: { id: '00000000-0000-4000-8000-000000000001' },
+          targetUser: {
+            id: '00000000-0000-4000-8000-000000000001',
+            username: 'testuser',
+            role_name: 'user',
+            status: 'active',
+          },
+          body: {
+            email: 'test@test.com',
+            studentId: 'S99999',
+          },
+        },
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000001',
+        expect.objectContaining({ studentId: 'S99999' })
+      );
+      expect(mockReply.code).not.toHaveBeenCalledWith(expect.stringMatching(/^4/));
+    });
+
+    it('regular user self-edit cannot update role or enabled', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.update.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'testuser',
+        email: 'test@test.com',
+      });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_put'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' },
+          params: { id: '00000000-0000-4000-8000-000000000001' },
+          targetUser: {
+            id: '00000000-0000-4000-8000-000000000001',
+            username: 'testuser',
+            role_name: 'user',
+            status: 'active',
+          },
+          body: {
+            email: 'test@test.com',
+            role: 'admin',
+            enabled: false,
+          },
+        },
+        mockReply
+      );
+
+      // role and enabled must not be passed through for a regular user caller
+      expect(User.update).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000001',
+        expect.not.objectContaining({ roleId: expect.anything(), enabled: expect.anything() })
+      );
     });
 
     it('handles error when updating user', async () => {
@@ -1972,7 +2053,7 @@ describe('Users Routes', () => {
   });
 
   describe('PUT /users/:id - preHandler permissions', () => {
-    it('rejects regular user from editing anyone', async () => {
+    it('rejects regular user from editing another user', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       const usersRoutes = require('../../src/routes/users');
@@ -1981,13 +2062,13 @@ describe('Users Routes', () => {
 
       const request = {
         user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' },
-        params: { id: '00000000-0000-4000-8000-000000000001' },
+        params: { id: '00000000-0000-4000-8000-000000000002' },
       };
 
       await handlers['/users/:id_put_pre'](request, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(403);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Regular users cannot edit user information' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: You can only edit your own profile' });
     });
 
     it('allows admin to edit any user', async () => {

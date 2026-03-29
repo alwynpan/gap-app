@@ -68,11 +68,12 @@ describe('Email Service', () => {
       expect(mockSendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'user@test.com',
-          subject: 'Set your password — G.A.P. Portal',
+          subject: 'Set your password — Group Assignment Portal',
           html: expect.stringContaining('http://localhost:3000/set-password?token=mytoken123'),
         })
       );
       expect(mockSendMail.mock.calls[0][0].html).toContain('Hello Alice');
+      expect(mockSendMail.mock.calls[0][0].html).toContain('testuser');
     });
 
     it('falls back to username when first_name is absent', async () => {
@@ -113,7 +114,7 @@ describe('Email Service', () => {
       expect(mockSendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'user@test.com',
-          subject: 'Reset your password — G.A.P. Portal',
+          subject: 'Reset your password — Group Assignment Portal',
           html: expect.stringContaining('http://app.example.com/set-password?token=resettoken789'),
         })
       );
