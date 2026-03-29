@@ -22,7 +22,11 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# nginx:alpine includes a built-in nginx user; drop privileges after setup
+# Pre-create nginx runtime directories with correct ownership so the process
+# can start as a non-root user without permission errors
+RUN mkdir -p /var/cache/nginx /var/run && \
+    chown -R nginx:nginx /var/cache/nginx /var/log/nginx /var/run
+
 USER nginx
 
 EXPOSE 8080
