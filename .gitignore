@@ -26,12 +26,10 @@ Thumbs.db
 coverage/
 .nyc_output/
 
-# Kubernetes secrets (use sealed-secrets or external-secrets instead)
-k8s/*-secrets.yaml
-!k8s/*-secrets.yaml.example
-
 # Docker
 docker-compose.override.yml
+deployment/docker/.env
+deployment/docker/backups/
 
 # Temporary files
 tmp/
