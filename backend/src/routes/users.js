@@ -267,7 +267,7 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Update user (admin can edit any user; assignment managers can edit non-admin users; regular users cannot edit anyone)
+  // Update user (admin can edit any user; assignment managers can edit non-admin users; regular users can edit their own profile only)
   fastify.put(
     '/users/:id',
     {
@@ -281,10 +281,11 @@ async function usersRoutes(fastify, _options) {
         }
         const isAdmin = request.user.role === 'admin';
         const isAssignmentManager = request.user.role === 'assignment_manager';
+        const isSelfEdit = request.user.id === userId;
 
-        // Regular users cannot edit anyone (including themselves - they should use password change endpoint)
-        if (!isAdmin && !isAssignmentManager) {
-          return reply.code(403).send({ error: 'Forbidden: Regular users cannot edit user information' });
+        // Regular users can only edit their own profile
+        if (!isAdmin && !isAssignmentManager && !isSelfEdit) {
+          return reply.code(403).send({ error: 'Forbidden: You can only edit your own profile' });
         }
 
         // Get the target user to check their role

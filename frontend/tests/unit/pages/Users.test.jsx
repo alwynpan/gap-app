@@ -692,14 +692,14 @@ describe('Users page', () => {
       expect(screen.getByRole('button', { name: /edit user profile/i })).toBeInTheDocument();
     });
 
-    it('hides Edit button for regular users (even on their own row)', async () => {
+    it('shows Edit button for regular users on their own row', async () => {
       useAuth.mockReturnValue({
         user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
         isAdmin: false,
         isAssignmentManager: false,
       });
       await setupRenderedPage();
-      expect(screen.queryByRole('button', { name: /edit user profile/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /edit user profile/i })).toBeInTheDocument();
     });
 
     it('hides Edit button for user on other users rows', async () => {

@@ -106,5 +106,5 @@ Husky runs `lint-staged` on commit, which applies Prettier and ESLint fixes to s
 
 - `JWT_SECRET` — Required, no default
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` — PostgreSQL connection
-- `ADMIN_USERNAME`, `ADMIN_PASSWORD` — Set before running migrations
+- `ADMIN_PASSWORD` — Set before running migrations (admin username is hardcoded as `admin`)
 - `VITE_API_URL` — Frontend API base URL (default: `http://localhost:3001`)

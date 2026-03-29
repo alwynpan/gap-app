@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { newPasswordSchema } from '../utils/schemas.js';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
@@ -9,10 +8,6 @@ import { API_BASE } from '../config.js';
 
 function Dashboard() {
   const { user, isAdmin, isAssignmentManager, refreshUser } = useAuth();
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
-  const [passwordError, setPasswordError] = useState('');
-  const [passwordSuccess, setPasswordSuccess] = useState('');
   const [availableGroups, setAvailableGroups] = useState([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [groupError, setGroupError] = useState('');
@@ -21,7 +16,6 @@ function Dashboard() {
   const [membersLoading, setMembersLoading] = useState(false);
   const [joiningGroup, setJoiningGroup] = useState(false);
   const [leavingGroup, setLeavingGroup] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [groupJoinLocked, setGroupJoinLocked] = useState(false);
   const isNormalUser = !isAdmin && !isAssignmentManager;
 
@@ -117,37 +111,6 @@ function Dashboard() {
       setTimeout(() => setGroupError(''), 3000);
     } finally {
       setLeavingGroup(false);
-    }
-  };
-
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-    setPasswordError('');
-
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordError('New passwords do not match');
-      return;
-    }
-    const pwResult = newPasswordSchema.safeParse(passwordForm.newPassword);
-    if (!pwResult.success) {
-      setPasswordError(pwResult.error.issues[0]?.message || 'Invalid password');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await axios.put(`${API_BASE}/users/${user.id}/password`, {
-        currentPassword: passwordForm.currentPassword,
-        newPassword: passwordForm.newPassword,
-      });
-      setPasswordSuccess('Password changed successfully');
-      setShowPasswordModal(false);
-      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      setTimeout(() => setPasswordSuccess(''), 2000);
-    } catch (err) {
-      setPasswordError(err.response?.data?.error || 'Failed to change password');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -358,98 +321,8 @@ function Dashboard() {
               </div>
             </div>
           )}
-
-          {passwordSuccess && (
-            <div className="mb-6 bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-md text-sm">
-              {passwordSuccess}
-            </div>
-          )}
-
-          {/* Quick Actions */}
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
-              <div className="space-y-3">
-                <button
-                  onClick={() => setShowPasswordModal(true)}
-                  className="block w-full text-left px-4 py-2 bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors"
-                >
-                  🔒 Change Password
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       </main>
-
-      {/* Change Password Modal */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h3>
-            {passwordError && (
-              <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-md text-sm">
-                {passwordError}
-              </div>
-            )}
-            <form onSubmit={handleChangePassword}>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.currentPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter current password"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.newPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter new password"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Confirm new password"
-                />
-              </div>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPasswordModal(false);
-                    setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-                    setPasswordError('');
-                  }}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Changing...' : 'Change Password'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
