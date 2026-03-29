@@ -14,21 +14,16 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine
+FROM cgr.dev/chainguard/nginx:latest
 
-# Copy built assets
-COPY --from=builder /app/dist /usr/share/nginx/html
+USER root
 
 # Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Pre-create nginx runtime directories with correct ownership so the process
-# can start as a non-root user without permission errors
-RUN mkdir -p /var/cache/nginx /var/run && \
-    chown -R nginx:nginx /var/cache/nginx /var/log/nginx /var/run
-
 USER nginx
 
-EXPOSE 8080
+# Copy built assets
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 8080
