@@ -135,6 +135,11 @@ const importUserRowSchema = z.object({
   studentId: studentIdSchema,
 });
 
+const importGroupMappingRowSchema = z.object({
+  email: emailSchema,
+  groupName: groupNameSchema,
+});
+
 const createGroupSchema = z.object({
   name: groupNameSchema,
   enabled: z.boolean().optional(),
@@ -180,6 +185,7 @@ module.exports = {
   updateUserSchema,
   changePasswordSchema,
   importUserRowSchema,
+  importGroupMappingRowSchema,
   createGroupSchema,
   updateGroupSchema,
   forgotPasswordSchema,

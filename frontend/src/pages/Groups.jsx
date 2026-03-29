@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
@@ -6,6 +7,7 @@ import { formatRoleName } from '../utils/formatting.js';
 import { Power, Gauge, Trash2, UserMinus, ChevronDown, ChevronRight, Check, Pencil } from 'lucide-react';
 import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
 import { parseBody, createGroupSchema, updateGroupSchema } from '../utils/schemas.js';
+import { downloadCsv } from '../utils/csv.js';
 import { API_BASE } from '../config.js';
 
 function IconBtn({ onClick, label, className, children }) {
@@ -57,6 +59,7 @@ function Groups() {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Form-level errors (shown inside modals, not on the main page)
   const [createFormError, setCreateFormError] = useState('');
@@ -85,6 +88,20 @@ function Groups() {
       setError('Failed to load groups');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExportMappings = async () => {
+    setExporting(true);
+    try {
+      const response = await axios.get(`${API_BASE}/groups/export-mappings`);
+      const { mappings } = response.data;
+      const today = new Date().toISOString().slice(0, 10);
+      downloadCsv(mappings, ['groupName', 'email'], `group-mappings-${today}.csv`);
+    } catch (_err) {
+      showError('Failed to export mappings');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -695,6 +712,19 @@ function Groups() {
                   Delete ({selectedIds.size})
                 </button>
               )}
+              <button
+                onClick={handleExportMappings}
+                disabled={exporting}
+                className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+              >
+                {exporting ? 'Exporting...' : 'Export Mappings'}
+              </button>
+              <Link
+                to="/groups/import"
+                className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
+              >
+                Import Mappings
+              </Link>
               <button
                 onClick={() => setBulkCreateModal({ prefix: '', count: '1', maxMembers: '' })}
                 className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"

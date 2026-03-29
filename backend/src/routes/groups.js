@@ -1,7 +1,13 @@
 const Group = require('../models/Group');
 const User = require('../models/User');
 const Config = require('../models/Config');
-const { parseBody, createGroupSchema, updateGroupSchema, validateUUID } = require('../utils/schemas');
+const {
+  parseBody,
+  createGroupSchema,
+  updateGroupSchema,
+  validateUUID,
+  importGroupMappingRowSchema,
+} = require('../utils/schemas');
 
 async function groupsRoutes(fastify, _options) {
   // Get all groups (authenticated users)
@@ -347,6 +353,113 @@ async function groupsRoutes(fastify, _options) {
       } catch (error) {
         console.error('Leave group error:', error);
         return reply.code(500).send({ error: 'Failed to leave group' });
+      }
+    }
+  );
+  // Import user-group mappings from CSV (admin/AM only)
+  fastify.post(
+    '/groups/import-mappings',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+        const allowed = await fastify.requireAssignmentManager(request, reply);
+        if (!allowed) {
+          return reply;
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { rows } = request.body || {};
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+          return reply.code(400).send({ error: 'No mappings to import' });
+        }
+
+        let imported = 0;
+        const skipped = [];
+        const errors = [];
+
+        for (const rawRow of rows) {
+          if (rawRow.action === 'skip') {
+            skipped.push({ email: rawRow.email, groupName: rawRow.groupName, reason: rawRow.skipReason || 'Skipped' });
+            continue;
+          }
+
+          const parseResult = importGroupMappingRowSchema.safeParse(rawRow);
+          if (!parseResult.success) {
+            errors.push({
+              email: rawRow.email || '?',
+              groupName: rawRow.groupName || '?',
+              error: parseResult.error.issues[0]?.message || 'Validation failed',
+            });
+            continue;
+          }
+
+          const { email, groupName } = parseResult.data;
+
+          try {
+            const user = await User.findByEmail(email);
+            if (!user) {
+              skipped.push({ email, groupName, reason: 'User not found' });
+              continue;
+            }
+
+            if (user.role_name === 'admin' || user.role_name === 'assignment_manager') {
+              skipped.push({
+                email,
+                groupName,
+                reason: 'Admins and Assignment Managers cannot be assigned to a group',
+              });
+              continue;
+            }
+
+            const group = await Group.findByName(groupName);
+            if (!group) {
+              skipped.push({ email, groupName, reason: 'Group not found' });
+              continue;
+            }
+
+            await Group.assignUserToGroup(user.id, group.id);
+            imported++;
+          } catch (rowErr) {
+            const reason = rowErr.statusCode === 409 ? 'Group is full' : rowErr.message;
+            errors.push({ email, groupName: rawRow.groupName, error: reason });
+          }
+        }
+
+        return reply.send({ imported, skipped, errors });
+      } catch (error) {
+        console.error('Import group mappings error:', error);
+        return reply.code(500).send({ error: 'Failed to import mappings' });
+      }
+    }
+  );
+
+  // Export user-group mappings to CSV (admin/AM only)
+  fastify.get(
+    '/groups/export-mappings',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+        const allowed = await fastify.requireAssignmentManager(request, reply);
+        if (!allowed) {
+          return reply;
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const rows = await Group.getExportMappings();
+        const mappings = rows.map((r) => ({ email: r.email, groupName: r.group_name }));
+        return reply.send({ mappings });
+      } catch (error) {
+        console.error('Export group mappings error:', error);
+        return reply.code(500).send({ error: 'Failed to export mappings' });
       }
     }
   );

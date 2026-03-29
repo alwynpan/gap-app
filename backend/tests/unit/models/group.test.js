@@ -380,6 +380,54 @@ describe('Group Model', () => {
     });
   });
 
+  describe('findByName', () => {
+    it('returns group when name matches (case-insensitive)', async () => {
+      const mockGroup = {
+        id: '10000000-0000-4000-8000-000000000001',
+        name: 'Team Alpha',
+        enabled: true,
+        max_members: null,
+      };
+      pool.query.mockResolvedValue({ rows: [mockGroup] });
+
+      const result = await Group.findByName('team alpha');
+
+      expect(pool.query).toHaveBeenCalledWith('SELECT * FROM groups WHERE LOWER(name) = LOWER($1)', ['team alpha']);
+      expect(result).toEqual(mockGroup);
+    });
+
+    it('returns null when group name not found', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await Group.findByName('nonexistent');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getExportMappings', () => {
+    it('returns user-group mappings for normal users only', async () => {
+      const mockRows = [
+        { email: 'alice@test.com', group_name: 'Team A' },
+        { email: 'bob@test.com', group_name: 'Team B' },
+      ];
+      pool.query.mockResolvedValue({ rows: mockRows });
+
+      const result = await Group.getExportMappings();
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining("r.name = 'user'"));
+      expect(result).toEqual(mockRows);
+    });
+
+    it('returns empty array when no normal users have groups', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await Group.getExportMappings();
+
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('assignUserToGroup', () => {
     let mockClient;
 

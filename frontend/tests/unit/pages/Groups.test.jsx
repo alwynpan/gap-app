@@ -10,6 +10,10 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(),
 }));
 
+jest.mock('../../../src/utils/csv.js', () => ({
+  downloadCsv: jest.fn(),
+}));
+
 const makeGroup = (overrides = {}) => ({
   id: 'g0000000-0000-0000-0000-000000000001',
   name: 'Group A',
@@ -1061,6 +1065,58 @@ describe('Groups page', () => {
       await user.type(screen.getByPlaceholderText('Search groups...'), 'ALPHA');
 
       await waitFor(() => expect(screen.getByText('Alpha Team')).toBeInTheDocument());
+    });
+  });
+
+  // ── Export Mappings ────────────────────────────────────────────────────
+  describe('Export Mappings', () => {
+    it('renders the "Export Mappings" button', async () => {
+      await setupPage();
+      expect(screen.getByRole('button', { name: /export mappings/i })).toBeInTheDocument();
+    });
+
+    it('calls export-mappings API and triggers download on click', async () => {
+      const { downloadCsv } = require('../../../src/utils/csv.js');
+      const user = userEvent.setup();
+      await setupPage();
+
+      const mappings = [
+        { groupName: 'Team Alpha', email: 'alice@test.com' },
+        { groupName: 'Team Beta', email: 'bob@test.com' },
+      ];
+      axios.get.mockResolvedValueOnce({ data: { mappings } });
+
+      await user.click(screen.getByRole('button', { name: /export mappings/i }));
+
+      await waitFor(() => {
+        expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/export-mappings$/));
+        expect(downloadCsv).toHaveBeenCalledWith(
+          mappings,
+          ['groupName', 'email'],
+          expect.stringMatching(/^group-mappings-\d{4}-\d{2}-\d{2}\.csv$/)
+        );
+      });
+    });
+
+    it('shows error message when export fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage();
+      axios.get.mockRejectedValueOnce(new Error('network'));
+
+      await user.click(screen.getByRole('button', { name: /export mappings/i }));
+
+      await waitFor(() => expect(screen.getByText('Failed to export mappings')).toBeInTheDocument());
+    });
+  });
+
+  // ── Import Mappings link ────────────────────────────────────────────────
+  describe('Import Mappings', () => {
+    it('renders the "Import Mappings" link pointing to /groups/import', async () => {
+      await setupPage();
+      const link = screen.getByRole('link', { name: /import mappings/i });
+      expect(link).toBeInTheDocument();
+      expect(link).toHaveAttribute('href', '/groups/import');
     });
   });
 });

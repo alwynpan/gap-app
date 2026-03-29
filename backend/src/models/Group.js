@@ -126,6 +126,23 @@ class Group {
     }
   }
 
+  static async findByName(name) {
+    const result = await pool.query('SELECT * FROM groups WHERE LOWER(name) = LOWER($1)', [name]);
+    return result.rows[0] || null;
+  }
+
+  static async getExportMappings() {
+    const result = await pool.query(
+      `SELECT u.email, g.name AS group_name
+       FROM users u
+       JOIN groups g ON u.group_id = g.id
+       JOIN roles r ON u.role_id = r.id
+       WHERE r.name = 'user' AND u.group_id IS NOT NULL
+       ORDER BY g.name, u.email`
+    );
+    return result.rows;
+  }
+
   static async getMembers(groupId) {
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,

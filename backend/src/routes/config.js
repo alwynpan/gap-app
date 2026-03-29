@@ -6,16 +6,26 @@ const { parseBody, updateConfigSchema } = require('../utils/schemas');
 const ALLOWED_KEYS = ['group_join_locked'];
 
 async function configRoutes(fastify, _options) {
-  // Get group-join-locked status (public — no auth required)
-  fastify.get('/config/group-join-locked', {}, async (_request, reply) => {
-    try {
-      const value = await Config.get('group_join_locked');
-      return reply.send({ locked: value === 'true' });
-    } catch (error) {
-      console.error('Get config error:', error);
-      return reply.code(500).send({ error: 'Failed to retrieve config' });
+  // Get group-join-locked status (authenticated users)
+  fastify.get(
+    '/config/group-join-locked',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+      },
+    },
+    async (_request, reply) => {
+      try {
+        const value = await Config.get('group_join_locked');
+        return reply.send({ locked: value === 'true' });
+      } catch (error) {
+        console.error('Get config error:', error);
+        return reply.code(500).send({ error: 'Failed to retrieve config' });
+      }
     }
-  });
+  );
 
   // Get all config values (admin/AM only)
   fastify.get(

@@ -21,6 +21,7 @@ const {
   updateUserSchema,
   changePasswordSchema,
   importUserRowSchema,
+  importGroupMappingRowSchema,
   createGroupSchema,
   updateGroupSchema,
   forgotPasswordSchema,
@@ -610,5 +611,40 @@ describe('setPasswordSchema', () => {
     expect(err(setPasswordSchema, { token: 'abc123', password: 'short' })).toBe(
       'Password must be at least 6 characters'
     );
+  });
+});
+
+// ── importGroupMappingRowSchema ───────────────────────────────────────────────
+
+describe('importGroupMappingRowSchema', () => {
+  it('accepts valid email and groupName', () => {
+    const data = ok(importGroupMappingRowSchema, { email: 'alice@test.com', groupName: 'Team A' });
+    expect(data.email).toBe('alice@test.com');
+    expect(data.groupName).toBe('Team A');
+  });
+
+  it('rejects missing email', () => {
+    expect(err(importGroupMappingRowSchema, { email: '', groupName: 'Team A' })).toBeTruthy();
+  });
+
+  it('rejects invalid email format', () => {
+    expect(err(importGroupMappingRowSchema, { email: 'not-an-email', groupName: 'Team A' })).toBe(
+      'Invalid email format'
+    );
+  });
+
+  it('rejects missing groupName', () => {
+    expect(err(importGroupMappingRowSchema, { email: 'alice@test.com', groupName: '' })).toBe('Group name is required');
+  });
+
+  it('rejects groupName exceeding 100 characters', () => {
+    expect(err(importGroupMappingRowSchema, { email: 'alice@test.com', groupName: 'A'.repeat(101) })).toBe(
+      'Group name must be at most 100 characters'
+    );
+  });
+
+  it('strips unknown fields', () => {
+    const data = ok(importGroupMappingRowSchema, { email: 'bob@test.com', groupName: 'Team B', extra: 'ignored' });
+    expect(data).not.toHaveProperty('extra');
   });
 });

@@ -1,9 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Upload, ArrowLeft, ArrowRight, Check, AlertTriangle, ChevronDown } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, AlertTriangle, ChevronDown } from 'lucide-react';
 import Header from '../components/Header.jsx';
+import CsvDropzone from '../components/CsvDropzone.jsx';
 import { sanitize } from '../utils/sanitize.js';
+import { parseCsv } from '../utils/csv.js';
 import { API_BASE } from '../config.js';
 
 const FIELD_OPTIONS = [
@@ -98,40 +100,6 @@ const HEADER_SYNONYMS = {
   fullNameFL: ['full name', 'fullname', 'name'],
   fullNameLF: ['name (last, first)', 'last, first'],
 };
-
-// ── CSV helpers ────────────────────────────────────────────────────────────
-
-function parseCsv(text) {
-  const rows = [];
-  const lines = text.split(/\r?\n/);
-  for (const line of lines) {
-    if (!line.trim()) {
-      continue;
-    }
-    const row = [];
-    let cur = '';
-    let inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i]; // eslint-disable-line security/detect-object-injection
-      if (c === '"') {
-        if (inQ && line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else {
-          inQ = !inQ;
-        }
-      } else if (c === ',' && !inQ) {
-        row.push(cur.trim());
-        cur = '';
-      } else {
-        cur += c;
-      }
-    }
-    row.push(cur.trim());
-    rows.push(row);
-  }
-  return rows;
-}
 
 function autoDetect(headers) {
   const result = {};
@@ -282,7 +250,6 @@ function StepIndicator({ current }) {
 
 export default function ImportUsers() {
   const navigate = useNavigate();
-  const fileInputRef = useRef(null);
 
   const [step, setStep] = useState(1);
 
@@ -349,13 +316,6 @@ export default function ImportUsers() {
       setParseError('Failed to read file. Please try again.');
     };
     reader.readAsText(file);
-  };
-
-  const handleFileChange = (e) => processFile(e.target.files[0]);
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    processFile(e.dataTransfer.files[0]);
   };
 
   // ── Step 2 → 3 ──────────────────────────────────────────────────────────
@@ -523,9 +483,6 @@ export default function ImportUsers() {
     setPreviewError('');
     setSubmitError('');
     setResult(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
   };
 
   // ── Preview summary counts ───────────────────────────────────────────────
@@ -572,28 +529,7 @@ export default function ImportUsers() {
             <div className="bg-white rounded-lg border border-gray-200 p-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload CSV File</h3>
 
-              <input
-                type="file"
-                accept=".csv"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-                aria-label="Upload CSV file"
-              />
-
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-                className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors"
-              >
-                <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                <p className="text-gray-600 font-medium">Click to browse or drag &amp; drop a CSV file</p>
-                <p className="text-xs text-gray-400 mt-1">Only .csv files are accepted</p>
-              </div>
+              <CsvDropzone onFile={processFile} />
 
               {parseError && (
                 <div className="mt-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
@@ -735,9 +671,6 @@ export default function ImportUsers() {
                     setStep(1);
                     setMappingError('');
                     setPreviewError('');
-                    if (fileInputRef.current) {
-                      fileInputRef.current.value = '';
-                    }
                   }}
                   className="flex items-center gap-1.5 px-4 py-2 text-gray-600 hover:text-gray-800"
                 >

@@ -121,9 +121,7 @@ describe('User Model', () => {
 
       const result = await User.findByEmail('test@test.com');
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('FROM users WHERE email = $1'), [
-        'test@test.com',
-      ]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.email = $1'), ['test@test.com']);
       expect(result).toEqual(mockUser);
     });
 

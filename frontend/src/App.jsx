@@ -12,6 +12,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Users from './pages/Users.jsx';
 import ImportUsers from './pages/ImportUsers.jsx';
 import Groups from './pages/Groups.jsx';
+import ImportGroupMappings from './pages/ImportGroupMappings.jsx';
 import Settings from './pages/Settings.jsx';
 
 function PublicRoute({ children }) {
@@ -94,6 +95,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requireAdmin>
             <Groups />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/groups/import"
+        element={
+          <ProtectedRoute requireAssignmentManager>
+            <ImportGroupMappings />
           </ProtectedRoute>
         }
       />

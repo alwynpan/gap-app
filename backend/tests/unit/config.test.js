@@ -45,11 +45,18 @@ describe('Config Routes', () => {
   const mockReply = () => ({ code: jest.fn().mockReturnThis(), send: jest.fn() });
 
   describe('GET /config/group-join-locked', () => {
+    it('rejects unauthenticated request', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/config/group-join-locked_get_pre']({ user: null }, reply);
+      expect(reply.code).toHaveBeenCalledWith(401);
+    });
+
     it('returns locked: false when config value is "false"', async () => {
       const { handlers } = setupRoute();
       Config.get.mockResolvedValue('false');
       const reply = mockReply();
-      await handlers['/config/group-join-locked_get']({}, reply);
+      await handlers['/config/group-join-locked_get']({ user: { id: 'u1', role: 'user' } }, reply);
       expect(Config.get).toHaveBeenCalledWith('group_join_locked');
       expect(reply.send).toHaveBeenCalledWith({ locked: false });
     });
@@ -58,7 +65,7 @@ describe('Config Routes', () => {
       const { handlers } = setupRoute();
       Config.get.mockResolvedValue('true');
       const reply = mockReply();
-      await handlers['/config/group-join-locked_get']({}, reply);
+      await handlers['/config/group-join-locked_get']({ user: { id: 'u1', role: 'user' } }, reply);
       expect(reply.send).toHaveBeenCalledWith({ locked: true });
     });
 
@@ -66,7 +73,7 @@ describe('Config Routes', () => {
       const { handlers } = setupRoute();
       Config.get.mockResolvedValue(null);
       const reply = mockReply();
-      await handlers['/config/group-join-locked_get']({}, reply);
+      await handlers['/config/group-join-locked_get']({ user: { id: 'u1', role: 'user' } }, reply);
       expect(reply.send).toHaveBeenCalledWith({ locked: false });
     });
 
@@ -75,7 +82,7 @@ describe('Config Routes', () => {
       Config.get.mockRejectedValue(new Error('DB error'));
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
-      await handlers['/config/group-join-locked_get']({}, reply);
+      await handlers['/config/group-join-locked_get']({ user: { id: 'u1', role: 'user' } }, reply);
       expect(reply.code).toHaveBeenCalledWith(500);
       consoleSpy.mockRestore();
     });

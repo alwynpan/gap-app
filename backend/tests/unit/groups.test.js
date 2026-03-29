@@ -18,6 +18,7 @@ describe('Groups Routes', () => {
     put: jest.fn(),
     delete: jest.fn(),
     requireAdmin: jest.fn().mockResolvedValue(true),
+    requireAssignmentManager: jest.fn().mockResolvedValue(true),
   });
 
   const captureHandlers = (mockFastify) => {
@@ -1081,6 +1082,236 @@ describe('Groups Routes', () => {
       );
       expect(User.updateGroup).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', null);
       expect(reply.code).not.toHaveBeenCalledWith(403);
+    });
+  });
+
+  describe('POST /groups/import-mappings', () => {
+    it('rejects unauthenticated request', () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      handlers['/groups/import-mappings_post_pre']({ user: null }, reply);
+      expect(reply.code).toHaveBeenCalledWith(401);
+    });
+
+    it('returns reply when AM check fails in preHandler', async () => {
+      const { mockFastify, handlers } = setupRoute();
+      mockFastify.requireAssignmentManager.mockResolvedValue(false);
+      const reply = mockReply();
+      const request = { user: { id: '00000000-0000-4000-8000-000000000010', role: 'user' } };
+      const result = await handlers['/groups/import-mappings_post_pre'](request, reply);
+      expect(mockFastify.requireAssignmentManager).toHaveBeenCalledWith(request, reply);
+      expect(result).toBe(reply);
+    });
+
+    it('rejects missing or empty rows', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post']({ user: { id: 'u1', role: 'admin' }, body: { rows: [] } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'No mappings to import' });
+    });
+
+    it('imports a valid row successfully', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmail.mockResolvedValue({ id: '00000000-0000-4000-8000-000000000010' });
+      Group.findByName.mockResolvedValue({ id: '10000000-0000-4000-8000-000000000001' });
+      Group.assignUserToGroup.mockResolvedValue();
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      expect(Group.assignUserToGroup).toHaveBeenCalled();
+      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ imported: 1, skipped: [], errors: [] }));
+    });
+
+    it('skips a row when action is skip', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: {
+            rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'skip', skipReason: 'Unknown user' }],
+          },
+        },
+        reply
+      );
+      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
+      const result = reply.send.mock.calls[0][0];
+      expect(result.skipped).toHaveLength(1);
+      expect(result.skipped[0].reason).toBe('Unknown user');
+    });
+
+    it('skips row when user not found', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmail.mockResolvedValue(null);
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'nobody@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      const result = reply.send.mock.calls[0][0];
+      expect(result.skipped[0].reason).toBe('User not found');
+    });
+
+    it('skips row when group not found', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmail.mockResolvedValue({ id: 'u1' });
+      Group.findByName.mockResolvedValue(null);
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'alice@test.com', groupName: 'NoSuchGroup', action: 'import' }] },
+        },
+        reply
+      );
+      const result = reply.send.mock.calls[0][0];
+      expect(result.skipped[0].reason).toBe('Group not found');
+    });
+
+    it('records error when group is full', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmail.mockResolvedValue({ id: 'u1' });
+      Group.findByName.mockResolvedValue({ id: 'g1' });
+      const fullErr = new Error('Group is full');
+      fullErr.statusCode = 409;
+      Group.assignUserToGroup.mockRejectedValue(fullErr);
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      const result = reply.send.mock.calls[0][0];
+      expect(result.errors[0].error).toBe('Group is full');
+    });
+
+    it('records per-row DB error in errors array', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmail.mockRejectedValue(new Error('DB down'));
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      const result = reply.send.mock.calls[0][0];
+      expect(result.errors[0].error).toBe('DB down');
+    });
+
+    it('skips row when target user is an admin', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmail.mockResolvedValue({ id: 'admin1', role_name: 'admin' });
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'admin@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
+      const result = reply.send.mock.calls[0][0];
+      expect(result.skipped[0].reason).toBe('Admins and Assignment Managers cannot be assigned to a group');
+    });
+
+    it('skips row when target user is an assignment_manager', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmail.mockResolvedValue({ id: 'am1', role_name: 'assignment_manager' });
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'am@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
+      const result = reply.send.mock.calls[0][0];
+      expect(result.skipped[0].reason).toBe('Admins and Assignment Managers cannot be assigned to a group');
+    });
+
+    it('imports successfully when target user is a normal user', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmail.mockResolvedValue({ id: 'u2', role_name: 'user' });
+      Group.findByName.mockResolvedValue({ id: 'g1' });
+      Group.assignUserToGroup.mockResolvedValue();
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'normaluser@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      expect(Group.assignUserToGroup).toHaveBeenCalled();
+      const result = reply.send.mock.calls[0][0];
+      expect(result.imported).toBe(1);
+    });
+  });
+
+  describe('GET /groups/export-mappings', () => {
+    it('rejects unauthenticated request', () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      handlers['/groups/export-mappings_get_pre']({ user: null }, reply);
+      expect(reply.code).toHaveBeenCalledWith(401);
+    });
+
+    it('returns reply when AM check fails in preHandler', async () => {
+      const { mockFastify, handlers } = setupRoute();
+      mockFastify.requireAssignmentManager.mockResolvedValue(false);
+      const reply = mockReply();
+      const request = { user: { id: '00000000-0000-4000-8000-000000000010', role: 'user' } };
+      const result = await handlers['/groups/export-mappings_get_pre'](request, reply);
+      expect(mockFastify.requireAssignmentManager).toHaveBeenCalledWith(request, reply);
+      expect(result).toBe(reply);
+    });
+
+    it('returns user-group mappings', async () => {
+      const { handlers } = setupRoute();
+      Group.getExportMappings.mockResolvedValue([
+        { email: 'alice@test.com', group_name: 'Team A' },
+        { email: 'bob@test.com', group_name: 'Team B' },
+      ]);
+      const reply = mockReply();
+      await handlers['/groups/export-mappings_get']({ user: { id: 'u1', role: 'admin' } }, reply);
+      expect(reply.send).toHaveBeenCalledWith({
+        mappings: [
+          { email: 'alice@test.com', groupName: 'Team A' },
+          { email: 'bob@test.com', groupName: 'Team B' },
+        ],
+      });
+    });
+
+    it('returns empty array when no mappings', async () => {
+      const { handlers } = setupRoute();
+      Group.getExportMappings.mockResolvedValue([]);
+      const reply = mockReply();
+      await handlers['/groups/export-mappings_get']({ user: { id: 'u1', role: 'admin' } }, reply);
+      expect(reply.send).toHaveBeenCalledWith({ mappings: [] });
+    });
+
+    it('handles DB error (500)', async () => {
+      const { handlers } = setupRoute();
+      Group.getExportMappings.mockRejectedValue(new Error('DB error'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const reply = mockReply();
+      await handlers['/groups/export-mappings_get']({ user: { id: 'u1', role: 'admin' } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(500);
+      consoleSpy.mockRestore();
     });
   });
 });

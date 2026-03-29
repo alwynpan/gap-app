@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Upload, ArrowLeft, ArrowRight, Check, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, AlertTriangle } from 'lucide-react';
 import Header from '../components/Header.jsx';
+import CsvDropzone from '../components/CsvDropzone.jsx';
 import { parseCsv, downloadCsv } from '../utils/csv.js';
 import { API_BASE } from '../config.js';
 
@@ -35,7 +36,6 @@ function ImportGroupMappings() {
   const [emailCol, setEmailCol] = useState(-1);
   const [groupCol, setGroupCol] = useState(-1);
   const [showMapping, setShowMapping] = useState(false);
-  const fileInputRef = useRef(null);
 
   // Step 2 state
   const [previewRows, setPreviewRows] = useState([]);
@@ -52,8 +52,7 @@ function ImportGroupMappings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
+  const processFile = (file) => {
     setFileError('');
     setCsvHeaders([]);
     setCsvRows([]);
@@ -61,7 +60,7 @@ function ImportGroupMappings() {
     if (!file) {
       return;
     }
-    if (!file.name.endsWith('.csv')) {
+    if (!file.name.toLowerCase().endsWith('.csv')) {
       setFileError('Please upload a CSV file');
       return;
     }
@@ -102,9 +101,10 @@ function ImportGroupMappings() {
       const rows = csvRows.map((row) => {
         const email = (row[emailCol] || '').trim(); // eslint-disable-line security/detect-object-injection
         const groupName = (row[groupCol] || '').trim(); // eslint-disable-line security/detect-object-injection
-        const userExists = userEmailSet.has(email.toLowerCase());
-        const groupExists = groupNameSet.has(groupName.toLowerCase());
         const user = userEmailSet.get(email.toLowerCase());
+        const userExists = user !== undefined;
+        const groupExists = groupNameSet.has(groupName.toLowerCase());
+        const isPrivilegedUser = user && (user.role_name === 'admin' || user.role_name === 'assignment_manager');
         const alreadyInGroup = user && user.group_id !== null && user.group_id !== undefined;
 
         let status = 'import';
@@ -114,6 +114,10 @@ function ImportGroupMappings() {
           status = 'skip';
           statusLabel = 'Skip';
           skipReason = 'User not found';
+        } else if (isPrivilegedUser) {
+          status = 'skip';
+          statusLabel = 'Skip';
+          skipReason = 'Admins and Assignment Managers cannot be assigned to a group';
         } else if (!groupExists) {
           status = 'skip';
           statusLabel = 'Skip';
@@ -135,6 +139,10 @@ function ImportGroupMappings() {
 
   const handleConflictAction = (index, action) => {
     setPreviewRows((prev) => prev.map((r, i) => (i === index ? { ...r, action } : r)));
+  };
+
+  const handleSetAllConflicts = (action) => {
+    setPreviewRows((prev) => prev.map((r) => (r.status === 'conflict' ? { ...r, action } : r)));
   };
 
   const handleImport = async () => {
@@ -226,27 +234,11 @@ function ImportGroupMappings() {
                 auto-detected.
               </p>
 
-              <div className="flex items-center gap-3 mb-4">
-                <label
-                  htmlFor="csv-upload"
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 text-sm"
-                >
-                  <Upload className="h-4 w-4" />
-                  Choose CSV File
-                </label>
-                <input
-                  id="csv-upload"
-                  type="file"
-                  accept=".csv"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-              </div>
+              <CsvDropzone onFile={processFile} className="mb-4" />
 
               {fileError && (
-                <div className="mb-4 flex items-center gap-2 text-red-600 text-sm">
-                  <AlertTriangle className="h-4 w-4" />
+                <div className="mb-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   {fileError}
                 </div>
               )}
@@ -323,18 +315,37 @@ function ImportGroupMappings() {
                 </div>
               ) : (
                 <>
-                  <div className="flex gap-6 mb-4 text-sm">
-                    <span className="text-green-700">
-                      <strong>{importCount}</strong> to import
-                    </span>
-                    <span className="text-red-600">
-                      <strong>{skipCount}</strong> to skip
-                    </span>
-                    {conflictCount > 0 && (
-                      <span className="text-amber-700">
-                        <strong>{conflictCount}</strong> conflict{conflictCount !== 1 ? 's' : ''} (user already in a
-                        group)
+                  <div className="flex items-center justify-between gap-6 mb-4">
+                    <div className="flex gap-6 text-sm">
+                      <span className="text-green-700">
+                        <strong>{importCount}</strong> to import
                       </span>
+                      <span className="text-red-600">
+                        <strong>{skipCount}</strong> to skip
+                      </span>
+                      {conflictCount > 0 && (
+                        <span className="text-amber-700">
+                          <strong>{conflictCount}</strong> conflict{conflictCount !== 1 ? 's' : ''} (user already in a
+                          group)
+                        </span>
+                      )}
+                    </div>
+                    {conflictCount > 0 && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-gray-500">Set all conflicts:</span>
+                        <button
+                          onClick={() => handleSetAllConflicts('skip')}
+                          className="px-2.5 py-1 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 text-xs"
+                        >
+                          Skip all
+                        </button>
+                        <button
+                          onClick={() => handleSetAllConflicts('import')}
+                          className="px-2.5 py-1 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 text-xs"
+                        >
+                          Overwrite all
+                        </button>
+                      </div>
                     )}
                   </div>
 

@@ -161,6 +161,28 @@ describe('ImportUsers page', () => {
       await waitForStep2();
       expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
     });
+
+    it('accepts a valid CSV via drag and drop and advances to step 2', async () => {
+      renderPage();
+      const file = makeCsvFile('username,email,firstName,lastName\njdoe,jdoe@test.com,John,Doe');
+      const dropzone = screen.getByRole('button', { name: /click to browse/i });
+      act(() => {
+        fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+      });
+      await waitForStep2();
+      expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
+    });
+
+    it('shows error when a non-CSV file is dropped', async () => {
+      renderPage();
+      const file = new File(['hello'], 'data.txt', { type: 'text/plain' });
+      file.__testContent = 'hello';
+      const dropzone = screen.getByRole('button', { name: /click to browse/i });
+      act(() => {
+        fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+      });
+      expect(await screen.findByText(/please upload a csv/i)).toBeInTheDocument();
+    });
   });
 
   // ── Step 2: Map Columns ────────────────────────────────────────────────────
