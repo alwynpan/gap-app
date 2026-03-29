@@ -2337,6 +2337,74 @@ describe('Users Routes', () => {
       });
     });
 
+    it('records error when both firstName and lastName are missing', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'noname', email: 'noname@test.com' }],
+        }),
+        mockReply
+      );
+
+      expect(mockReply.send).toHaveBeenCalledWith({
+        imported: 0,
+        skipped: 0,
+        errors: [{ row: 1, identifier: 'noname', reason: 'Missing or invalid required fields' }],
+      });
+    });
+
+    it('imports user with only firstName and defaults lastName to "-"', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
+      User.create.mockResolvedValue({ id: 'u1', username: 'fnonly', email: 'fn@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'fnonly', email: 'fn@test.com', firstName: 'Alice' }],
+        }),
+        mockReply
+      );
+
+      expect(User.create).toHaveBeenCalledWith(expect.objectContaining({ firstName: 'Alice', lastName: '-' }));
+      expect(mockReply.send).toHaveBeenCalledWith({ imported: 1, skipped: 0, errors: [] });
+    });
+
+    it('imports user with only lastName and defaults firstName to "-"', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      User.findByStudentId.mockResolvedValue(null);
+      User.create.mockResolvedValue({ id: 'u1', username: 'lnonly', email: 'ln@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'lnonly', email: 'ln@test.com', lastName: 'Smith' }],
+        }),
+        mockReply
+      );
+
+      expect(User.create).toHaveBeenCalledWith(expect.objectContaining({ firstName: '-', lastName: 'Smith' }));
+      expect(mockReply.send).toHaveBeenCalledWith({ imported: 1, skipped: 0, errors: [] });
+    });
+
     it('records error for row-level database failures', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);

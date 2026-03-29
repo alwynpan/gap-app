@@ -127,13 +127,35 @@ const changePasswordSchema = z.object({
   newPassword: newPasswordSchema,
 });
 
-const importUserRowSchema = z.object({
-  username: usernameSchema,
-  email: emailSchema,
-  firstName: nameSchema('First name'),
-  lastName: nameSchema('Last name'),
-  studentId: studentIdSchema,
-});
+const importUserRowSchema = z
+  .object({
+    username: usernameSchema,
+    email: emailSchema,
+    // firstName and lastName are individually optional: missing/empty values are
+    // allowed as long as at least one is provided. The missing field is defaulted
+    // to '-' after validation.
+    firstName: z
+      .preprocess(
+        (v) => (v === null || v === undefined ? '' : String(v).trim()),
+        z.string().max(100, 'First name must be at most 100 characters')
+      )
+      .transform(sanitize),
+    lastName: z
+      .preprocess(
+        (v) => (v === null || v === undefined ? '' : String(v).trim()),
+        z.string().max(100, 'Last name must be at most 100 characters')
+      )
+      .transform(sanitize),
+    studentId: studentIdSchema,
+  })
+  .refine(({ firstName, lastName }) => firstName.length > 0 || lastName.length > 0, {
+    message: 'At least one of first name or last name is required',
+  })
+  .transform(({ firstName, lastName, ...rest }) => ({
+    ...rest,
+    firstName: firstName || '-',
+    lastName: lastName || '-',
+  }));
 
 const importGroupMappingRowSchema = z.object({
   email: emailSchema,

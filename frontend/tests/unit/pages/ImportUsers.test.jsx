@@ -289,10 +289,19 @@ describe('ImportUsers page', () => {
       expect(screen.getByText('Protected – cannot overwrite')).toBeInTheDocument();
     });
 
-    it('shows "Missing" badge when required field data is empty', async () => {
-      // All 4 columns mapped, but firstName and lastName cells are empty
+    it('shows "Missing" badge when both firstName and lastName cells are empty', async () => {
       await goToPreview({ csv: 'username,email,firstName,lastName\njdoe,jdoe@test.com,,' });
       expect(screen.getByText(/missing:/i)).toBeInTheDocument();
+    });
+
+    it('does not show "Missing" badge when only firstName is provided', async () => {
+      await goToPreview({ csv: 'username,email,firstName,lastName\njdoe,jdoe@test.com,John,' });
+      expect(screen.queryByText(/missing:/i)).not.toBeInTheDocument();
+    });
+
+    it('does not show "Missing" badge when only lastName is provided', async () => {
+      await goToPreview({ csv: 'username,email,firstName,lastName\njdoe,jdoe@test.com,,Doe' });
+      expect(screen.queryByText(/missing:/i)).not.toBeInTheDocument();
     });
 
     it('submits import and shows result step', async () => {

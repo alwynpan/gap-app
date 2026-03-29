@@ -19,7 +19,7 @@ const FIELD_OPTIONS = [
   { value: 'fullNameLF', label: 'Full Name (Last, First)' },
 ];
 
-const REQUIRED_FIELDS = ['username', 'email', 'firstName', 'lastName'];
+const REQUIRED_FIELDS = ['username', 'email'];
 
 // Name fields form a mutually-exclusive group: selecting any one of them
 // removes related options from other column dropdowns.
@@ -204,7 +204,11 @@ function applyMapping(rawRow, mapping, colCount) {
 }
 
 function getMissingFields(user) {
-  return REQUIRED_FIELDS.filter((f) => !user[f]); // eslint-disable-line security/detect-object-injection
+  const missing = REQUIRED_FIELDS.filter((f) => !user[f]); // eslint-disable-line security/detect-object-injection
+  if (!user.firstName && !user.lastName) {
+    missing.push('firstName', 'lastName');
+  }
+  return missing;
 }
 
 // ── Step indicator ─────────────────────────────────────────────────────────
@@ -324,16 +328,12 @@ export default function ImportUsers() {
     const mapped = new Set(Object.values(mapping));
     // username and email are always required
     const missing = REQUIRED_FIELDS.filter((f) => f !== 'firstName' && f !== 'lastName' && !mapped.has(f));
-    // Name requirement: either firstName + lastName, or a full-name field
+    // Name requirement: at least one of firstName/lastName, or a full-name field
     const hasFullName = mapped.has('fullNameFL') || mapped.has('fullNameLF');
-    const hasFirstLast = mapped.has('firstName') && mapped.has('lastName');
-    if (!hasFullName && !hasFirstLast) {
-      if (!mapped.has('firstName')) {
-        missing.push('firstName');
-      }
-      if (!mapped.has('lastName')) {
-        missing.push('lastName');
-      }
+    const hasAnyName = mapped.has('firstName') || mapped.has('lastName');
+    if (!hasFullName && !hasAnyName) {
+      missing.push('firstName');
+      missing.push('lastName');
     }
     if (missing.length > 0) {
       const labels = missing.map((f) => FIELD_OPTIONS.find((o) => o.value === f)?.label || f);
