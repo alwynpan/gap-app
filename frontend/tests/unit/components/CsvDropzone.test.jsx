@@ -91,13 +91,25 @@ describe('CsvDropzone', () => {
     clickSpy.mockRestore();
   });
 
-  it('does not open file picker on other key presses', () => {
+  it('opens file picker on Space key press', () => {
     render(<CsvDropzone onFile={jest.fn()} />);
     const input = document.querySelector('input[type="file"]');
     const clickSpy = jest.spyOn(input, 'click').mockImplementation(() => {});
     const dropzone = screen.getByRole('button', { name: /click to browse/i });
     act(() => {
       fireEvent.keyDown(dropzone, { key: ' ' });
+    });
+    expect(clickSpy).toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
+  it('does not open file picker on other key presses', () => {
+    render(<CsvDropzone onFile={jest.fn()} />);
+    const input = document.querySelector('input[type="file"]');
+    const clickSpy = jest.spyOn(input, 'click').mockImplementation(() => {});
+    const dropzone = screen.getByRole('button', { name: /click to browse/i });
+    act(() => {
+      fireEvent.keyDown(dropzone, { key: 'Tab' });
     });
     expect(clickSpy).not.toHaveBeenCalled();
     clickSpy.mockRestore();

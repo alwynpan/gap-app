@@ -29,7 +29,6 @@ coverage/
 # Docker
 docker-compose.override.yml
 deployment/docker/.env
-deployment/docker/backups/
 
 # Temporary files
 tmp/

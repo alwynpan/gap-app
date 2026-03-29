@@ -426,7 +426,7 @@ async function groupsRoutes(fastify, _options) {
             imported++;
           } catch (rowErr) {
             const reason = rowErr.statusCode === 409 ? 'Group is full' : rowErr.message;
-            errors.push({ email, groupName: rawRow.groupName, error: reason });
+            errors.push({ email, groupName, error: reason });
           }
         }
 

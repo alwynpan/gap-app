@@ -13,7 +13,7 @@ Traefik (ports 80/443)
    └── /*             ──►  Frontend (nginx :8080)
                                │
                                └── static assets served directly
-PostgreSQL ◄── db-backup (scheduled dumps to ./backups/)
+PostgreSQL ◄── db-backup (scheduled dumps to /backups/)
 ```
 
 ## Prerequisites
@@ -86,17 +86,17 @@ docker compose logs traefik
 
 ## Database Backups
 
-Backups are stored in `./backups/` on the host. By default, a full PostgreSQL dump runs daily at 3:00 AM and backups are
+Backups are stored in `/backups/` on the host. By default, a full PostgreSQL dump runs daily at 3:00 AM and backups are
 retained for 7 days.
 
 **Restore from backup:**
 
 ```bash
 # List available backups
-ls ./backups/
+ls /backups/
 
 # Restore a specific backup
-gunzip -c ./backups/<backup-file>.sql.gz | \
+gunzip -c /backups/<backup-file>.sql.gz | \
   docker compose exec -T postgres \
   psql -U gap_user -d gap_db
 ```
