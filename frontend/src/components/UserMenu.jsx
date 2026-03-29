@@ -28,6 +28,7 @@ function UserMenu() {
   const [passwordSaving, setPasswordSaving] = useState(false);
 
   const menuRef = useRef(null);
+  const dismissTimerRef = useRef(null);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -60,6 +61,7 @@ function UserMenu() {
   };
 
   const closeModal = () => {
+    clearTimeout(dismissTimerRef.current);
     setModal(null);
     setProfileError('');
     setProfileSuccess('');
@@ -91,7 +93,8 @@ function UserMenu() {
       await axios.put(`${API_BASE}/users/${user.id}`, body);
       await refreshUser();
       setProfileSuccess('Profile updated successfully');
-      setTimeout(() => {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = setTimeout(() => {
         setModal(null);
         setProfileSuccess('');
       }, 1500);
@@ -123,7 +126,8 @@ function UserMenu() {
         newPassword: passwordForm.newPassword,
       });
       setPasswordSuccess('Password changed successfully');
-      setTimeout(() => {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = setTimeout(() => {
         setModal(null);
         setPasswordSuccess('');
       }, 1500);
@@ -144,7 +148,7 @@ function UserMenu() {
       <div ref={menuRef} className="relative">
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 focus:outline-none"
+          className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 rounded"
           aria-haspopup="true"
           aria-expanded={open}
         >
