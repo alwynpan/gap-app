@@ -15,7 +15,7 @@ function Footer() {
           <a
             href="https://github.com/alwynpan/gap-app/issues/new?template=bug_report.yml"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="flex items-center gap-1 hover:text-gray-600 transition-colors"
           >
             <AlertCircle className="h-3.5 w-3.5" />
@@ -24,7 +24,7 @@ function Footer() {
           <a
             href="https://github.com/alwynpan/gap-app"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="flex items-center gap-1 hover:text-gray-600 transition-colors"
             aria-label="View on GitHub"
           >

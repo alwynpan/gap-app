@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ArrowLeft, ArrowRight, Check, AlertTriangle } from 'lucide-react';
@@ -168,13 +168,26 @@ function ImportGroupMappings() {
     return () => clearInterval(countdownRef.current);
   }, [showConfirmModal]);
 
+  useEffect(() => {
+    if (!showConfirmModal) {
+      return;
+    }
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        closeConfirmModal();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showConfirmModal, closeConfirmModal]);
+
   const openConfirmModal = () => setShowConfirmModal(true);
 
-  const closeConfirmModal = () => {
+  const closeConfirmModal = useCallback(() => {
     clearInterval(countdownRef.current);
     setShowConfirmModal(false);
     setCountdown(5);
-  };
+  }, []);
 
   const handleImport = async () => {
     setImporting(true);
@@ -501,8 +514,15 @@ function ImportGroupMappings() {
       {/* Import confirmation modal */}
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Before You Continue</h3>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-confirm-title"
+            className="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl"
+          >
+            <h3 id="import-confirm-title" className="text-lg font-semibold text-gray-900 mb-4">
+              Before You Continue
+            </h3>
 
             <div className="mb-5 space-y-3 text-sm text-gray-700">
               <p>
@@ -523,6 +543,7 @@ function ImportGroupMappings() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={closeConfirmModal}
+                autoFocus
                 className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
               >
                 Cancel
