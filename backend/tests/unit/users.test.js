@@ -763,7 +763,7 @@ describe('Users Routes', () => {
         '00000000-0000-4000-8000-000000000001',
         '10000000-0000-4000-8000-000000000999'
       );
-      expect(mockReply.code).toHaveBeenCalledWith(500);
+      expect(mockReply.code).toHaveBeenCalledWith(404);
     });
 
     it('updates user group successfully', async () => {
@@ -846,8 +846,7 @@ describe('Users Routes', () => {
       );
 
       expect(Group.assignUserToGroup).toHaveBeenCalled();
-      // Error propagates as 500 (unhandled by route)
-      expect(mockReply.code).toHaveBeenCalledWith(500);
+      expect(mockReply.code).toHaveBeenCalledWith(409);
     });
 
     it('allows assigning user to group with unlimited capacity', async () => {

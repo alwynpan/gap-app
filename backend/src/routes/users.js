@@ -261,6 +261,9 @@ async function usersRoutes(fastify, _options) {
           },
         });
       } catch (error) {
+        if (error.statusCode && error.statusCode < 500) {
+          return reply.code(error.statusCode).send({ error: error.message });
+        }
         console.error('Update user group error:', error);
         return reply.code(500).send({ error: 'Failed to update user group' });
       }

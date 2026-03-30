@@ -152,6 +152,14 @@ function ImportGroupMappings() {
     setPreviewRows((prev) => prev.map((r) => (r.status === 'conflict' ? { ...r, action } : r)));
   };
 
+  const closeConfirmModal = useCallback(() => {
+    clearInterval(countdownRef.current);
+    setShowConfirmModal(false);
+    setCountdown(5);
+  }, []);
+
+  const openConfirmModal = () => setShowConfirmModal(true);
+
   useEffect(() => {
     if (showConfirmModal) {
       setCountdown(5);
@@ -180,14 +188,6 @@ function ImportGroupMappings() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showConfirmModal, closeConfirmModal]);
-
-  const openConfirmModal = () => setShowConfirmModal(true);
-
-  const closeConfirmModal = useCallback(() => {
-    clearInterval(countdownRef.current);
-    setShowConfirmModal(false);
-    setCountdown(5);
-  }, []);
 
   const handleImport = async () => {
     setImporting(true);
