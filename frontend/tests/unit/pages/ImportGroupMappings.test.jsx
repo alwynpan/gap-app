@@ -495,6 +495,18 @@ describe('ImportGroupMappings page', () => {
       }
     });
 
+    it('Escape key dismisses the modal', async () => {
+      await goToImportReady();
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /import 2 rows/i }));
+      });
+      expect(screen.getByRole('heading', { name: /before you continue/i })).toBeInTheDocument();
+      act(() => {
+        fireEvent.keyDown(document, { key: 'Escape' });
+      });
+      expect(screen.queryByRole('heading', { name: /before you continue/i })).not.toBeInTheDocument();
+    });
+
     it('Cancel button dismisses modal without importing', async () => {
       await goToImportReady();
       act(() => {
