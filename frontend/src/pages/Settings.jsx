@@ -40,7 +40,7 @@ function Settings() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex-1 bg-gray-50">
       <Header />
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">

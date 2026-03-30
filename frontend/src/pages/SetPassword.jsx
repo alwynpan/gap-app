@@ -47,7 +47,7 @@ function SetPassword() {
 
   if (!token) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
+      <div className="flex-1 flex items-center justify-center bg-gray-50 py-12 px-4">
         <div className="max-w-md w-full text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Invalid Link</h2>
           <p className="text-gray-600 mb-6">This link is invalid or has already been used.</p>
@@ -60,7 +60,7 @@ function SetPassword() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="flex-1 flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">G.A.P. Portal</h2>

@@ -502,7 +502,7 @@ export default function ImportUsers() {
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex-1 bg-gray-50">
       <Header pageName="Import Users" />
 
       <main className="w-[85%] mx-auto py-6">

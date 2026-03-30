@@ -210,7 +210,7 @@ function ImportGroupMappings() {
   const conflictCount = previewRows.filter((r) => r.status === 'conflict').length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex-1 bg-gray-50">
       <Header pageName="Group Management" />
 
       <main className="w-[85%] mx-auto py-6">

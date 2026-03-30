@@ -1,4 +1,4 @@
-import { Github } from 'lucide-react';
+import { Github, AlertCircle } from 'lucide-react';
 
 /* global __APP_VERSION__, __GIT_HASH__ */
 const version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -11,16 +11,27 @@ function Footer() {
         <span>
           v{version} &middot; {gitHash}
         </span>
-        <a
-          href="https://github.com/alwynpan/gap-app"
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-1 hover:text-gray-600 transition-colors"
-          aria-label="View on GitHub"
-        >
-          <Github className="h-4 w-4" />
-          <span>GitHub</span>
-        </a>
+        <div className="flex items-center gap-4">
+          <a
+            href="https://github.com/alwynpan/gap-app/issues/new?template=bug_report.yml"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 hover:text-gray-600 transition-colors"
+          >
+            <AlertCircle className="h-3.5 w-3.5" />
+            <span>Report Issue</span>
+          </a>
+          <a
+            href="https://github.com/alwynpan/gap-app"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 hover:text-gray-600 transition-colors"
+            aria-label="View on GitHub"
+          >
+            <Github className="h-4 w-4" />
+            <span>GitHub</span>
+          </a>
+        </div>
       </div>
     </footer>
   );

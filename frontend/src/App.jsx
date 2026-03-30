@@ -131,7 +131,7 @@ function App() {
     <AuthProvider>
       <Router>
         <div className="min-h-screen flex flex-col">
-          <div className="flex-1">
+          <div className="flex-1 flex flex-col">
             <AppRoutes />
           </div>
           <Footer />

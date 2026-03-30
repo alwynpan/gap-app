@@ -115,7 +115,7 @@ function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex-1 bg-gray-50">
       <Header />
 
       {/* Main Content */}
