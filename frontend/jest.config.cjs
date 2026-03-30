@@ -21,6 +21,7 @@ module.exports = {
   },
   coverageReporters: ['text', 'cobertura', 'lcov'],
   coverageDirectory: 'coverage',
+  verbose: true,
   testMatch: ['**/tests/**/*.test.jsx', '**/tests/**/*.test.js'],
   transform: {
     '^.+\\.(js|jsx)$': 'babel-jest',

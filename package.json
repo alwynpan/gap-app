@@ -11,7 +11,7 @@
     "test:backend": "cd backend && npm test",
     "test:frontend": "cd frontend && npm test",
     "test": "npm run test:backend && npm run test:frontend",
-    "test:quiet": "npm run test:backend -- --silent && npm run test:frontend -- --silent",
+    "test:quiet": "cd backend && npm test -- --silent --no-verbose && cd ../frontend && npm test -- --silent --no-verbose",
     "format:backend": "cd backend && npm run format:check",
     "format:frontend": "cd frontend && npm run format:check",
     "format": "npm run format:backend && npm run format:frontend",
