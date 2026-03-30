@@ -63,7 +63,7 @@ class User {
        FROM users u
        LEFT JOIN groups g ON u.group_id = g.id
        LEFT JOIN roles r ON u.role_id = r.id
-       WHERE u.username = $1`,
+       WHERE LOWER(u.username) = LOWER($1)`,
       [username]
     );
     return result.rows[0] || null;

@@ -97,7 +97,9 @@ describe('User Model', () => {
 
       const result = await User.findByUsername('testuser');
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.username = $1'), ['testuser']);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE LOWER(u.username) = LOWER($1)'), [
+        'testuser',
+      ]);
       expect(result).toEqual(mockUser);
     });
 
