@@ -387,7 +387,23 @@ describe('ImportGroupMappings page', () => {
       uploadCsv('group name,email\nTeam Alpha,alice@test.com\nTeam Beta,bob@test.com');
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
       await waitFor(() => expect(screen.getAllByText('Ready').length).toBeGreaterThan(0));
-      await userEvent.click(screen.getByRole('button', { name: /import/i }));
+
+      // Switch to fake timers before opening modal so setInterval uses fake clock
+      jest.useFakeTimers();
+      try {
+        act(() => {
+          fireEvent.click(screen.getByRole('button', { name: /import/i }));
+        });
+        act(() => {
+          jest.advanceTimersByTime(5000);
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+
       await waitFor(() => expect(screen.getByText('Import Complete')).toBeInTheDocument());
     }
 
@@ -408,6 +424,107 @@ describe('ImportGroupMappings page', () => {
       const btns = screen.getAllByRole('button', { name: /back to groups/i });
       await userEvent.click(btns[btns.length - 1]);
       expect(mockNavigate).toHaveBeenCalledWith('/groups');
+    });
+  });
+
+  // ── Import confirmation modal ─────────────────────────────────────────────
+
+  describe('Import confirmation modal', () => {
+    const confirmCsv = 'group name,email\nTeam Alpha,alice@test.com\nTeam Beta,bob@test.com';
+    const confirmUsers = [
+      { id: 'u1', email: 'alice@test.com', group_id: null },
+      { id: 'u2', email: 'bob@test.com', group_id: null },
+    ];
+    const confirmGroups = [
+      { id: 'g1', name: 'Team Alpha' },
+      { id: 'g2', name: 'Team Beta' },
+    ];
+
+    async function goToImportReady() {
+      axios.get.mockResolvedValue({ data: { users: confirmUsers, groups: confirmGroups } });
+      renderPage();
+      uploadCsv(confirmCsv);
+      await waitFor(() => expect(screen.getAllByText('Ready').length).toBeGreaterThan(0));
+    }
+
+    it('shows a confirmation modal heading when Import button is clicked', async () => {
+      await goToImportReady();
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /import 2 rows/i }));
+      });
+      expect(screen.getByRole('heading', { name: /before you continue/i })).toBeInTheDocument();
+    });
+
+    it('modal warns that the tool is intended for fresh instances', async () => {
+      await goToImportReady();
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /import 2 rows/i }));
+      });
+      expect(screen.getByText(/fresh instance/i)).toBeInTheDocument();
+    });
+
+    it('modal warns that existing group memberships will not be cleared', async () => {
+      await goToImportReady();
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /import 2 rows/i }));
+      });
+      expect(screen.getByText(/existing group membership/i)).toBeInTheDocument();
+    });
+
+    it('confirm button is initially disabled showing countdown from 5', async () => {
+      await goToImportReady();
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /import 2 rows/i }));
+      });
+      expect(screen.getByRole('button', { name: /confirm \(5\)/i })).toBeDisabled();
+    });
+
+    it('confirm button becomes enabled after 5 seconds countdown', async () => {
+      await goToImportReady();
+      jest.useFakeTimers();
+      try {
+        act(() => {
+          fireEvent.click(screen.getByRole('button', { name: /import 2 rows/i }));
+        });
+        act(() => {
+          jest.advanceTimersByTime(5000);
+        });
+        expect(screen.getByRole('button', { name: /^confirm$/i })).not.toBeDisabled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('Cancel button dismisses modal without importing', async () => {
+      await goToImportReady();
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /import 2 rows/i }));
+      });
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+      });
+      expect(screen.queryByRole('heading', { name: /before you continue/i })).not.toBeInTheDocument();
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it('confirming after countdown proceeds with import', async () => {
+      axios.post.mockResolvedValue({ data: { imported: 2, skipped: [], errors: [] } });
+      await goToImportReady();
+      jest.useFakeTimers();
+      try {
+        act(() => {
+          fireEvent.click(screen.getByRole('button', { name: /import 2 rows/i }));
+        });
+        act(() => {
+          jest.advanceTimersByTime(5000);
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+      await waitFor(() => expect(screen.getByText('Import Complete')).toBeInTheDocument());
     });
   });
 
@@ -432,7 +549,23 @@ describe('ImportGroupMappings page', () => {
       renderPage();
       uploadCsv('group name,email\nTeam Alpha,alice@test.com\nTeam Alpha,nobody@test.com');
       await waitFor(() => expect(screen.getByRole('button', { name: /import 1 row/i })).toBeInTheDocument());
-      await userEvent.click(screen.getByRole('button', { name: /import 1 row/i }));
+
+      // Switch to fake timers before opening modal so setInterval uses fake clock
+      jest.useFakeTimers();
+      try {
+        act(() => {
+          fireEvent.click(screen.getByRole('button', { name: /import 1 row/i }));
+        });
+        act(() => {
+          jest.advanceTimersByTime(5000);
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+
       await waitFor(() => expect(screen.getByText('Import Complete')).toBeInTheDocument());
 
       expect(downloadCsv).toHaveBeenCalledTimes(1);

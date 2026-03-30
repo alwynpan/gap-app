@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ArrowLeft, ArrowRight, Check, AlertTriangle } from 'lucide-react';
@@ -44,6 +44,11 @@ function ImportGroupMappings() {
   // Step 3 state
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+
+  // Confirmation modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [countdown, setCountdown] = useState(5);
+  const countdownRef = useRef(null);
 
   useEffect(() => {
     if (step === 2 && csvRows.length > 0) {
@@ -145,6 +150,30 @@ function ImportGroupMappings() {
 
   const handleSetAllConflicts = (action) => {
     setPreviewRows((prev) => prev.map((r) => (r.status === 'conflict' ? { ...r, action } : r)));
+  };
+
+  useEffect(() => {
+    if (showConfirmModal) {
+      setCountdown(5);
+      countdownRef.current = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(countdownRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(countdownRef.current);
+  }, [showConfirmModal]);
+
+  const openConfirmModal = () => setShowConfirmModal(true);
+
+  const closeConfirmModal = () => {
+    clearInterval(countdownRef.current);
+    setShowConfirmModal(false);
+    setCountdown(5);
   };
 
   const handleImport = async () => {
@@ -420,7 +449,7 @@ function ImportGroupMappings() {
                       Back
                     </button>
                     <button
-                      onClick={handleImport}
+                      onClick={openConfirmModal}
                       disabled={importing || importCount === 0}
                       className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -468,6 +497,50 @@ function ImportGroupMappings() {
           )}
         </div>
       </main>
+
+      {/* Import confirmation modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Before You Continue</h3>
+
+            <div className="mb-5 space-y-3 text-sm text-gray-700">
+              <p>
+                This tool is designed for <strong>migrating user–group assignments from another system</strong> onto a
+                fresh instance where no group memberships exist yet.
+              </p>
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-4 py-3">
+                <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-amber-800">
+                  <strong>Existing group memberships will not be cleared before importing.</strong> Any users who are
+                  already in a group and are not explicitly marked as &ldquo;Overwrite&rdquo; in the preview will be
+                  skipped. If your instance already has group assignments, this import may produce unexpected membership
+                  outcomes. Please review the preview table carefully before proceeding.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={closeConfirmModal}
+                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  closeConfirmModal();
+                  handleImport();
+                }}
+                disabled={countdown > 0}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {countdown > 0 ? `Confirm (${countdown})` : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
