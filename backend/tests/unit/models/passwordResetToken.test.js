@@ -1,13 +1,11 @@
 const crypto = require('crypto');
 const PasswordResetToken = require('../../../src/models/PasswordResetToken');
 
-jest.mock('../../../src/db/migrate', () => ({
-  pool: {
-    query: jest.fn(),
-  },
+jest.mock('../../../src/db/pool', () => ({
+  query: jest.fn(),
 }));
 
-const { pool } = require('../../../src/db/migrate');
+const pool = require('../../../src/db/pool');
 
 describe('PasswordResetToken Model', () => {
   beforeEach(() => {

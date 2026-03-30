@@ -1,6 +1,6 @@
 'use strict';
 
-const { pool } = require('../db/migrate');
+const pool = require('../db/pool');
 
 class Config {
   /**

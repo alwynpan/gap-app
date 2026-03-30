@@ -1,13 +1,11 @@
 const Role = require('../../../src/models/Role');
 
 // Mock the database pool
-jest.mock('../../../src/db/migrate', () => ({
-  pool: {
-    query: jest.fn(),
-  },
+jest.mock('../../../src/db/pool', () => ({
+  query: jest.fn(),
 }));
 
-const { pool } = require('../../../src/db/migrate');
+const pool = require('../../../src/db/pool');
 
 describe('Role Model', () => {
   beforeEach(() => {

@@ -1,10 +1,8 @@
 const User = require('../../../src/models/User');
 
 // Mock the database pool
-jest.mock('../../../src/db/migrate', () => ({
-  pool: {
-    query: jest.fn(),
-  },
+jest.mock('../../../src/db/pool', () => ({
+  query: jest.fn(),
 }));
 
 // Mock bcrypt
@@ -14,7 +12,7 @@ jest.mock('bcryptjs', () => ({
 }));
 
 const bcrypt = require('bcryptjs');
-const { pool } = require('../../../src/db/migrate');
+const pool = require('../../../src/db/pool');
 
 describe('User Model', () => {
   beforeEach(() => {

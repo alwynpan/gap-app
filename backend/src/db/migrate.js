@@ -255,4 +255,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { pool, migrate };
+module.exports = { migrate };

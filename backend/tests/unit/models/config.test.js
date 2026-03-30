@@ -2,14 +2,12 @@
 
 const Config = require('../../../src/models/Config');
 
-jest.mock('../../../src/db/migrate', () => ({
-  pool: {
-    query: jest.fn(),
-    connect: jest.fn(),
-  },
+jest.mock('../../../src/db/pool', () => ({
+  query: jest.fn(),
+  connect: jest.fn(),
 }));
 
-const { pool } = require('../../../src/db/migrate');
+const pool = require('../../../src/db/pool');
 
 describe('Config Model', () => {
   beforeEach(() => {

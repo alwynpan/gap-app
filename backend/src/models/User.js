@@ -1,4 +1,4 @@
-const { pool } = require('../db/migrate');
+const pool = require('../db/pool');
 const bcrypt = require('bcryptjs');
 
 class User {

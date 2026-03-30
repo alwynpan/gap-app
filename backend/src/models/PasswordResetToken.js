@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { pool } = require('../db/migrate');
+const pool = require('../db/pool');
 
 class PasswordResetToken {
   /**

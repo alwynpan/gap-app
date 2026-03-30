@@ -7,9 +7,7 @@ const mockPool = {
 };
 
 // Mock the database module
-jest.mock('../src/db/migrate', () => ({
-  pool: mockPool,
-}));
+jest.mock('../src/db/pool', () => mockPool);
 
 // Mock bcryptjs
 jest.mock('bcryptjs', () => ({

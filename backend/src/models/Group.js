@@ -1,4 +1,4 @@
-const { pool } = require('../db/migrate');
+const pool = require('../db/pool');
 
 class Group {
   static async findAll() {
