@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import ImportGroupMappings from '../../../src/pages/ImportGroupMappings.jsx';
+import { downloadCsv } from '../../../src/utils/csv.js';
 
 jest.mock('axios');
 jest.mock('../../../src/context/AuthContext.jsx', () => ({
@@ -121,9 +122,9 @@ describe('ImportGroupMappings page', () => {
       expect(screen.getByText(/CSV must have a header row/i)).toBeInTheDocument();
     });
 
-    it('auto-detects columns and shows row count', () => {
+    it('auto-detects columns and shows row count when columns cannot be detected', () => {
       renderPage();
-      uploadCsv('group name,email\nTeam A,alice@test.com\nTeam B,bob@test.com');
+      uploadCsv('col1,col2\nval1@test.com,Group A\nval2@test.com,Group B');
       expect(screen.getByText(/Loaded 2 rows/i)).toBeInTheDocument();
     });
 
@@ -140,20 +141,20 @@ describe('ImportGroupMappings page', () => {
       expect(screen.getByRole('button', { name: /next: preview/i })).toBeDisabled();
     });
 
-    it('Next button is enabled after a valid file is uploaded', () => {
-      renderPage();
-      uploadCsv('group name,email\nTeam A,alice@test.com');
-      expect(screen.getByRole('button', { name: /next: preview/i })).not.toBeDisabled();
-    });
-
-    it('accepts a valid CSV via drag and drop', () => {
+    it('accepts a valid CSV via drag and drop and auto-advances to preview', async () => {
+      axios.get.mockResolvedValue({
+        data: {
+          users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
+          groups: [{ id: 'g1', name: 'Team A' }],
+        },
+      });
       renderPage();
       const file = makeCsvFile('group name,email\nTeam A,alice@test.com');
       const dropzone = screen.getByRole('button', { name: /click to browse/i });
       act(() => {
         fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
       });
-      expect(screen.getByText(/Loaded 1 row/i)).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
     });
 
     it('shows error when a non-CSV file is dropped', () => {
@@ -164,6 +165,18 @@ describe('ImportGroupMappings page', () => {
         fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
       });
       expect(screen.getByText('Please upload a CSV file')).toBeInTheDocument();
+    });
+
+    it('auto-advances to step 2 when a valid CSV with detectable columns is uploaded', async () => {
+      axios.get.mockResolvedValue({
+        data: {
+          users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
+          groups: [{ id: 'g1', name: 'Team Alpha' }],
+        },
+      });
+      renderPage();
+      uploadCsv('group name,email\nTeam Alpha,alice@test.com');
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
     });
   });
 
@@ -186,7 +199,6 @@ describe('ImportGroupMappings page', () => {
       axios.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
       renderPage();
       uploadCsv(csv);
-      await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
     }
 
@@ -206,7 +218,6 @@ describe('ImportGroupMappings page', () => {
       axios.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
       renderPage();
       uploadCsv(csvWithUnknown);
-      await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
       await waitFor(() => expect(screen.getByText(/User not found/i)).toBeInTheDocument());
     });
 
@@ -215,7 +226,6 @@ describe('ImportGroupMappings page', () => {
       axios.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
       renderPage();
       uploadCsv(csvWithBadGroup);
-      await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
       await waitFor(() => expect(screen.getByText(/Group not found/i)).toBeInTheDocument());
     });
 
@@ -229,7 +239,6 @@ describe('ImportGroupMappings page', () => {
       });
       renderPage();
       uploadCsv(conflictCsv);
-      await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
       await waitFor(() => expect(screen.getAllByText(/Conflict/i).length).toBeGreaterThan(0));
     });
 
@@ -243,7 +252,6 @@ describe('ImportGroupMappings page', () => {
       });
       renderPage();
       uploadCsv(csvWithAdmin);
-      await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
       await waitFor(() =>
         expect(screen.getByText(/Admins and Assignment Managers cannot be assigned/i)).toBeInTheDocument()
       );
@@ -259,7 +267,6 @@ describe('ImportGroupMappings page', () => {
       });
       renderPage();
       uploadCsv(csvWithAM);
-      await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
       await waitFor(() =>
         expect(screen.getByText(/Admins and Assignment Managers cannot be assigned/i)).toBeInTheDocument()
       );
@@ -278,7 +285,6 @@ describe('ImportGroupMappings page', () => {
       });
       renderPage();
       uploadCsv(csvMixed);
-      await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
       // Import button should reflect only 1 importable row
       await waitFor(() => expect(screen.getByRole('button', { name: /import 1 row/i })).toBeInTheDocument());
@@ -294,7 +300,6 @@ describe('ImportGroupMappings page', () => {
       });
       renderPage();
       uploadCsv(conflictCsv);
-      await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
       await waitFor(() => expect(screen.getByLabelText(/Action for assigned@test.com/i)).toBeInTheDocument());
     });
 
@@ -311,7 +316,6 @@ describe('ImportGroupMappings page', () => {
         });
         renderPage();
         uploadCsv(conflictCsv);
-        await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
         await waitFor(() => expect(screen.getAllByText(/Conflict/i).length).toBeGreaterThan(0));
       }
 
@@ -381,7 +385,6 @@ describe('ImportGroupMappings page', () => {
 
       renderPage();
       uploadCsv('group name,email\nTeam Alpha,alice@test.com\nTeam Beta,bob@test.com');
-      await userEvent.click(screen.getByRole('button', { name: /next: preview/i }));
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
       await waitFor(() => expect(screen.getAllByText('Ready').length).toBeGreaterThan(0));
       await userEvent.click(screen.getByRole('button', { name: /import/i }));
@@ -405,6 +408,36 @@ describe('ImportGroupMappings page', () => {
       const btns = screen.getAllByRole('button', { name: /back to groups/i });
       await userEvent.click(btns[btns.length - 1]);
       expect(mockNavigate).toHaveBeenCalledWith('/groups');
+    });
+  });
+
+  // ── Skipped CSV download ───────────────────────────────────────────────────
+
+  describe('Skipped CSV download', () => {
+    it('does not include duplicate rows when a skipped row appears in both preview and API response', async () => {
+      axios.get.mockResolvedValue({
+        data: {
+          users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
+          groups: [{ id: 'g1', name: 'Team Alpha' }],
+        },
+      });
+      axios.post.mockResolvedValue({
+        data: {
+          imported: 1,
+          skipped: [{ email: 'nobody@test.com', groupName: 'Team Alpha', reason: 'User not found' }],
+          errors: [],
+        },
+      });
+
+      renderPage();
+      uploadCsv('group name,email\nTeam Alpha,alice@test.com\nTeam Alpha,nobody@test.com');
+      await waitFor(() => expect(screen.getByRole('button', { name: /import 1 row/i })).toBeInTheDocument());
+      await userEvent.click(screen.getByRole('button', { name: /import 1 row/i }));
+      await waitFor(() => expect(screen.getByText('Import Complete')).toBeInTheDocument());
+
+      expect(downloadCsv).toHaveBeenCalledTimes(1);
+      const [rows] = downloadCsv.mock.calls[0];
+      expect(rows).toHaveLength(1);
     });
   });
 });

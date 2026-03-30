@@ -81,6 +81,8 @@ function ImportGroupMappings() {
       setGroupCol(gCol);
       if (eCol === -1 || gCol === -1) {
         setShowMapping(true);
+      } else {
+        setStep(2);
       }
     };
     reader.readAsText(file);
@@ -159,9 +161,6 @@ function ImportGroupMappings() {
 
       // Auto-download skipped rows CSV
       const allSkipped = [
-        ...previewRows
-          .filter((r) => r.action === 'skip' && (r.status === 'skip' || r.status === 'conflict'))
-          .map((r) => ({ email: r.email, groupName: r.groupName, reason: r.skipReason })),
         ...(res.data.skipped || []).map((s) => ({ email: s.email, groupName: s.groupName, reason: s.reason })),
         ...(res.data.errors || []).map((s) => ({ email: s.email, groupName: s.groupName, reason: s.error })),
       ];
