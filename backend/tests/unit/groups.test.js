@@ -203,9 +203,11 @@ describe('Groups Routes', () => {
 
     it('rejects when group name already exists', async () => {
       const { handlers } = setupRoute();
-      Group.findAll.mockResolvedValue([
-        { id: '10000000-0000-4000-8000-000000000001', name: 'Existing Group', enabled: true },
-      ]);
+      Group.findByName.mockResolvedValue({
+        id: '10000000-0000-4000-8000-000000000001',
+        name: 'Existing Group',
+        enabled: true,
+      });
       const reply = mockReply();
       await handlers['/groups_post'](
         {
@@ -219,7 +221,7 @@ describe('Groups Routes', () => {
 
     it('creates group with enabled=true by default', async () => {
       const { handlers } = setupRoute();
-      Group.findAll.mockResolvedValue([]);
+      Group.findByName.mockResolvedValue(null);
       Group.create.mockResolvedValue({
         id: '10000000-0000-4000-8000-000000000001',
         name: 'New Group',
@@ -240,7 +242,7 @@ describe('Groups Routes', () => {
 
     it('creates group with enabled=false', async () => {
       const { handlers } = setupRoute();
-      Group.findAll.mockResolvedValue([]);
+      Group.findByName.mockResolvedValue(null);
       Group.create.mockResolvedValue({
         id: '10000000-0000-4000-8000-000000000001',
         name: 'Disabled Group',
@@ -260,7 +262,7 @@ describe('Groups Routes', () => {
 
     it('creates group with maxMembers', async () => {
       const { handlers } = setupRoute();
-      Group.findAll.mockResolvedValue([]);
+      Group.findByName.mockResolvedValue(null);
       Group.create.mockResolvedValue({
         id: '10000000-0000-4000-8000-000000000001',
         name: 'Limited',
@@ -311,7 +313,7 @@ describe('Groups Routes', () => {
 
     it('handles error when creating group', async () => {
       const { handlers } = setupRoute();
-      Group.findAll.mockResolvedValue([]);
+      Group.findByName.mockResolvedValue(null);
       Group.create.mockRejectedValue(new Error('Database error'));
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
@@ -658,6 +660,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000010',
         group_id: null,
+        enabled: true,
       });
       Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
@@ -691,6 +694,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000010',
         group_id: null,
+        enabled: true,
       });
       Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
@@ -744,6 +748,33 @@ describe('Groups Routes', () => {
       expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
     });
 
+    it('rejects when user account is disabled', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue({
+        id: '10000000-0000-4000-8000-000000000001',
+        name: 'Team A',
+        enabled: true,
+        max_members: null,
+        member_count: 0,
+      });
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000010',
+        group_id: null,
+        enabled: false,
+      });
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
+      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
+    });
+
     it('rejects joining a disabled group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
@@ -777,6 +808,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000010',
         group_id: '10000000-0000-4000-8000-000000000001',
+        enabled: true,
       });
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
@@ -804,6 +836,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000010',
         group_id: null,
+        enabled: true,
       });
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
@@ -865,6 +898,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000001',
         group_id: null,
+        enabled: true,
       });
       Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
@@ -892,6 +926,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000002',
         group_id: null,
+        enabled: true,
       });
       Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
@@ -929,6 +964,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000010',
         group_id: '10000000-0000-4000-8000-000000000001',
+        enabled: true,
       });
       User.updateGroup.mockResolvedValue({});
       const reply = mockReply();
@@ -978,6 +1014,31 @@ describe('Groups Routes', () => {
       expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
     });
 
+    it('rejects when user account is disabled', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue({
+        id: '10000000-0000-4000-8000-000000000001',
+        name: 'Team A',
+        enabled: true,
+      });
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000010',
+        group_id: '10000000-0000-4000-8000-000000000001',
+        enabled: false,
+      });
+      const reply = mockReply();
+      await handlers['/groups/:id/leave_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000010' },
+          params: { id: '10000000-0000-4000-8000-000000000001' },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
+      expect(User.updateGroup).not.toHaveBeenCalled();
+    });
+
     it('rejects when user is not in this group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue({
@@ -988,6 +1049,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000010',
         group_id: '10000000-0000-4000-8000-000000000001',
+        enabled: true,
       });
       const reply = mockReply();
       await handlers['/groups/:id/leave_post'](
@@ -1011,6 +1073,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000010',
         group_id: null,
+        enabled: true,
       });
       const reply = mockReply();
       await handlers['/groups/:id/leave_post'](
@@ -1070,6 +1133,7 @@ describe('Groups Routes', () => {
       User.findById.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000001',
         group_id: '10000000-0000-4000-8000-000000000001',
+        enabled: true,
       });
       User.updateGroup.mockResolvedValue({});
       const reply = mockReply();
@@ -1109,6 +1173,21 @@ describe('Groups Routes', () => {
       await handlers['/groups/import-mappings_post']({ user: { id: 'u1', role: 'admin' }, body: { rows: [] } }, reply);
       expect(reply.code).toHaveBeenCalledWith(400);
       expect(reply.send).toHaveBeenCalledWith({ error: 'No mappings to import' });
+    });
+
+    it('rejects when rows exceed MAX_IMPORT_MAPPINGS', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      const rows = Array.from({ length: 2001 }, (_, i) => ({
+        email: `user${i}@test.com`,
+        groupName: `Group${i}`,
+        action: 'import',
+      }));
+      await handlers['/groups/import-mappings_post']({ user: { id: 'u1', role: 'admin' }, body: { rows } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith(
+        expect.objectContaining({ error: expect.stringContaining('exceeds maximum') })
+      );
     });
 
     it('imports a valid row successfully', async () => {
@@ -1184,6 +1263,7 @@ describe('Groups Routes', () => {
       const fullErr = new Error('Group is full');
       fullErr.statusCode = 409;
       Group.assignUserToGroup.mockRejectedValue(fullErr);
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
         {
@@ -1194,11 +1274,13 @@ describe('Groups Routes', () => {
       );
       const result = reply.send.mock.calls[0][0];
       expect(result.errors[0].error).toBe('Group is full');
+      consoleSpy.mockRestore();
     });
 
     it('records per-row DB error in errors array', async () => {
       const { handlers } = setupRoute();
       User.findByEmail.mockRejectedValue(new Error('DB down'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
         {
@@ -1208,7 +1290,8 @@ describe('Groups Routes', () => {
         reply
       );
       const result = reply.send.mock.calls[0][0];
-      expect(result.errors[0].error).toBe('DB down');
+      expect(result.errors[0].error).toBe('Failed to process row');
+      consoleSpy.mockRestore();
     });
 
     it('skips row when target user is an admin', async () => {
@@ -1311,6 +1394,372 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       await handlers['/groups/export-mappings_get']({ user: { id: 'u1', role: 'admin' } }, reply);
       expect(reply.code).toHaveBeenCalledWith(500);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('POST /groups/bulk', () => {
+    // ── Auth / RBAC ──────────────────────────────────────────────────────────
+
+    it('rejects unauthenticated request (401)', () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      handlers['/groups/bulk_post_pre']({ user: null }, reply);
+      expect(reply.code).toHaveBeenCalledWith(401);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
+    });
+
+    it('returns reply when admin check fails (non-admin user)', async () => {
+      const { mockFastify, handlers } = setupRoute();
+      mockFastify.requireAdmin.mockResolvedValue(false);
+      const reply = mockReply();
+      const request = { user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' } };
+      const result = await handlers['/groups/bulk_post_pre'](request, reply);
+      expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
+      expect(result).toBe(reply);
+    });
+
+    // ── Input validation ─────────────────────────────────────────────────────
+
+    it('rejects missing body (400)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        { user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' }, body: null },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+    });
+
+    it('rejects non-array body (400)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: { name: 'Group A' },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }));
+    });
+
+    it('rejects empty array body (400)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [],
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Request body must be a non-empty array' });
+    });
+
+    it('rejects array exceeding max batch size (400)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      const oversized = Array.from({ length: 2001 }, (_, i) => ({ name: `Group ${i + 1}` }));
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: oversized,
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Batch size exceeds maximum of 2000 groups per request' });
+    });
+
+    it('rejects item with missing name (400)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [{ name: 'Valid Group' }, { enabled: true }],
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ error: expect.stringContaining('items[1]') }));
+    });
+
+    it('rejects item with empty name string (400)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [{ name: '' }],
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+    });
+
+    it('rejects item with name exceeding 100 characters (400)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [{ name: 'A'.repeat(101) }],
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+    });
+
+    it('rejects item with non-string name (400)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [{ name: 42 }],
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+    });
+
+    // ── Happy path ───────────────────────────────────────────────────────────
+
+    it('creates two groups successfully (201)', async () => {
+      const { handlers } = setupRoute();
+      const createdGroups = [
+        { id: '10000000-0000-4000-8000-000000000001', name: 'Group A', enabled: true, max_members: null },
+        { id: '10000000-0000-4000-8000-000000000002', name: 'Group B', enabled: true, max_members: null },
+      ];
+      Group.bulkCreate.mockResolvedValue(createdGroups);
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [{ name: 'Group A' }, { name: 'Group B' }],
+        },
+        reply
+      );
+      expect(Group.bulkCreate).toHaveBeenCalledWith([
+        { name: 'Group A', enabled: true, maxMembers: null },
+        { name: 'Group B', enabled: true, maxMembers: null },
+      ]);
+      expect(reply.code).toHaveBeenCalledWith(201);
+      expect(reply.send).toHaveBeenCalledWith({
+        message: 'Groups created successfully',
+        groups: createdGroups,
+      });
+    });
+
+    it('passes enabled and maxMembers fields when provided', async () => {
+      const { handlers } = setupRoute();
+      const createdGroups = [
+        { id: '10000000-0000-4000-8000-000000000001', name: 'Group A', enabled: false, max_members: 5 },
+      ];
+      Group.bulkCreate.mockResolvedValue(createdGroups);
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [{ name: 'Group A', enabled: false, maxMembers: 5 }],
+        },
+        reply
+      );
+      expect(Group.bulkCreate).toHaveBeenCalledWith([{ name: 'Group A', enabled: false, maxMembers: 5 }]);
+      expect(reply.code).toHaveBeenCalledWith(201);
+    });
+
+    it('handles exactly 100 groups (boundary — allowed)', async () => {
+      const { handlers } = setupRoute();
+      const body = Array.from({ length: 100 }, (_, i) => ({ name: `Group ${i + 1}` }));
+      const createdGroups = body.map((g, i) => ({
+        id: `10000000-0000-4000-8000-0000000000${String(i + 1).padStart(2, '0')}`,
+        name: g.name,
+        enabled: true,
+        max_members: null,
+      }));
+      Group.bulkCreate.mockResolvedValue(createdGroups);
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body,
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(201);
+    });
+
+    // ── Duplicate names ──────────────────────────────────────────────────────
+
+    it('rolls back and returns 409 when duplicate group name exists in DB', async () => {
+      const { handlers } = setupRoute();
+      const err = new Error('duplicate key value violates unique constraint');
+      err.code = '23505';
+      Group.bulkCreate.mockRejectedValue(err);
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [{ name: 'Existing Group' }, { name: 'New Group' }],
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(409);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'One or more group names already exist' });
+      consoleSpy.mockRestore();
+    });
+
+    it('rejects duplicate names within the batch itself (400)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [{ name: 'Group A' }, { name: 'Group A' }],
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Duplicate group names within the batch are not allowed' });
+    });
+
+    // ── Database / server errors ─────────────────────────────────────────────
+
+    it('returns 500 on unexpected database error and rolls back', async () => {
+      const { handlers } = setupRoute();
+      Group.bulkCreate.mockRejectedValue(new Error('Connection lost'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: [{ name: 'Group A' }, { name: 'Group B' }],
+        },
+        reply
+      );
+      expect(consoleSpy).toHaveBeenCalled();
+      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to create groups' });
+      consoleSpy.mockRestore();
+    });
+  });
+
+  // ── DELETE /groups/bulk ──────────────────────────────────────────────────
+  describe('DELETE /groups/bulk', () => {
+    it('rejects unauthenticated request', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete_pre']({ user: null }, reply);
+      expect(reply.code).toHaveBeenCalledWith(401);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
+    });
+
+    it('rejects non-admin user (403)', async () => {
+      const { mockFastify, handlers } = setupRoute();
+      mockFastify.requireAdmin.mockResolvedValue(false);
+      const reply = mockReply();
+      const request = {
+        user: { id: '00000000-0000-4000-8000-000000000002', role: 'assignment_manager' },
+        body: { ids: ['10000000-0000-4000-8000-000000000001'] },
+      };
+      const result = await handlers['/groups/bulk_delete_pre'](request, reply);
+      expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
+      expect(result).toBe(reply);
+    });
+
+    it('deletes 2 groups and returns { deleted: 2 }', async () => {
+      const { handlers } = setupRoute();
+      Group.bulkDelete.mockResolvedValue(2);
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: {
+            ids: ['10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002'],
+          },
+        },
+        reply
+      );
+      expect(Group.bulkDelete).toHaveBeenCalledWith([
+        '10000000-0000-4000-8000-000000000001',
+        '10000000-0000-4000-8000-000000000002',
+      ]);
+      expect(reply.send).toHaveBeenCalledWith({ message: 'Groups deleted successfully', deleted: 2 });
+    });
+
+    it('returns 400 when ids is an empty array', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete'](
+        { user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' }, body: { ids: [] } },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
+    });
+
+    it('returns 400 when ids exceeds 2000', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      const ids = Array.from({ length: 2001 }, (_, i) => `id-${i}`);
+      await handlers['/groups/bulk_delete'](
+        { user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' }, body: { ids } },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
+    });
+
+    it('returns 400 when body.ids is not an array', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: { ids: 'not-an-array' },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
+    });
+
+    it('returns 400 when ids contain non-UUID values', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: { ids: ['not-a-uuid', '10000000-0000-4000-8000-000000000001'] },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'One or more IDs have an invalid format' });
+      expect(Group.bulkDelete).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 on DB error', async () => {
+      const { handlers } = setupRoute();
+      Group.bulkDelete.mockRejectedValue(new Error('DB exploded'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: { ids: ['10000000-0000-4000-8000-000000000001'] },
+        },
+        reply
+      );
+      expect(consoleSpy).toHaveBeenCalled();
+      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to delete groups' });
       consoleSpy.mockRestore();
     });
   });

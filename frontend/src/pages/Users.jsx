@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { Pencil, UserPlus, Check, X, Download, Trash2, Upload, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -53,8 +53,24 @@ function Users() {
   const successTimeoutRef = useRef(null);
   const errorTimeoutRef = useRef(null);
 
+  const location = useLocation();
+
+  // Re-fetch whenever this page is navigated to (location.key changes on each navigation).
+  // Both effects are intentionally placed before fetchData to use a forward reference,
+  // keeping exhaustive-deps clean without suppression comments.
   useEffect(() => {
     fetchData();
+  }, [location.key]);
+
+  // Re-fetch when the browser tab becomes visible again (multi-tab scenario).
+  useEffect(() => {
+    const handler = () => {
+      if (!document.hidden) {
+        fetchData();
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
   }, []);
 
   const fetchData = async () => {
@@ -265,24 +281,32 @@ function Users() {
     }
     setDeleting(true);
     try {
-      const results = await Promise.allSettled(
-        toDelete.map((u) => axios.delete(`${API_BASE}/users/${u.id}`).then(() => u))
-      );
-      const succeeded = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
-      const failed = results.filter((r) => r.status === 'rejected');
-
-      if (succeeded.length > 0) {
-        showSuccess(succeeded.length === 1 ? 'User deleted successfully' : `Deleted ${succeeded.length} users`);
+      if (toDelete.length === 1) {
+        await axios.delete(`${API_BASE}/users/${toDelete[0].id}`);
+        showSuccess('User deleted successfully');
         setSelectedIds((prev) => {
           const next = new Set(prev);
-          succeeded.forEach((u) => next.delete(u.id));
+          next.delete(toDelete[0].id);
+          return next;
+        });
+      } else {
+        const ids = toDelete.map((u) => u.id);
+        const BULK_DELETE_BATCH_SIZE = 2000;
+        for (let i = 0; i < ids.length; i += BULK_DELETE_BATCH_SIZE) {
+          const batch = ids.slice(i, i + BULK_DELETE_BATCH_SIZE);
+          await axios.delete(`${API_BASE}/users/bulk`, { data: { ids: batch } });
+        }
+        showSuccess(`Deleted ${toDelete.length} users`);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          toDelete.forEach((u) => next.delete(u.id));
           return next;
         });
       }
-      if (failed.length > 0) {
-        const err = failed[0].reason;
-        showError(err?.response?.data?.error || `Failed to delete ${failed.length} user(s)`);
-      }
+      setDeleteModal(null);
+      fetchData();
+    } catch (err) {
+      showError(err?.response?.data?.error || 'Failed to delete user(s)');
       setDeleteModal(null);
       fetchData();
     } finally {
@@ -807,8 +831,8 @@ function Users() {
 
       {/* Create User Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New User</h3>
             <form onSubmit={handleCreateUser}>
               {formError && (
@@ -951,8 +975,8 @@ function Users() {
       )}
       {/* Edit User Modal */}
       {editingUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit User</h3>
             <form onSubmit={handleEditUser}>
               {formError && (
@@ -1077,8 +1101,8 @@ function Users() {
       )}
       {/* Send Setup Emails Confirmation Modal */}
       {sendEmailsModal !== null && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-3">
               Send setup email{sendEmailsModal !== 1 ? 's' : ''}?
             </h3>
@@ -1110,28 +1134,32 @@ function Users() {
       )}
       {/* Delete Confirmation Modal (single or bulk) */}
       {deleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Delete {deleteModal.length} user{deleteModal.length > 1 ? 's' : ''}?
-            </h3>
-            {deleteModalWithGroup.length > 0 && (
-              <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
-                <p className="font-medium mb-1">
-                  {deleteModalWithGroup.length} user{deleteModalWithGroup.length > 1 ? 's are' : ' is'} in a group and
-                  will be unassigned:
-                </p>
-                <ul className="list-disc list-inside space-y-0.5">
-                  {deleteModalWithGroup.map((u) => (
-                    <li key={u.id}>
-                      {u.username} <span className="text-yellow-600">({u.group_name})</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <p className="text-sm text-gray-600 mb-4">This action cannot be undone.</p>
-            <div className="flex justify-end space-x-3">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] flex flex-col">
+            <div className="p-6 pb-0 flex-shrink-0">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                Delete {deleteModal.length} user{deleteModal.length > 1 ? 's' : ''}?
+              </h3>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-3">
+              {deleteModalWithGroup.length > 0 && (
+                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
+                  <p className="font-medium mb-1">
+                    {deleteModalWithGroup.length} user{deleteModalWithGroup.length > 1 ? 's are' : ' is'} in a group and
+                    will be unassigned:
+                  </p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {deleteModalWithGroup.map((u) => (
+                      <li key={u.id}>
+                        {u.username} <span className="text-yellow-600">({u.group_name})</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="text-sm text-gray-600">This action cannot be undone.</p>
+            </div>
+            <div className="p-6 pt-4 flex-shrink-0 flex justify-end space-x-3">
               <button
                 type="button"
                 onClick={() => setDeleteModal(null)}

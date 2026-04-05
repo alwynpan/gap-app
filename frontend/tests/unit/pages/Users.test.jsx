@@ -1136,6 +1136,31 @@ describe('Users page', () => {
       expect(screen.queryByText(/will be unassigned/i)).not.toBeInTheDocument();
     });
 
+    it('delete modal has scrollable layout so action buttons remain accessible with many items', async () => {
+      const user = userEvent.setup();
+      const manyUsers = Array.from({ length: 50 }, (_, i) => ({
+        ...initialUsers[0],
+        id: `u0000000-0000-0000-0000-0000000000${String(i + 10).padStart(2, '0')}`,
+        username: `user${i}`,
+        email: `user${i}@test.com`,
+        group_id: 'g0000000-0000-0000-0000-000000000002',
+        group_name: 'Group A',
+      }));
+      await setupDeletePage(manyUsers);
+
+      await user.click(screen.getAllByRole('button', { name: /delete user/i })[0]);
+
+      const dialog = screen.getByText(/delete 1 user\?/i).closest('.bg-white');
+      expect(dialog).toHaveClass('max-h-[90vh]');
+      expect(dialog).toHaveClass('flex-col');
+
+      const scrollable = dialog.querySelector('.overflow-y-auto');
+      expect(scrollable).toBeInTheDocument();
+
+      expect(screen.getByRole('button', { name: /delete 1 user$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+    });
+
     it('deletes user after confirmation and shows success', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
@@ -1247,7 +1272,10 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
 
       await waitFor(() => {
-        expect(axios.delete).toHaveBeenCalledTimes(2);
+        expect(axios.delete).toHaveBeenCalledTimes(1);
+        expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/users\/bulk$/), {
+          data: { ids: expect.arrayContaining(['u1', 'u2']) },
+        });
         expect(screen.getByText('Deleted 2 users')).toBeInTheDocument();
       });
     });
@@ -1510,6 +1538,162 @@ describe('Users page', () => {
 
       expect(screen.getByText('jdoe')).toBeInTheDocument();
       expect(screen.getByText('msmith')).toBeInTheDocument();
+    });
+  });
+
+  // ── handleDeleteConfirmed routing (single vs bulk) ─────────────────────
+  describe('handleDeleteConfirmed routing (single vs bulk)', () => {
+    const setupDeletePage = async (users = initialUsers) => {
+      axios.get.mockResolvedValueOnce({ data: { users } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+      await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
+    };
+
+    it('single delete still uses DELETE /users/:id', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupDeletePage();
+      axios.delete.mockResolvedValueOnce({});
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /delete user/i }));
+      await user.click(screen.getByRole('button', { name: /delete 1 user$/i }));
+
+      await waitFor(() => {
+        expect(axios.delete).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/)
+        );
+        expect(axios.delete).not.toHaveBeenCalledWith(expect.stringMatching(/\/users\/bulk/));
+      });
+    });
+
+    it('multi-delete uses DELETE /users/bulk with correct ids array', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const twoUsers = [
+        { ...initialUsers[0], id: 'u1', username: 'user1', email: 'u1@t.com' },
+        { ...initialUsers[0], id: 'u2', username: 'user2', email: 'u2@t.com' },
+      ];
+      await setupDeletePage(twoUsers);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
+
+      axios.delete.mockResolvedValueOnce({});
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
+
+      await waitFor(() => {
+        expect(axios.delete).toHaveBeenCalledTimes(1);
+        expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/users\/bulk$/), {
+          data: { ids: expect.arrayContaining(['u1', 'u2']) },
+        });
+      });
+    });
+
+    it('success toast is shown after bulk delete', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const twoUsers = [
+        { ...initialUsers[0], id: 'u1', username: 'user1', email: 'u1@t.com' },
+        { ...initialUsers[0], id: 'u2', username: 'user2', email: 'u2@t.com' },
+      ];
+      await setupDeletePage(twoUsers);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
+
+      axios.delete.mockResolvedValueOnce({});
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
+
+      await waitFor(() => expect(screen.getByText('Deleted 2 users')).toBeInTheDocument());
+    });
+
+    it('error toast is shown when bulk delete fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const twoUsers = [
+        { ...initialUsers[0], id: 'u1', username: 'user1', email: 'u1@t.com' },
+        { ...initialUsers[0], id: 'u2', username: 'user2', email: 'u2@t.com' },
+      ];
+      await setupDeletePage(twoUsers);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
+
+      axios.delete.mockRejectedValue({ response: { data: { error: 'Bulk user delete failed' } } });
+
+      await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
+
+      await waitFor(() => expect(screen.getByText('Bulk user delete failed')).toBeInTheDocument());
+    });
+  });
+
+  describe('data freshness on navigation and tab visibility', () => {
+    it('re-fetches data when the browser tab becomes visible', async () => {
+      const staleUser = { ...initialUsers[0], group_name: null, group_id: null };
+      const freshUser = {
+        ...initialUsers[0],
+        group_name: 'Group A',
+        group_id: 'g0000000-0000-0000-0000-000000000002',
+      };
+
+      // Initial load — user has no group
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [staleUser] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => expect(screen.getByText('Not assigned')).toBeInTheDocument());
+
+      // Simulate another tab assigning the user to a group, then this tab regaining focus
+      axios.get
+        .mockResolvedValueOnce({ data: { users: [freshUser] } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true, writable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      await waitFor(() => expect(screen.getByText('Group A')).toBeInTheDocument());
+    });
+
+    it('does not re-fetch when the tab becomes hidden', async () => {
+      axios.get
+        .mockResolvedValueOnce({ data: { users: initialUsers } })
+        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+
+      render(
+        <MemoryRouter>
+          <Users />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => expect(screen.getByText('u1')).toBeInTheDocument());
+
+      const callsBefore = axios.get.mock.calls.length;
+
+      Object.defineProperty(document, 'hidden', { value: true, configurable: true, writable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(axios.get.mock.calls.length).toBe(callsBefore);
     });
   });
 });

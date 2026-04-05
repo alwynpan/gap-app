@@ -96,6 +96,42 @@ describe('Users Routes', () => {
       });
     });
 
+    it('rejects invalid status filter', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get']({ query: { status: 'invalid_status' } }, mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid status filter' });
+      expect(User.findAll).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid role filter', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get']({ query: { role: 'superuser' } }, mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid role filter' });
+      expect(User.findAll).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid groupId filter', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get']({ query: { groupId: 'not-a-uuid' } }, mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid groupId filter' });
+      expect(User.findAll).not.toHaveBeenCalled();
+    });
+
     it('handles error when fetching users', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
@@ -436,6 +472,33 @@ describe('Users Routes', () => {
       expect(sendPasswordSetupEmail).toHaveBeenCalled();
     });
 
+    it('always sends setup email when creator is assignment_manager even if sendSetupEmail is false', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
+      User.create.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'newuser',
+        email: 'new@test.com',
+        student_id: null,
+      });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'assignment_manager' }, body: { ...validCreateBody, sendSetupEmail: false } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+      expect(sendPasswordSetupEmail).toHaveBeenCalled();
+    });
+
     it('creates user with custom role when requester is admin', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
@@ -513,7 +576,38 @@ describe('Users Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(403);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Only admins can create admin users' });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Only admins can create admin or assignment manager users',
+      });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects assignment_manager from creating assignment_manager user', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'assignment_manager' },
+          body: {
+            username: 'newam',
+            email: 'am@test.com',
+            firstName: 'Test',
+            lastName: 'User',
+            role: 'assignment_manager',
+          },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Only admins can create admin or assignment manager users',
+      });
       expect(User.create).not.toHaveBeenCalled();
     });
 
@@ -2508,7 +2602,7 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({
         imported: 0,
         skipped: 0,
-        errors: [{ row: 1, identifier: 'baduser', reason: 'DB constraint violation' }],
+        errors: [{ row: 1, identifier: 'baduser', reason: 'Processing failed' }],
       });
       consoleSpy.mockRestore();
     });
@@ -2722,6 +2816,24 @@ describe('Users Routes', () => {
       expect(result).toBe(mockReply);
     });
 
+    it('rejects when userIds exceeds 500', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      const userIds = Array.from(
+        { length: 501 },
+        (_, i) => `${String(i).padStart(8, '0')}-0000-4000-8000-000000000001`
+      );
+      await handlers['/users/send-setup-emails_post'](
+        { user: { id: 'admin1', role: 'admin' }, body: { userIds } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Cannot send more than 500 setup emails per request' });
+    });
+
     it('sends setup emails to all pending users when no userIds provided', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
@@ -2749,9 +2861,10 @@ describe('Users Routes', () => {
       const handlers = captureHandlers(mockFastify);
       const uid1 = '11111111-0000-4000-8000-000000000001';
       const uid2 = '11111111-0000-4000-8000-000000000002';
-      User.findById
-        .mockResolvedValueOnce({ id: uid1, username: 'pending1', status: 'pending' })
-        .mockResolvedValueOnce({ id: uid2, username: 'active1', status: 'active' });
+      User.findByIds.mockResolvedValue([
+        { id: uid1, username: 'pending1', status: 'pending' },
+        { id: uid2, username: 'active1', status: 'active' },
+      ]);
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
       PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
       sendPasswordSetupEmail.mockResolvedValue();
@@ -2765,6 +2878,7 @@ describe('Users Routes', () => {
       );
 
       // Only uid1 is pending, so only 1 email sent
+      expect(User.findByIds).toHaveBeenCalledWith([uid1, uid2]);
       expect(sendPasswordSetupEmail).toHaveBeenCalledTimes(1);
       expect(mockReply.send).toHaveBeenCalledWith({ sent: 1, errors: [] });
     });
@@ -2786,7 +2900,7 @@ describe('Users Routes', () => {
 
       expect(mockReply.send).toHaveBeenCalledWith({
         sent: 0,
-        errors: [{ userId: 'u1', username: 'pending1', reason: 'SMTP down' }],
+        errors: [{ userId: 'u1', username: 'pending1', reason: 'Failed to send email' }],
       });
       consoleSpy.mockRestore();
     });
@@ -2803,6 +2917,149 @@ describe('Users Routes', () => {
       await handlers['/users/send-setup-emails_post']({ user: { id: 'admin1', role: 'admin' }, body: {} }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(500);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  // ── DELETE /users/bulk ───────────────────────────────────────────────────
+  describe('DELETE /users/bulk', () => {
+    const setupUsersRoute = (options = {}) => {
+      const mockFastify = createMockFastify(options);
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const reply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      return { mockFastify, handlers, reply };
+    };
+
+    it('rejects unauthenticated request (401)', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      await handlers['/users/bulk_delete_pre']({ user: null }, reply);
+      expect(reply.code).toHaveBeenCalledWith(401);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
+    });
+
+    it('rejects non-admin user (403)', async () => {
+      const { mockFastify, handlers, reply } = setupUsersRoute({ requireAdminResult: false });
+      const request = {
+        user: { id: '00000000-0000-4000-8000-000000000002', role: 'assignment_manager' },
+        body: { ids: ['11111111-0000-4000-8000-000000000001'] },
+      };
+      const result = await handlers['/users/bulk_delete_pre'](request, reply);
+      expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
+      expect(result).toBe(reply);
+    });
+
+    it('deletes 2 users and returns { deleted: 2 }', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      User.bulkDelete.mockResolvedValue(2);
+      await handlers['/users/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' },
+          body: {
+            ids: ['11111111-0000-4000-8000-000000000001', '11111111-0000-4000-8000-000000000002'],
+          },
+        },
+        reply
+      );
+      expect(User.bulkDelete).toHaveBeenCalledWith([
+        '11111111-0000-4000-8000-000000000001',
+        '11111111-0000-4000-8000-000000000002',
+      ]);
+      expect(reply.send).toHaveBeenCalledWith({ message: 'Users deleted successfully', deleted: 2 });
+    });
+
+    it('deduplicates ids before deleting', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      const uid = '11111111-0000-4000-8000-000000000001';
+      User.bulkDelete.mockResolvedValue(1);
+      await handlers['/users/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' },
+          body: { ids: [uid, uid] },
+        },
+        reply
+      );
+      expect(User.bulkDelete).toHaveBeenCalledWith([uid]);
+      expect(reply.send).toHaveBeenCalledWith({ message: 'Users deleted successfully', deleted: 1 });
+    });
+
+    it('returns 400 when ids is an empty array', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      await handlers['/users/bulk_delete'](
+        { user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' }, body: { ids: [] } },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
+    });
+
+    it('returns 400 when ids exceeds 2000', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      const ids = Array.from({ length: 2001 }, (_, i) => `id-${i}`);
+      await handlers['/users/bulk_delete'](
+        { user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' }, body: { ids } },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
+    });
+
+    it('returns 400 when body.ids is not an array', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      await handlers['/users/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' },
+          body: { ids: 'not-an-array' },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
+    });
+
+    it('returns 400 when ids contain non-UUID values', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      await handlers['/users/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' },
+          body: { ids: ['not-a-uuid', '11111111-0000-4000-8000-000000000001'] },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'One or more IDs have an invalid format' });
+      expect(User.bulkDelete).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when the requesting user own ID is in the list', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      const adminId = '00000000-0000-4000-8000-000000000099';
+      await handlers['/users/bulk_delete'](
+        {
+          user: { id: adminId, role: 'admin' },
+          body: { ids: [adminId, '11111111-0000-4000-8000-000000000001'] },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Cannot delete your own account' });
+    });
+
+    it('returns 500 on DB error', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      User.bulkDelete.mockRejectedValue(new Error('DB exploded'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      await handlers['/users/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' },
+          body: { ids: ['11111111-0000-4000-8000-000000000001'] },
+        },
+        reply
+      );
+      expect(consoleSpy).toHaveBeenCalled();
+      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to delete users' });
       consoleSpy.mockRestore();
     });
   });

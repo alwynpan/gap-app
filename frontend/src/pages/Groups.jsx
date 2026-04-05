@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
@@ -76,8 +76,22 @@ function Groups() {
   const successTimeoutRef = useRef(null);
   const errorTimeoutRef = useRef(null);
 
+  const location = useLocation();
+
+  // Re-fetch whenever this page is navigated to (location.key changes on each navigation).
   useEffect(() => {
     fetchGroups();
+  }, [location.key]);
+
+  // Re-fetch when the browser tab becomes visible again (multi-tab scenario).
+  useEffect(() => {
+    const handler = () => {
+      if (!document.hidden) {
+        fetchGroups();
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
   }, []);
 
   const fetchGroups = async () => {
@@ -269,6 +283,8 @@ function Groups() {
 
   // ── Bulk create ─────────────────────────────────────────────────────────
 
+  const BULK_BATCH_SIZE = 500;
+
   const handleBulkCreate = async (e) => {
     e.preventDefault();
     const { prefix, count, maxMembers } = bulkCreateModal;
@@ -285,24 +301,40 @@ function Groups() {
       showError('Member limit must be a positive number.');
       return;
     }
-    const results = await Promise.allSettled(
-      Array.from({ length: n }, (_, i) => {
-        const body = { name: `${prefix.trim()}${String(i + 1).padStart(n < 10 ? 1 : 2, '0')}` };
-        if (maxMembersVal !== null) {
-          body.maxMembers = maxMembersVal;
+
+    const pad = n < 10 ? 1 : 2;
+    const allGroups = Array.from({ length: n }, (_, i) => {
+      const item = { name: `${prefix.trim()}${String(i + 1).padStart(pad, '0')}` };
+      if (maxMembersVal !== null) {
+        item.maxMembers = maxMembersVal;
+      }
+      return item;
+    });
+
+    // Split into batches of BULK_BATCH_SIZE and send sequentially
+    let totalCreated = 0;
+    let firstError = null;
+    for (let batchIndex = 0; batchIndex < allGroups.length; batchIndex += BULK_BATCH_SIZE) {
+      const batch = allGroups.slice(batchIndex, batchIndex + BULK_BATCH_SIZE);
+      try {
+        await axios.post(`${API_BASE}/groups/bulk`, batch);
+        totalCreated += batch.length;
+      } catch (err) {
+        if (firstError === null) {
+          firstError = err;
         }
-        return axios.post(`${API_BASE}/groups`, body);
-      })
-    );
-    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-    const failed = results.filter((r) => r.status === 'rejected');
-    if (succeeded > 0) {
-      showSuccess(`Created ${succeeded} group${succeeded !== 1 ? 's' : ''}`);
+        // Stop on first batch failure to avoid further DB pressure
+        break;
+      }
     }
-    if (failed.length > 0) {
-      const err = failed[0].reason;
-      showError(err?.response?.data?.error || `Failed to create ${failed.length} group(s)`);
+
+    if (totalCreated > 0) {
+      showSuccess(`Created ${totalCreated} group${totalCreated !== 1 ? 's' : ''}`);
     }
+    if (firstError !== null) {
+      showError(firstError?.response?.data?.error || 'Failed to create groups');
+    }
+
     setBulkCreateModal(null);
     fetchGroups();
   };
@@ -325,11 +357,21 @@ function Groups() {
   const selectedGroups = groups.filter((g) => selectedIds.has(g.id));
   const deleteModalWithMembers = (deleteModal ?? []).filter((g) => g.member_count > 0);
 
+  const BULK_DELETE_BATCH_SIZE = 2000;
+
   const handleDeleteConfirmed = async () => {
     const toDelete = deleteModal;
     setDeleting(true);
     try {
-      await Promise.all(toDelete.map((g) => axios.delete(`${API_BASE}/groups/${g.id}`)));
+      if (toDelete.length === 1) {
+        await axios.delete(`${API_BASE}/groups/${toDelete[0].id}`);
+      } else {
+        const ids = toDelete.map((g) => g.id);
+        for (let i = 0; i < ids.length; i += BULK_DELETE_BATCH_SIZE) {
+          const batch = ids.slice(i, i + BULK_DELETE_BATCH_SIZE);
+          await axios.delete(`${API_BASE}/groups/bulk`, { data: { ids: batch } });
+        }
+      }
       showSuccess(toDelete.length === 1 ? 'Group deleted successfully' : `Deleted ${toDelete.length} groups`);
       if (toDelete.some((g) => g.id === expandedGroup)) {
         setExpandedGroup(null);
@@ -789,8 +831,8 @@ function Groups() {
 
       {/* Create Group Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New Group</h3>
             <form onSubmit={handleCreateGroup}>
               <div className="mb-4">
@@ -844,8 +886,8 @@ function Groups() {
 
       {/* Edit Group Modal */}
       {editingGroup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Group</h3>
             <form onSubmit={handleEditGroup}>
               <div className="mb-4">
@@ -898,8 +940,8 @@ function Groups() {
 
       {/* Bulk Create Modal */}
       {bulkCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Bulk Create Groups</h3>
             <form onSubmit={handleBulkCreate}>
               <div className="mb-4">
@@ -973,8 +1015,8 @@ function Groups() {
 
       {/* Set Limit Modal (single or bulk) */}
       {limitModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-sm">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Set Member Limit</h3>
             {limitModal.groupIds.length > 1 && (
               <p className="text-sm text-gray-500 mb-3">
@@ -1013,31 +1055,35 @@ function Groups() {
 
       {/* Delete Confirmation Modal (single or bulk) */}
       {deleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Delete {deleteModal.length} group{deleteModal.length > 1 ? 's' : ''}?
-            </h3>
-            {deleteModalWithMembers.length > 0 && (
-              <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
-                <p className="font-medium mb-1">
-                  {deleteModalWithMembers.length} group{deleteModalWithMembers.length > 1 ? 's have' : ' has'} members
-                  that will be unassigned:
-                </p>
-                <ul className="list-disc list-inside space-y-0.5">
-                  {deleteModalWithMembers.map((g) => (
-                    <li key={g.id}>
-                      {g.name}{' '}
-                      <span className="text-yellow-600">
-                        ({g.member_count} member{g.member_count > 1 ? 's' : ''})
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <p className="text-sm text-gray-600 mb-4">This action cannot be undone.</p>
-            <div className="flex justify-end space-x-3">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] flex flex-col">
+            <div className="p-6 pb-0 flex-shrink-0">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                Delete {deleteModal.length} group{deleteModal.length > 1 ? 's' : ''}?
+              </h3>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-3">
+              {deleteModalWithMembers.length > 0 && (
+                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
+                  <p className="font-medium mb-1">
+                    {deleteModalWithMembers.length} group{deleteModalWithMembers.length > 1 ? 's have' : ' has'} members
+                    that will be unassigned:
+                  </p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {deleteModalWithMembers.map((g) => (
+                      <li key={g.id}>
+                        {g.name}{' '}
+                        <span className="text-yellow-600">
+                          ({g.member_count} member{g.member_count > 1 ? 's' : ''})
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="text-sm text-gray-600">This action cannot be undone.</p>
+            </div>
+            <div className="p-6 pt-4 flex-shrink-0 flex justify-end space-x-3">
               <button
                 type="button"
                 onClick={() => setDeleteModal(null)}
