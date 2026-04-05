@@ -54,6 +54,40 @@ describe('User Model', () => {
     });
   });
 
+  describe('findByIds', () => {
+    it('returns matching users for the given ids', async () => {
+      const mockUsers = [
+        { id: 'u0000000-0000-0000-0000-000000000001', username: 'user1', status: 'pending' },
+        { id: 'u0000000-0000-0000-0000-000000000002', username: 'user2', status: 'active' },
+      ];
+      pool.query.mockResolvedValue({ rows: mockUsers });
+
+      const result = await User.findByIds([
+        'u0000000-0000-0000-0000-000000000001',
+        'u0000000-0000-0000-0000-000000000002',
+      ]);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.id = ANY($1)'), [
+        ['u0000000-0000-0000-0000-000000000001', 'u0000000-0000-0000-0000-000000000002'],
+      ]);
+      expect(result).toEqual(mockUsers);
+    });
+
+    it('returns empty array without querying when ids is empty', async () => {
+      const result = await User.findByIds([]);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array without querying when ids is undefined', async () => {
+      const result = await User.findByIds(undefined);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('findById', () => {
     it('returns user by id with group and role info', async () => {
       const mockUser = {
@@ -437,6 +471,31 @@ describe('User Model', () => {
 
       expect(bcrypt.compare).toHaveBeenCalledWith('wrongpassword', 'hashedPassword');
       expect(result).toBe(false);
+    });
+  });
+
+  describe('bulkDelete', () => {
+    it('executes DELETE … WHERE id = ANY and returns row count', async () => {
+      pool.query.mockResolvedValue({ rowCount: 2 });
+
+      const result = await User.bulkDelete(['id1', 'id2']);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM users'), [['id1', 'id2']]);
+      expect(result).toBe(2);
+    });
+
+    it('returns 0 when no rows matched', async () => {
+      pool.query.mockResolvedValue({ rowCount: 0 });
+
+      const result = await User.bulkDelete(['nonexistent-id']);
+
+      expect(result).toBe(0);
+    });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(User.bulkDelete(['id1'])).rejects.toThrow('connection refused');
     });
   });
 });

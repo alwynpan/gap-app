@@ -27,6 +27,8 @@ const {
   forgotPasswordSchema,
   setPasswordSchema,
   validateUUID,
+  bulkCreateGroupItemSchema,
+  BULK_CREATE_MAX,
 } = require('../../src/utils/schemas');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -646,5 +648,72 @@ describe('importGroupMappingRowSchema', () => {
   it('strips unknown fields', () => {
     const data = ok(importGroupMappingRowSchema, { email: 'bob@test.com', groupName: 'Team B', extra: 'ignored' });
     expect(data).not.toHaveProperty('extra');
+  });
+});
+
+describe('bulkCreateGroupItemSchema', () => {
+  it('accepts a minimal valid item with name only', () => {
+    const data = ok(bulkCreateGroupItemSchema, { name: 'Team Gamma' });
+    expect(data.name).toBe('Team Gamma');
+  });
+
+  it('accepts item with all optional fields', () => {
+    const data = ok(bulkCreateGroupItemSchema, { name: 'Team Delta', enabled: false, maxMembers: 20 });
+    expect(data).toEqual({ name: 'Team Delta', enabled: false, maxMembers: 20 });
+  });
+
+  it('rejects missing name', () => {
+    const result = bulkCreateGroupItemSchema.safeParse({});
+    expect(result.success).toBe(false);
+    expect(result.error.issues[0].path).toEqual(['name']);
+  });
+
+  it('rejects empty name string', () => {
+    expect(err(bulkCreateGroupItemSchema, { name: '' })).toBe('Group name is required');
+  });
+
+  it('rejects name exceeding 100 characters', () => {
+    expect(err(bulkCreateGroupItemSchema, { name: 'X'.repeat(101) })).toBe('Group name must be at most 100 characters');
+  });
+
+  it('accepts name of exactly 100 characters (boundary)', () => {
+    const data = ok(bulkCreateGroupItemSchema, { name: 'A'.repeat(100) });
+    expect(data.name).toHaveLength(100);
+  });
+
+  it('rejects non-string name', () => {
+    const result = bulkCreateGroupItemSchema.safeParse({ name: 123 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects non-boolean enabled', () => {
+    const result = bulkCreateGroupItemSchema.safeParse({ name: 'Valid', enabled: 'yes' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects non-integer maxMembers', () => {
+    const result = bulkCreateGroupItemSchema.safeParse({ name: 'Valid', maxMembers: 2.5 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects zero maxMembers (must be positive)', () => {
+    const result = bulkCreateGroupItemSchema.safeParse({ name: 'Valid', maxMembers: 0 });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts null maxMembers (unlimited)', () => {
+    const data = ok(bulkCreateGroupItemSchema, { name: 'Valid', maxMembers: null });
+    expect(data.maxMembers).toBeNull();
+  });
+
+  it('strips unknown fields', () => {
+    const data = ok(bulkCreateGroupItemSchema, { name: 'Team', extra: 'ignored' });
+    expect(data).not.toHaveProperty('extra');
+  });
+});
+
+describe('BULK_CREATE_MAX', () => {
+  it('is set to 2000', () => {
+    expect(BULK_CREATE_MAX).toBe(2000);
   });
 });

@@ -825,7 +825,10 @@ describe('Groups page', () => {
       await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
 
       await waitFor(() => {
-        expect(axios.delete).toHaveBeenCalledTimes(2);
+        expect(axios.delete).toHaveBeenCalledTimes(1);
+        expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk$/), {
+          data: { ids: expect.arrayContaining(['g1', 'g2']) },
+        });
         expect(screen.getByText('Deleted 2 groups')).toBeInTheDocument();
       });
     });
@@ -842,6 +845,27 @@ describe('Groups page', () => {
       await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
 
       await waitFor(() => expect(screen.getByText('Delete failed')).toBeInTheDocument());
+    });
+
+    it('delete modal has scrollable layout so action buttons remain accessible with many items', async () => {
+      const user = userEvent.setup();
+      const manyGroups = Array.from({ length: 50 }, (_, i) =>
+        makeGroup({ id: `g${i}`, name: `Group ${i}`, member_count: 3 })
+      );
+      await setupPage(manyGroups);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(50\)/i }));
+
+      const dialog = screen.getByText(/delete 50 groups\?/i).closest('.bg-white');
+      expect(dialog).toHaveClass('max-h-[90vh]');
+      expect(dialog).toHaveClass('flex-col');
+
+      const scrollable = dialog.querySelector('.overflow-y-auto');
+      expect(scrollable).toBeInTheDocument();
+
+      expect(screen.getByRole('button', { name: /delete 50 groups/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
     });
   });
 
@@ -903,7 +927,9 @@ describe('Groups page', () => {
       expect(screen.getByText(/\(6 groups\)/i)).toBeInTheDocument();
     });
 
-    it('creates groups and shows success', async () => {
+    // ── Bulk create via POST /groups/bulk ──────────────────────────────────
+
+    it('happy path — small batch (≤500): sends single POST /groups/bulk call', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupPage([]);
@@ -914,21 +940,93 @@ describe('Groups page', () => {
       await user.clear(countInput);
       await user.type(countInput, '3');
 
-      axios.post.mockResolvedValue({});
+      axios.post.mockResolvedValueOnce({ data: { created: 3 } });
       axios.get.mockResolvedValueOnce({ data: { groups: [] } });
 
       await user.click(screen.getByRole('button', { name: /create 3 groups/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledTimes(3);
-        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'Team1' });
-        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'Team2' });
-        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'Team3' });
+        expect(axios.post).toHaveBeenCalledTimes(1);
+        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk$/), [
+          { name: 'Team1' },
+          { name: 'Team2' },
+          { name: 'Team3' },
+        ]);
         expect(screen.getByText('Created 3 groups')).toBeInTheDocument();
       });
     });
 
-    it('creates groups with member limit when limit is set', async () => {
+    it('happy path — large batch (>500): sends three sequential POST /groups/bulk calls', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Group');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '1500');
+
+      // First batch: 500 items; second batch: 500 items; third batch: 500 items
+      axios.post
+        .mockResolvedValueOnce({ data: { created: 500 } })
+        .mockResolvedValueOnce({ data: { created: 500 } })
+        .mockResolvedValueOnce({ data: { created: 500 } });
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
+
+      await user.click(screen.getByRole('button', { name: /create 1500 groups/i }));
+
+      await waitFor(() => {
+        expect(axios.post).toHaveBeenCalledTimes(3);
+        // First call — 500 items (pad=2 for n=1500)
+        const firstCall = axios.post.mock.calls[0];
+        expect(firstCall[0]).toMatch(/\/groups\/bulk$/);
+        expect(firstCall[1]).toHaveLength(500);
+        expect(firstCall[1][0]).toEqual({ name: 'Group01' });
+        expect(firstCall[1][499]).toEqual({ name: 'Group500' });
+        // Second call — 500 items
+        const secondCall = axios.post.mock.calls[1];
+        expect(secondCall[0]).toMatch(/\/groups\/bulk$/);
+        expect(secondCall[1]).toHaveLength(500);
+        expect(secondCall[1][0]).toEqual({ name: 'Group501' });
+        expect(secondCall[1][499]).toEqual({ name: 'Group1000' });
+        // Third call — 500 items
+        const thirdCall = axios.post.mock.calls[2];
+        expect(thirdCall[0]).toMatch(/\/groups\/bulk$/);
+        expect(thirdCall[1]).toHaveLength(500);
+        expect(thirdCall[1][0]).toEqual({ name: 'Group1001' });
+        expect(thirdCall[1][499]).toEqual({ name: 'Group1500' });
+        expect(screen.getByText('Created 1500 groups')).toBeInTheDocument();
+      });
+    });
+
+    it('happy path — exactly 500: sends a single batch call', async () => {
+      const user = userEvent.setup();
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '500');
+
+      axios.post.mockResolvedValueOnce({ data: { created: 500 } });
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
+
+      await user.click(screen.getByRole('button', { name: /create 500 groups/i }));
+
+      await waitFor(() => {
+        expect(axios.post).toHaveBeenCalledTimes(1);
+        expect(axios.post).toHaveBeenCalledWith(
+          expect.stringMatching(/\/groups\/bulk$/),
+          expect.arrayContaining([expect.objectContaining({ name: 'Team01' })])
+        );
+        const callArg = axios.post.mock.calls[0][1];
+        expect(callArg).toHaveLength(500);
+      });
+    });
+
+    it('with maxMembers: includes maxMembers in each item when set', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupPage([]);
@@ -940,24 +1038,47 @@ describe('Groups page', () => {
       await user.type(countInput, '2');
       await user.type(screen.getByPlaceholderText(/unlimited/i), '30');
 
-      axios.post.mockResolvedValue({});
+      axios.post.mockResolvedValueOnce({ data: { created: 2 } });
       axios.get.mockResolvedValueOnce({ data: { groups: [] } });
 
       await user.click(screen.getByRole('button', { name: /create 2 groups/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), {
-          name: 'Team1',
-          maxMembers: 30,
-        });
-        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), {
-          name: 'Team2',
-          maxMembers: 30,
-        });
+        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk$/), [
+          { name: 'Team1', maxMembers: 30 },
+          { name: 'Team2', maxMembers: 30 },
+        ]);
       });
     });
 
-    it('shows error when bulk create fails', async () => {
+    it('partial failure: first batch succeeds, second batch fails — shows both toasts', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '1500');
+
+      axios.post
+        .mockResolvedValueOnce({ data: { created: 500 } })
+        .mockRejectedValueOnce({ response: { data: { error: 'DB overloaded' } } });
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
+
+      await user.click(screen.getByRole('button', { name: /create 1500 groups/i }));
+
+      await waitFor(
+        () => {
+          expect(screen.getByText('Created 500 groups')).toBeInTheDocument();
+          expect(screen.getByText('DB overloaded')).toBeInTheDocument();
+        },
+        { timeout: 5000 }
+      );
+    });
+
+    it('all fail: first batch fails — shows only error toast, no success toast', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupPage([]);
@@ -968,12 +1089,45 @@ describe('Groups page', () => {
       await user.clear(countInput);
       await user.type(countInput, '2');
 
-      axios.post.mockRejectedValue({ response: { data: { error: 'Create failed' } } });
+      axios.post.mockRejectedValueOnce({ response: { data: { error: 'Create failed' } } });
       axios.get.mockResolvedValueOnce({ data: { groups: [] } });
 
       await user.click(screen.getByRole('button', { name: /create 2 groups/i }));
 
-      await waitFor(() => expect(screen.getByText('Create failed')).toBeInTheDocument());
+      await waitFor(() => {
+        expect(screen.getByText('Create failed')).toBeInTheDocument();
+        expect(screen.queryByText(/created \d+ group/i)).not.toBeInTheDocument();
+      });
+    });
+
+    it('empty prefix: does not make any API call', async () => {
+      const user = userEvent.setup();
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      // Leave prefix empty, just set a count
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '5');
+
+      // Submit button is disabled when prefix is empty, so we verify no API call
+      expect(screen.getByRole('button', { name: /create.*groups/i })).toBeDisabled();
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it('invalid count (0): does not make any API call', async () => {
+      const user = userEvent.setup();
+      await setupPage([]);
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '0');
+
+      // Submit button disabled when count < 1
+      expect(screen.getByRole('button', { name: /create.*groups/i })).toBeDisabled();
+      expect(axios.post).not.toHaveBeenCalled();
     });
   });
 
@@ -1117,6 +1271,124 @@ describe('Groups page', () => {
       const link = screen.getByRole('link', { name: /import mappings/i });
       expect(link).toBeInTheDocument();
       expect(link).toHaveAttribute('href', '/groups/import');
+    });
+  });
+
+  // ── handleDeleteConfirmed — single vs bulk routing ────────────────────
+  describe('handleDeleteConfirmed routing (single vs bulk)', () => {
+    it('single delete still uses DELETE /groups/:id', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage();
+      axios.delete.mockResolvedValueOnce({});
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
+
+      await user.click(screen.getByRole('button', { name: 'Delete Group' }));
+      await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
+
+      await waitFor(() => {
+        expect(axios.delete).toHaveBeenCalledWith(
+          expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/)
+        );
+        expect(axios.delete).not.toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk/));
+      });
+    });
+
+    it('multi-delete uses DELETE /groups/bulk with correct ids array', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([
+        makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
+        makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
+      ]);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
+
+      axios.delete.mockResolvedValueOnce({});
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
+
+      await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
+
+      await waitFor(() => {
+        expect(axios.delete).toHaveBeenCalledTimes(1);
+        expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk$/), {
+          data: { ids: expect.arrayContaining(['g1', 'g2']) },
+        });
+      });
+    });
+
+    it('success toast is shown after bulk delete', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([
+        makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
+        makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
+      ]);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
+
+      axios.delete.mockResolvedValueOnce({});
+      axios.get.mockResolvedValueOnce({ data: { groups: [] } });
+
+      await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
+
+      await waitFor(() => expect(screen.getByText('Deleted 2 groups')).toBeInTheDocument());
+    });
+
+    it('error toast is shown when bulk delete fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage([
+        makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
+        makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
+      ]);
+
+      await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
+
+      axios.delete.mockRejectedValue({ response: { data: { error: 'Bulk delete failed' } } });
+
+      await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
+
+      await waitFor(() => expect(screen.getByText('Bulk delete failed')).toBeInTheDocument());
+    });
+  });
+
+  describe('data freshness on navigation and tab visibility', () => {
+    it('re-fetches groups when the browser tab becomes visible', async () => {
+      // Initial load — one group
+      axios.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ name: 'Group A' })] } });
+      render(
+        <MemoryRouter>
+          <Groups />
+        </MemoryRouter>
+      );
+      await waitFor(() => expect(screen.getByText('Group A')).toBeInTheDocument());
+
+      // Simulate another tab creating a group, then this tab regaining focus
+      axios.get.mockResolvedValueOnce({
+        data: {
+          groups: [makeGroup({ name: 'Group A' }), makeGroup({ id: 'g2', name: 'Group B' })],
+        },
+      });
+
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true, writable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      await waitFor(() => expect(screen.getByText('Group B')).toBeInTheDocument());
+    });
+
+    it('does not re-fetch when the tab becomes hidden', async () => {
+      await setupPage();
+
+      const callsBefore = axios.get.mock.calls.length;
+
+      Object.defineProperty(document, 'hidden', { value: true, configurable: true, writable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(axios.get.mock.calls.length).toBe(callsBefore);
     });
   });
 });

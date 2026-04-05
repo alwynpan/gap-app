@@ -87,6 +87,8 @@ const groupNameSchema = sanitizedString.pipe(
 
 // ── Endpoint schemas ─────────────────────────────────────────────────────────
 
+const ROLE_VALUES = /** @type {const} */ (['admin', 'assignment_manager', 'user']);
+
 const registerSchema = z.object({
   username: usernameSchema,
   email: emailSchema,
@@ -106,7 +108,7 @@ const createUserSchema = z.object({
   firstName: nameSchema('First name'),
   lastName: nameSchema('Last name'),
   studentId: studentIdSchema,
-  role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
+  role: z.enum(ROLE_VALUES).optional(),
   groupId: z.string().uuid().optional().nullable(),
   sendSetupEmail: z.boolean().optional(),
 });
@@ -116,7 +118,7 @@ const updateUserSchema = z.object({
   firstName: nameSchema('First name').optional().nullable(),
   lastName: nameSchema('Last name').optional().nullable(),
   studentId: studentIdSchema,
-  role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
+  role: z.enum(ROLE_VALUES).optional(),
   enabled: z.boolean().optional(),
   username: usernameSchema.optional(),
   groupId: z.string().uuid().optional().nullable(),
@@ -174,6 +176,14 @@ const updateGroupSchema = z.object({
   maxMembers: z.number().int().positive().optional().nullable(),
 });
 
+const BULK_CREATE_MAX = 2000;
+
+const bulkCreateGroupItemSchema = z.object({
+  name: groupNameSchema,
+  enabled: z.boolean().optional(),
+  maxMembers: z.number().int().positive().optional().nullable(),
+});
+
 const updateConfigSchema = z.object({
   value: z
     .string({ required_error: 'Value is required', invalid_type_error: 'Value must be a string' })
@@ -193,6 +203,9 @@ module.exports = {
   sanitize,
   parseBody,
   validateUUID,
+  ROLE_VALUES,
+  BULK_CREATE_MAX,
+  bulkCreateGroupItemSchema,
   updateConfigSchema,
   usernameSchema,
   emailSchema,

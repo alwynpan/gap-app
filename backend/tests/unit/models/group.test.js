@@ -528,4 +528,152 @@ describe('Group Model', () => {
       expect(mockClient.release).toHaveBeenCalled();
     });
   });
+
+  describe('bulkCreate', () => {
+    let mockClient;
+
+    beforeEach(() => {
+      mockClient = {
+        query: jest.fn(),
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValue(mockClient);
+    });
+
+    it('inserts multiple groups in a single transaction and returns created rows', async () => {
+      const input = [
+        { name: 'Group A', enabled: true, maxMembers: null },
+        { name: 'Group B', enabled: false, maxMembers: 5 },
+      ];
+      const row1 = { id: '10000000-0000-4000-8000-000000000001', name: 'Group A', enabled: true, max_members: null };
+      const row2 = { id: '10000000-0000-4000-8000-000000000002', name: 'Group B', enabled: false, max_members: 5 };
+
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockResolvedValueOnce({ rows: [row1] }) // INSERT Group A
+        .mockResolvedValueOnce({ rows: [row2] }) // INSERT Group B
+        .mockResolvedValueOnce(); // COMMIT
+
+      const result = await Group.bulkCreate(input);
+
+      expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+      expect(mockClient.query).toHaveBeenNthCalledWith(
+        2,
+        'INSERT INTO groups (name, enabled, max_members) VALUES ($1, $2, $3) RETURNING *',
+        ['Group A', true, null]
+      );
+      expect(mockClient.query).toHaveBeenNthCalledWith(
+        3,
+        'INSERT INTO groups (name, enabled, max_members) VALUES ($1, $2, $3) RETURNING *',
+        ['Group B', false, 5]
+      );
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
+      expect(mockClient.release).toHaveBeenCalled();
+      expect(result).toEqual([row1, row2]);
+    });
+
+    it('commits transaction and releases client on success', async () => {
+      const input = [{ name: 'Solo Group', enabled: true, maxMembers: null }];
+      const row = { id: '10000000-0000-4000-8000-000000000001', name: 'Solo Group', enabled: true, max_members: null };
+
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockResolvedValueOnce({ rows: [row] }) // INSERT
+        .mockResolvedValueOnce(); // COMMIT
+
+      await Group.bulkCreate(input);
+
+      expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('rolls back and rethrows on INSERT error (e.g. unique constraint)', async () => {
+      const input = [
+        { name: 'Existing Group', enabled: true, maxMembers: null },
+        { name: 'New Group', enabled: true, maxMembers: null },
+      ];
+      const uniqueErr = new Error('duplicate key value violates unique constraint');
+      uniqueErr.code = '23505';
+
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockRejectedValueOnce(uniqueErr) // INSERT fails
+        .mockResolvedValueOnce(); // ROLLBACK
+
+      await expect(Group.bulkCreate(input)).rejects.toMatchObject({ code: '23505' });
+
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('rolls back and rethrows on unexpected DB error', async () => {
+      const input = [{ name: 'Group A', enabled: true, maxMembers: null }];
+      const dbErr = new Error('Connection lost');
+
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockRejectedValueOnce(dbErr) // INSERT fails
+        .mockResolvedValueOnce(); // ROLLBACK
+
+      await expect(Group.bulkCreate(input)).rejects.toThrow('Connection lost');
+
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('handles a single-item batch correctly', async () => {
+      const input = [{ name: 'One Group', enabled: true, maxMembers: 10 }];
+      const row = { id: '10000000-0000-4000-8000-000000000001', name: 'One Group', enabled: true, max_members: 10 };
+
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockResolvedValueOnce({ rows: [row] }) // INSERT
+        .mockResolvedValueOnce(); // COMMIT
+
+      const result = await Group.bulkCreate(input);
+
+      expect(result).toEqual([row]);
+    });
+
+    it('releases client even when ROLLBACK itself throws', async () => {
+      const input = [{ name: 'Group A', enabled: true, maxMembers: null }];
+      const dbErr = new Error('Insert failed');
+      const rollbackErr = new Error('Rollback failed');
+
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockRejectedValueOnce(dbErr) // INSERT fails
+        .mockRejectedValueOnce(rollbackErr); // ROLLBACK also throws
+
+      // When ROLLBACK itself throws, that error propagates (the finally block still releases)
+      await expect(Group.bulkCreate(input)).rejects.toThrow('Rollback failed');
+
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('bulkDelete', () => {
+    it('executes DELETE … WHERE id = ANY and returns row count', async () => {
+      pool.query.mockResolvedValue({ rowCount: 3 });
+
+      const result = await Group.bulkDelete(['id1', 'id2', 'id3']);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM groups'), [['id1', 'id2', 'id3']]);
+      expect(result).toBe(3);
+    });
+
+    it('returns 0 when no rows matched', async () => {
+      pool.query.mockResolvedValue({ rowCount: 0 });
+
+      const result = await Group.bulkDelete(['nonexistent-id']);
+
+      expect(result).toBe(0);
+    });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(Group.bulkDelete(['id1'])).rejects.toThrow('connection refused');
+    });
+  });
 });

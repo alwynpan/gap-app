@@ -2,12 +2,18 @@ const Group = require('../models/Group');
 const User = require('../models/User');
 const Config = require('../models/Config');
 const {
+  sanitize,
   parseBody,
   createGroupSchema,
   updateGroupSchema,
   validateUUID,
   importGroupMappingRowSchema,
+  bulkCreateGroupItemSchema,
+  BULK_CREATE_MAX,
 } = require('../utils/schemas');
+
+const _parsedImportMax = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
+const MAX_IMPORT_MAPPINGS = Number.isNaN(_parsedImportMax) ? 2000 : _parsedImportMax;
 
 async function groupsRoutes(fastify, _options) {
   // Get all groups (authenticated users)
@@ -120,8 +126,7 @@ async function groupsRoutes(fastify, _options) {
         const { name, enabled, maxMembers } = body;
 
         // Check if group name already exists
-        const existingGroups = await Group.findAll();
-        const existingGroup = existingGroups.find((g) => g.name.toLowerCase() === name.toLowerCase());
+        const existingGroup = await Group.findByName(name);
         if (existingGroup) {
           return reply.code(409).send({ error: 'Group name already exists' });
         }
@@ -140,6 +145,75 @@ async function groupsRoutes(fastify, _options) {
       } catch (error) {
         console.error('Create group error:', error);
         return reply.code(500).send({ error: 'Failed to create group' });
+      }
+    }
+  );
+
+  // Bulk create groups (admin only)
+  fastify.post(
+    '/groups/bulk',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+        const allowed = await fastify.requireAdmin(request, reply);
+        if (!allowed) {
+          return reply;
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const body = request.body;
+
+        if (!Array.isArray(body)) {
+          return reply.code(400).send({ error: 'Request body must be a non-empty array' });
+        }
+
+        if (body.length === 0) {
+          return reply.code(400).send({ error: 'Request body must be a non-empty array' });
+        }
+
+        if (body.length > BULK_CREATE_MAX) {
+          return reply.code(400).send({ error: `Batch size exceeds maximum of ${BULK_CREATE_MAX} groups per request` });
+        }
+
+        // Validate each item and collect parsed results
+        const parsed = [];
+        for (let i = 0; i < body.length; i++) {
+          // eslint-disable-next-line security/detect-object-injection
+          const result = bulkCreateGroupItemSchema.safeParse(body[i]);
+          if (!result.success) {
+            const msg = result.error.issues[0]?.message || 'Validation failed';
+            return reply.code(400).send({ error: `items[${i}]: ${msg}` });
+          }
+          parsed.push({
+            name: result.data.name,
+            enabled: result.data.enabled !== false,
+            maxMembers: result.data.maxMembers ?? null,
+          });
+        }
+
+        // Reject duplicate names within the batch (case-insensitive)
+        const lowerNames = parsed.map((g) => g.name.toLowerCase());
+        const uniqueNames = new Set(lowerNames);
+        if (uniqueNames.size !== parsed.length) {
+          return reply.code(400).send({ error: 'Duplicate group names within the batch are not allowed' });
+        }
+
+        const groups = await Group.bulkCreate(parsed);
+
+        return reply.code(201).send({
+          message: 'Groups created successfully',
+          groups,
+        });
+      } catch (error) {
+        console.error('Bulk create groups error:', error);
+        if (error.code === '23505') {
+          return reply.code(409).send({ error: 'One or more group names already exist' });
+        }
+        return reply.code(500).send({ error: 'Failed to create groups' });
       }
     }
   );
@@ -201,6 +275,42 @@ async function groupsRoutes(fastify, _options) {
       } catch (error) {
         console.error('Update group error:', error);
         return reply.code(500).send({ error: 'Failed to update group' });
+      }
+    }
+  );
+
+  // Bulk delete groups (admin only)
+  fastify.delete(
+    '/groups/bulk',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+        const allowed = await fastify.requireAdmin(request, reply);
+        if (!allowed) {
+          return reply;
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { ids } = request.body || {};
+
+        if (!Array.isArray(ids) || ids.length === 0 || ids.length > 2000) {
+          return reply.code(400).send({ error: 'ids must be a non-empty array of up to 2000 items' });
+        }
+
+        const invalidIds = ids.filter((id) => !validateUUID(id));
+        if (invalidIds.length > 0) {
+          return reply.code(400).send({ error: 'One or more IDs have an invalid format' });
+        }
+
+        const deleted = await Group.bulkDelete(ids);
+        return reply.send({ message: 'Groups deleted successfully', deleted });
+      } catch (error) {
+        console.error('Bulk delete groups error:', error);
+        return reply.code(500).send({ error: 'Failed to delete groups' });
       }
     }
   );
@@ -283,6 +393,9 @@ async function groupsRoutes(fastify, _options) {
         if (!user) {
           return reply.code(404).send({ error: 'User not found' });
         }
+        if (!user.enabled) {
+          return reply.code(403).send({ error: 'Account is disabled' });
+        }
         if (user.group_id) {
           return reply.code(400).send({ error: 'You are already in a group. Leave your current group first.' });
         }
@@ -343,6 +456,9 @@ async function groupsRoutes(fastify, _options) {
         if (!user) {
           return reply.code(404).send({ error: 'User not found' });
         }
+        if (!user.enabled) {
+          return reply.code(403).send({ error: 'Account is disabled' });
+        }
         if (user.group_id !== groupId) {
           return reply.code(400).send({ error: 'You are not a member of this group' });
         }
@@ -378,13 +494,21 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'No mappings to import' });
         }
 
+        if (rows.length > MAX_IMPORT_MAPPINGS) {
+          return reply.code(400).send({ error: `Import exceeds maximum of ${MAX_IMPORT_MAPPINGS} rows` });
+        }
+
         let imported = 0;
         const skipped = [];
         const errors = [];
 
         for (const rawRow of rows) {
           if (rawRow.action === 'skip') {
-            skipped.push({ email: rawRow.email, groupName: rawRow.groupName, reason: rawRow.skipReason || 'Skipped' });
+            const email = typeof rawRow.email === 'string' ? sanitize(rawRow.email).slice(0, 255) : '?';
+            const groupName = typeof rawRow.groupName === 'string' ? sanitize(rawRow.groupName).slice(0, 100) : '?';
+            const rawReason = typeof rawRow.skipReason === 'string' ? rawRow.skipReason : '';
+            const reason = sanitize(rawReason).slice(0, 500) || 'Skipped';
+            skipped.push({ email, groupName, reason });
             continue;
           }
 
@@ -425,7 +549,8 @@ async function groupsRoutes(fastify, _options) {
             await Group.assignUserToGroup(user.id, group.id);
             imported++;
           } catch (rowErr) {
-            const reason = rowErr.statusCode === 409 ? 'Group is full' : rowErr.message;
+            const reason = rowErr.statusCode === 409 ? 'Group is full' : 'Failed to process row';
+            console.error('Import mapping row error:', rowErr);
             errors.push({ email, groupName, error: reason });
           }
         }

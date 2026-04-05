@@ -4,6 +4,7 @@ const Role = require('../models/Role');
 const PasswordResetToken = require('../models/PasswordResetToken');
 const { sendPasswordSetupEmail } = require('../services/email');
 const {
+  sanitize,
   parseBody,
   createUserSchema,
   updateUserSchema,
@@ -33,6 +34,19 @@ async function usersRoutes(fastify, _options) {
     async (request, reply) => {
       try {
         const { role, status, groupId } = request.query || {};
+
+        const VALID_STATUSES = ['active', 'inactive', 'pending'];
+        const VALID_ROLES = ['admin', 'assignment_manager', 'user'];
+        if (status !== undefined && !VALID_STATUSES.includes(status)) {
+          return reply.code(400).send({ error: 'Invalid status filter' });
+        }
+        if (role !== undefined && !VALID_ROLES.includes(role)) {
+          return reply.code(400).send({ error: 'Invalid role filter' });
+        }
+        if (groupId !== undefined && groupId !== 'none' && !validateUUID(groupId)) {
+          return reply.code(400).send({ error: 'Invalid groupId filter' });
+        }
+
         const users = await User.findAll({ role, status, groupId });
         return reply.send({ users });
       } catch (error) {
@@ -107,9 +121,9 @@ async function usersRoutes(fastify, _options) {
 
         const { username, email, firstName, lastName, studentId, groupId, role } = body;
 
-        // Only admins can create admin users
-        if (role === 'admin' && request.user.role !== 'admin') {
-          return reply.code(403).send({ error: 'Only admins can create admin users' });
+        // Only admins can create admin or assignment_manager users
+        if ((role === 'admin' || role === 'assignment_manager') && request.user.role !== 'admin') {
+          return reply.code(403).send({ error: 'Only admins can create admin or assignment manager users' });
         }
 
         // Check if username/email exists
@@ -167,8 +181,8 @@ async function usersRoutes(fastify, _options) {
           roleId,
         });
 
-        // Send setup email unless the caller explicitly opts out
-        const shouldSendEmail = body.sendSetupEmail !== false;
+        // Only admins can suppress the setup email; assignment managers always trigger it
+        const shouldSendEmail = request.user?.role === 'admin' ? body.sendSetupEmail !== false : true;
         if (shouldSendEmail) {
           try {
             await PasswordResetToken.deleteStaleForUser(newUser.id);
@@ -479,6 +493,47 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
+  // Bulk delete users (admin only)
+  fastify.delete(
+    '/users/bulk',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+        const allowed = await fastify.requireAdmin(request, reply);
+        if (!allowed) {
+          return reply;
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { ids } = request.body || {};
+
+        if (!Array.isArray(ids) || ids.length === 0 || ids.length > 2000) {
+          return reply.code(400).send({ error: 'ids must be a non-empty array of up to 2000 items' });
+        }
+
+        const invalidIds = ids.filter((id) => !validateUUID(id));
+        if (invalidIds.length > 0) {
+          return reply.code(400).send({ error: 'One or more IDs have an invalid format' });
+        }
+
+        const uniqueIds = [...new Set(ids)];
+        if (uniqueIds.includes(request.user.id)) {
+          return reply.code(400).send({ error: 'Cannot delete your own account' });
+        }
+
+        const deleted = await User.bulkDelete(uniqueIds);
+        return reply.send({ message: 'Users deleted successfully', deleted });
+      } catch (error) {
+        console.error('Bulk delete users error:', error);
+        return reply.code(500).send({ error: 'Failed to delete users' });
+      }
+    }
+  );
+
   // Bulk import users from CSV (admin/assignment_manager only)
   fastify.post(
     '/users/import',
@@ -527,7 +582,9 @@ async function usersRoutes(fastify, _options) {
 
           const parseResult = importUserRowSchema.safeParse(rawRow);
           if (!parseResult.success) {
-            const rowLabel = rawRow.username || rawRow.email || `row ${rowNum}`;
+            const rawUsername = typeof rawRow.username === 'string' ? rawRow.username.slice(0, 100) : '';
+            const rawEmail = typeof rawRow.email === 'string' ? rawRow.email.slice(0, 255) : '';
+            const rowLabel = sanitize(rawUsername || rawEmail) || `row ${rowNum}`;
             errors.push({ row: rowNum, identifier: rowLabel, reason: 'Missing or invalid required fields' });
             continue;
           }
@@ -623,7 +680,8 @@ async function usersRoutes(fastify, _options) {
 
             imported++;
           } catch (rowError) {
-            errors.push({ row: rowNum, identifier: rowLabel, reason: rowError.message });
+            const reason = rowError.code === '23505' ? 'Duplicate entry' : 'Processing failed';
+            errors.push({ row: rowNum, identifier: rowLabel, reason });
           }
         }
 
@@ -658,12 +716,15 @@ async function usersRoutes(fastify, _options) {
         // If userIds provided, send only to those; otherwise send to all pending users
         let targets;
         if (Array.isArray(userIds) && userIds.length > 0) {
+          if (userIds.length > 500) {
+            return reply.code(400).send({ error: 'Cannot send more than 500 setup emails per request' });
+          }
           const invalidIds = userIds.filter((id) => !validateUUID(id));
           if (invalidIds.length > 0) {
-            return reply.code(400).send({ error: 'Invalid user ID format', invalidIds });
+            return reply.code(400).send({ error: 'One or more user IDs have an invalid format' });
           }
-          targets = await Promise.all(userIds.map((id) => User.findById(id)));
-          targets = targets.filter((u) => u && u.status === 'pending');
+          const found = await User.findByIds(userIds);
+          targets = found.filter((u) => u.status === 'pending');
         } else {
           const all = await User.findAll({ status: 'pending' });
           targets = all;
@@ -679,7 +740,7 @@ async function usersRoutes(fastify, _options) {
             sent++;
           } catch (emailError) {
             console.error(`Failed to send setup email to ${u.username}:`, emailError);
-            errors.push({ userId: u.id, username: u.username, reason: emailError.message });
+            errors.push({ userId: u.id, username: u.username, reason: 'Failed to send email' });
           }
         }
 

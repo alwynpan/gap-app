@@ -126,6 +126,48 @@ class Group {
     }
   }
 
+  /**
+   * Insert multiple groups in a single transaction.
+   * Rolls back and re-throws on any error, including unique-constraint violations.
+   *
+   * @param {Array<{name: string, enabled: boolean, maxMembers: number|null}>} groups
+   * @returns {Promise<Array>} The inserted rows.
+   */
+  static async bulkCreate(groups) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const created = [];
+      for (const { name, enabled, maxMembers } of groups) {
+        const result = await client.query(
+          'INSERT INTO groups (name, enabled, max_members) VALUES ($1, $2, $3) RETURNING *',
+          [name, enabled, maxMembers]
+        );
+        created.push(result.rows[0]);
+      }
+
+      await client.query('COMMIT');
+      return created;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Delete multiple groups in a single query.
+   *
+   * @param {string[]} ids
+   * @returns {Promise<number>} Number of rows deleted.
+   */
+  static async bulkDelete(ids) {
+    const result = await pool.query('DELETE FROM groups WHERE id = ANY($1)', [ids]);
+    return result.rowCount;
+  }
+
   static async findByName(name) {
     const result = await pool.query('SELECT * FROM groups WHERE LOWER(name) = LOWER($1)', [name]);
     return result.rows[0] || null;

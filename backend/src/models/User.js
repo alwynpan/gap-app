@@ -1,6 +1,8 @@
 const pool = require('../db/pool');
 const bcrypt = require('bcryptjs');
 
+const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
+
 class User {
   static async findAll(filters = {}) {
     const conditions = [];
@@ -35,6 +37,24 @@ class User {
        ${where}
        ORDER BY u.username`,
       values
+    );
+    return result.rows;
+  }
+
+  static async findByIds(ids) {
+    if (!ids || ids.length === 0) {
+      return [];
+    }
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
+              u.enabled, u.status, u.created_at,
+              u.group_id, g.name as group_name,
+              u.role_id, r.name as role_name
+       FROM users u
+       LEFT JOIN groups g ON u.group_id = g.id
+       LEFT JOIN roles r ON u.role_id = r.id
+       WHERE u.id = ANY($1)`,
+      [ids]
     );
     return result.rows;
   }
@@ -98,7 +118,7 @@ class User {
     let passwordHash = null;
     let status = 'pending';
     if (password) {
-      passwordHash = await bcrypt.hash(password, 10);
+      passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       status = 'active';
     }
 
@@ -192,6 +212,17 @@ class User {
   static async delete(id) {
     const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING *', [id]);
     return result.rows[0];
+  }
+
+  /**
+   * Delete multiple users in a single query.
+   *
+   * @param {string[]} ids
+   * @returns {Promise<number>} Number of rows deleted.
+   */
+  static async bulkDelete(ids) {
+    const result = await pool.query('DELETE FROM users WHERE id = ANY($1)', [ids]);
+    return result.rowCount;
   }
 
   static async verifyPassword(password, hash) {
