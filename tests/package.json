@@ -1,16 +1,21 @@
 {
-  "name": "gap-portal-tests",
+  "name": "gap-portal-e2e",
   "version": "1.0.0",
-  "description": "G.A.P. Portal E2E Tests",
+  "description": "G.A.P. Portal Playwright E2E Tests",
+  "private": true,
   "scripts": {
-    "test": "node node_modules/jest/bin/jest.js",
-    "test:watch": "node node_modules/jest/bin/jest.js --watch",
-    "test:coverage": "node node_modules/jest/bin/jest.js --coverage"
-  },
-  "dependencies": {
-    "axios": "^1.13.6"
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "test:allure": "playwright test && allure generate allure-results --clean -o allure-report && allure open allure-report"
   },
   "devDependencies": {
-    "jest": "^30.3.0"
+    "@playwright/test": "^1.50.0",
+    "@testcontainers/postgresql": "^10.23.0",
+    "allure-commandline": "^2.38.1",
+    "allure-playwright": "^3.6.0",
+    "bcryptjs": "^2.4.3",
+    "pg": "^8.14.1"
   }
 }

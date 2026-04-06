@@ -712,7 +712,7 @@ function Users() {
                     </button>
                   );
                 })()}
-              {isAssignmentManager && (
+              {isAdmin && (
                 <button
                   onClick={() => {
                     setFormError('');
