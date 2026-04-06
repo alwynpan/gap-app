@@ -580,7 +580,7 @@ Create multiple groups in one request.
 | Access | Admin |
 | ------ | ----- |
 
-**Request body** — array of group objects (max 100 per request)
+**Request body** — array of group objects (max 2000 per request)
 
 ```json
 [
