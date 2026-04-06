@@ -237,7 +237,9 @@ describe('group_join_locked enforcement', () => {
       url: `/api/groups/${g.id}/join`,
       headers: { authorization: `Bearer ${adminToken}` },
     });
-    // Admin bypass — expect 200 or potentially a skip if admin has no group_id constraint
-    expect([200, 400]).toContain(res.statusCode);
+    // Admin bypasses the lock — cleanDatabase resets admin's group_id to NULL
+    // (via ON DELETE SET NULL), so admin can always join a fresh group.
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).error).toBeUndefined();
   });
 });

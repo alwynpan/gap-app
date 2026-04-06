@@ -6,9 +6,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// Single source of truth for the base DDL — imported directly from the
-// production migration runner so this file can never silently diverge.
-const { createSQL } = require('../../../src/db/migrate');
+// Single source of truth for the base DDL — imported from the side-effect-free
+// schema module so globalSetup never triggers dotenv or pool construction.
+const { createSQL } = require('../../../src/db/schema');
 
 // Temp file lives outside the repo tree to prevent accidental git commits.
 const CONTAINER_CONFIG_FILE = path.join(os.tmpdir(), 'gap-integration-container.json');
@@ -74,6 +74,8 @@ module.exports = async () => {
   const pool = new Pool(dbConfig);
   const client = await pool.connect();
   try {
+    // pgcrypto provides gen_random_uuid() on Postgres < 13; a no-op on 13+.
+    await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
     await client.query(createSQL);
     await runMigrations(client);
     await seedAdminUser(client);

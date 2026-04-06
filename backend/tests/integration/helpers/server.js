@@ -19,7 +19,8 @@ async function buildTestServer() {
  * Closes the Fastify app. The shared pg pool singletons (src/db/pool.js and
  * the test helper pool in helpers/db.js) are intentionally left open across
  * test files so that subsequent files can reuse them without reconnecting.
- * Jest's forceExit will drain them when the worker process exits.
+ * Jest's forceExit forcibly terminates the worker process when all tests
+ * complete — the pools are not gracefully drained, they are simply abandoned.
  */
 async function closeTestServer(app) {
   await app.close();
