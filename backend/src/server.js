@@ -14,9 +14,9 @@ const configRoutes = require('./routes/config');
 const authPlugin = require('./middleware/auth');
 const rbacPlugin = require('./middleware/rbac');
 
-async function buildServer() {
+async function buildServer({ logger } = {}) {
   const fastify = Fastify({
-    logger: config.app.nodeEnv !== 'production',
+    logger: logger !== undefined ? logger : config.app.nodeEnv !== 'production',
   });
 
   // Register security plugins

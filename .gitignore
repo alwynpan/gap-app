@@ -35,6 +35,10 @@ tmp/
 temp/
 *.tmp
 
+# Integration test container config (should live in os.tmpdir(), not the repo)
+.container-config.json
+**/setup/.container-config.json
+
 # Generated lint reports
 **/eslint.xml
 
@@ -47,3 +51,5 @@ TODO.md
 ISSUES.md
 
 HANDOFF.md
+
+backend/coverage-integration/cobertura-coverage.xml
