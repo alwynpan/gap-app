@@ -11,6 +11,7 @@ const {
   changePasswordSchema,
   importUserRowSchema,
   validateUUID,
+  ROLE_VALUES,
 } = require('../utils/schemas');
 
 const _parsed = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
@@ -36,11 +37,10 @@ async function usersRoutes(fastify, _options) {
         const { role, status, groupId } = request.query || {};
 
         const VALID_STATUSES = ['active', 'inactive', 'pending'];
-        const VALID_ROLES = ['admin', 'assignment_manager', 'user'];
         if (status !== undefined && !VALID_STATUSES.includes(status)) {
           return reply.code(400).send({ error: 'Invalid status filter' });
         }
-        if (role !== undefined && !VALID_ROLES.includes(role)) {
+        if (role !== undefined && !ROLE_VALUES.includes(role)) {
           return reply.code(400).send({ error: 'Invalid role filter' });
         }
         if (groupId !== undefined && groupId !== 'none' && !validateUUID(groupId)) {

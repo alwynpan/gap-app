@@ -1,7 +1,15 @@
 const pool = require('../db/pool');
 const bcrypt = require('bcryptjs');
 
-const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
+function normalizeBcryptRounds(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isInteger(parsed) && parsed >= 4 && parsed <= 31) {
+    return parsed;
+  }
+  return 12;
+}
+
+const BCRYPT_ROUNDS = normalizeBcryptRounds(process.env.BCRYPT_ROUNDS || '12');
 
 class User {
   static async findAll(filters = {}) {
@@ -194,7 +202,7 @@ class User {
   }
 
   static async updatePassword(id, newPassword) {
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     const result = await pool.query(
       `UPDATE users
        SET password_hash = $1, updated_at = CURRENT_TIMESTAMP
