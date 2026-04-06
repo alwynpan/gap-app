@@ -30,6 +30,9 @@ This guide covers all features of the G.A.P. (Group Assignment Portal) from the 
 | **Assignment Manager** | Create and edit users; assign users to groups; CSV import/export; lock group joining       |
 | **User**               | View their own profile; view groups; self-join or leave a group (when joining is unlocked) |
 
+> **Group management note:** Creating, editing, enabling/disabling, and deleting groups are **Admin-only** actions.
+> Assignment Managers can assign users to groups and import/export mappings, but cannot create or delete groups.
+
 ---
 
 ## Logging in
@@ -188,7 +191,7 @@ Toggle the **Enabled** field in the edit modal. Disabling a user sets their stat
 - **Single delete** — click the **Delete** (trash) icon on a row and confirm.
 - **Bulk delete** — select users using the checkboxes, then click **Delete Selected** and confirm.
 
-> You cannot delete the `admin` account or your own account.
+> You cannot delete your own account.
 
 #### Sending setup emails
 
@@ -200,6 +203,9 @@ To (re)send account-setup emails to pending users:
 ---
 
 ### Managing groups
+
+> All group create, edit, and delete operations are **Admin only**. Assignment Managers can view groups and use the
+> import/export mappings tools, but cannot create or modify groups.
 
 Navigate to **Groups** from the top navigation.
 

@@ -36,7 +36,7 @@ and `/health` to the backend, everything else to the frontend nginx.
 - **Framework:** Fastify
 - **Database:** PostgreSQL 15 (dev) / 16 (production)
 - **Authentication:** JWT (`@fastify/jwt`)
-- **Password Hashing:** bcrypt (`@fastify/bcrypt`)
+- **Password Hashing:** bcrypt (`bcryptjs`)
 - **Email:** Nodemailer (optional — disabled when `SMTP_HOST` is blank)
 
 ### Frontend
@@ -60,10 +60,15 @@ git clone <repo-url>
 cd gap-app
 ```
 
-### 2. Configure environment (optional)
+### 2. Configure environment
 
-Without a `.env` file the app starts with safe development defaults. To override credentials, create `.env` in the
-project root:
+Copy the example env file and edit it. The Docker dev stack requires this file to exist:
+
+```bash
+cp .env.example .env
+```
+
+At minimum, you may want to set:
 
 ```bash
 ADMIN_PASSWORD=my-secure-password
@@ -77,6 +82,8 @@ SMTP_PASS=secret
 SMTP_FROM=no-reply@example.com
 APP_URL=http://localhost:3000
 ```
+
+If you skip this step, `docker compose up` will fail because `docker-compose.dev.yaml` references `.env` via `env_file`.
 
 ### 3. Start all services
 
@@ -122,11 +129,11 @@ npm run dev            # http://localhost:3000
 
 After migrations, the built-in admin account is seeded automatically:
 
-| Field    | Value                                  |
-| -------- | -------------------------------------- |
-| Username | `admin` (hardcoded, cannot be changed) |
-| Password | Value of `ADMIN_PASSWORD` env var      |
-| Role     | Admin                                  |
+| Field    | Value                                                                    |
+| -------- | ------------------------------------------------------------------------ |
+| Username | `admin` (hardcoded in migrations — `ADMIN_USERNAME` env var is not read) |
+| Password | Value of `ADMIN_PASSWORD` env var                                        |
+| Role     | Admin                                                                    |
 
 > **Set a strong `ADMIN_PASSWORD` before running migrations in production.**
 
@@ -270,26 +277,26 @@ Pre-commit hooks (Husky + lint-staged) automatically apply Prettier and ESLint o
 
 ### Backend
 
-| Variable               | Description                                          | Default                  |
-| ---------------------- | ---------------------------------------------------- | ------------------------ |
-| `JWT_SECRET`           | JWT signing secret (required)                        | —                        |
-| `JWT_EXPIRES_IN`       | Token expiry                                         | `24h`                    |
-| `DB_HOST`              | PostgreSQL host                                      | `localhost`              |
-| `DB_PORT`              | PostgreSQL port                                      | `5432`                   |
-| `DB_NAME`              | Database name                                        | `gap_db`                 |
-| `DB_USER`              | Database user                                        | `gap_user`               |
-| `DB_PASSWORD`          | Database password (required)                         | —                        |
-| `ADMIN_PASSWORD`       | Initial admin password (required at first migration) | —                        |
-| `REGISTRATION_ENABLED` | Allow public registration                            | `true`                   |
-| `PORT`                 | Server port                                          | `3001`                   |
-| `CORS_ORIGIN`          | Allowed CORS origin                                  | `http://localhost:3000`  |
-| `SMTP_HOST`            | SMTP hostname (blank = disable email)                | _(empty)_                |
-| `SMTP_PORT`            | SMTP port                                            | `587`                    |
-| `SMTP_SECURE`          | Use TLS (SMTPS)                                      | `false`                  |
-| `SMTP_USER`            | SMTP username                                        | _(empty)_                |
-| `SMTP_PASS`            | SMTP password                                        | _(empty)_                |
-| `SMTP_FROM`            | Sender address                                       | `no-reply@gap-app.local` |
-| `APP_URL`              | Frontend public URL (used in email links)            | `http://localhost:3000`  |
+| Variable               | Description                                          | Default                                |
+| ---------------------- | ---------------------------------------------------- | -------------------------------------- |
+| `JWT_SECRET`           | JWT signing secret (required)                        | —                                      |
+| `JWT_EXPIRES_IN`       | Token expiry                                         | `24h`                                  |
+| `DB_HOST`              | PostgreSQL host                                      | `localhost`                            |
+| `DB_PORT`              | PostgreSQL port                                      | `5432`                                 |
+| `DB_NAME`              | Database name                                        | `gap_db`                               |
+| `DB_USER`              | Database user                                        | `gap_user`                             |
+| `DB_PASSWORD`          | Database password (required)                         | —                                      |
+| `ADMIN_PASSWORD`       | Initial admin password (required at first migration) | —                                      |
+| `REGISTRATION_ENABLED` | Allow public registration                            | `false` (dev Docker sets it to `true`) |
+| `PORT`                 | Server port                                          | `3001`                                 |
+| `CORS_ORIGIN`          | Allowed CORS origin                                  | `http://localhost:3000`                |
+| `SMTP_HOST`            | SMTP hostname (blank = disable email)                | _(empty)_                              |
+| `SMTP_PORT`            | SMTP port                                            | `587`                                  |
+| `SMTP_SECURE`          | Use TLS (SMTPS)                                      | `false`                                |
+| `SMTP_USER`            | SMTP username                                        | _(empty)_                              |
+| `SMTP_PASS`            | SMTP password                                        | _(empty)_                              |
+| `SMTP_FROM`            | Sender address                                       | `no-reply@gap-app.local`               |
+| `APP_URL`              | Frontend public URL (used in email links)            | `http://localhost:3000`                |
 
 ### Frontend
 
