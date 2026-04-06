@@ -298,16 +298,16 @@ Create a new user. The account is created in `pending` status and an account-set
 }
 ```
 
-| Field            | Type    | Required | Notes                                           |
-| ---------------- | ------- | :------: | ----------------------------------------------- |
-| `username`       | string  |   Yes    |                                                 |
-| `email`          | string  |   Yes    |                                                 |
-| `firstName`      | string  |   Yes    |                                                 |
-| `lastName`       | string  |   Yes    |                                                 |
-| `studentId`      | string  |    No    | Only applies to `user` role                     |
-| `groupId`        | UUID    |    No    | Only applies to `user` role                     |
-| `role`           | string  |    No    | `user` (default), `assignment_manager`, `admin` |
-| `sendSetupEmail` | boolean |    No    | Default `true`                                  |
+| Field            | Type    | Required | Notes                                                                        |
+| ---------------- | ------- | :------: | ---------------------------------------------------------------------------- |
+| `username`       | string  |   Yes    |                                                                              |
+| `email`          | string  |   Yes    |                                                                              |
+| `firstName`      | string  |   Yes    |                                                                              |
+| `lastName`       | string  |   Yes    |                                                                              |
+| `studentId`      | string  |    No    | Only applies to `user` role                                                  |
+| `groupId`        | UUID    |    No    | Only applies to `user` role                                                  |
+| `role`           | string  |    No    | `user` (default), `assignment_manager`, `admin`                              |
+| `sendSetupEmail` | boolean |    No    | Default `true`; only Admin can set to `false` — AM always sends setup emails |
 
 **Response `201`**
 
@@ -344,7 +344,8 @@ Update a user's profile, role, or enabled status.
 **Notes**
 
 - `username` cannot be changed
-- `role` and `enabled` can only be changed by Admin or AM (AM cannot change admin users)
+- `role` can only be changed by Admin
+- `enabled` can be changed by Admin or AM (AM cannot change admin users)
 - `groupId` can only be changed by Admin
 - The built-in `admin` account cannot be disabled or have its role changed
 
