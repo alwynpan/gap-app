@@ -474,6 +474,50 @@ describe('User Model', () => {
     });
   });
 
+  describe('BCRYPT_ROUNDS configuration', () => {
+    const savedBcryptRounds = process.env.BCRYPT_ROUNDS;
+
+    afterEach(() => {
+      if (savedBcryptRounds === undefined) {
+        delete process.env.BCRYPT_ROUNDS;
+      } else {
+        process.env.BCRYPT_ROUNDS = savedBcryptRounds;
+      }
+    });
+
+    function loadIsolatedUser(rounds) {
+      process.env.BCRYPT_ROUNDS = rounds;
+      let IsolatedUser;
+      let isolatedBcrypt;
+      jest.isolateModules(() => {
+        const mockPool = require('../../../src/db/pool');
+        mockPool.query.mockResolvedValue({ rows: [{ id: 'u1', username: 'user', email: 'e@e.com' }] });
+        isolatedBcrypt = require('bcryptjs');
+        isolatedBcrypt.hash.mockResolvedValue('mocked-hash');
+        IsolatedUser = require('../../../src/models/User');
+      });
+      return { IsolatedUser, isolatedBcrypt };
+    }
+
+    it('uses env-configured rounds when valid', async () => {
+      const { IsolatedUser, isolatedBcrypt } = loadIsolatedUser('10');
+      await IsolatedUser.updatePassword('some-id', 'password');
+      expect(isolatedBcrypt.hash).toHaveBeenCalledWith('password', 10);
+    });
+
+    it('defaults to 12 when env var is not a valid number', async () => {
+      const { IsolatedUser, isolatedBcrypt } = loadIsolatedUser('notanumber');
+      await IsolatedUser.updatePassword('some-id', 'password');
+      expect(isolatedBcrypt.hash).toHaveBeenCalledWith('password', 12);
+    });
+
+    it('defaults to 12 when env var is below minimum (< 4)', async () => {
+      const { IsolatedUser, isolatedBcrypt } = loadIsolatedUser('2');
+      await IsolatedUser.updatePassword('some-id', 'password');
+      expect(isolatedBcrypt.hash).toHaveBeenCalledWith('password', 12);
+    });
+  });
+
   describe('bulkDelete', () => {
     it('executes DELETE … WHERE id = ANY and returns row count', async () => {
       pool.query.mockResolvedValue({ rowCount: 2 });
