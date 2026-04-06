@@ -179,12 +179,65 @@ jobs:
           path: backend/coverage-integration/cobertura-coverage.xml
           retention-days: 7
 
+  test-e2e:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm install
+
+      - name: Install e2e dependencies
+        working-directory: ./tests
+        run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: ./tests
+        run: npx playwright install chromium --with-deps
+
+      - name: Run e2e tests
+        working-directory: ./tests
+        run: npx playwright test
+
+      - name: Generate Allure report
+        working-directory: ./tests
+        if: always()
+        run: npx allure generate allure-results --clean -o allure-report
+
+      - name: Upload Allure report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: allure-report
+          path: tests/allure-report/
+          retention-days: 14
+
+      - name: Upload Playwright artifacts (screenshots/traces on failure)
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-artifacts
+          path: tests/artifacts/
+          retention-days: 7
+
   # Build Docker images for every run; push only on pushes to main or version tags.
   # Renamed to 'docker' so the fan-in 'build' job below can serve as the single
   # required status check without being split by the matrix into multiple check names.
   docker:
     runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend, test-integration, format]
+    needs: [test-backend, test-frontend, test-integration, test-e2e, format]
     strategy:
       matrix:
         include:

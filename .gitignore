@@ -53,3 +53,10 @@ ISSUES.md
 HANDOFF.md
 
 backend/coverage-integration/cobertura-coverage.xml
+
+# Playwright e2e
+tests/artifacts/
+tests/playwright-report/
+tests/test-results/
+tests/allure-results/
+tests/allure-report/

@@ -284,14 +284,14 @@ describe('Users page', () => {
       expect(screen.getByRole('button', { name: /create user/i })).toBeInTheDocument();
     });
 
-    it('shows Create User button for assignment_manager', async () => {
+    it('hides Create User button for assignment_manager', async () => {
       useAuth.mockReturnValue({
         user: { username: 'manager', role: 'assignment_manager' },
         isAdmin: false,
         isAssignmentManager: true,
       });
       await setupRenderedPage();
-      expect(screen.getByRole('button', { name: /create user/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /create user/i })).not.toBeInTheDocument();
     });
 
     it('hides Create User button for regular user', async () => {
@@ -527,25 +527,6 @@ describe('Users page', () => {
           expect.objectContaining({ sendSetupEmail: true })
         );
       });
-    });
-
-    it('assignment_manager does not see admin role option', async () => {
-      useAuth.mockReturnValue({
-        user: { username: 'manager', role: 'assignment_manager' },
-        isAdmin: false,
-        isAssignmentManager: true,
-      });
-      const user = userEvent.setup();
-      await setupRenderedPage();
-
-      await user.click(screen.getByRole('button', { name: /create user/i }));
-
-      const roleSelect = screen
-        .getAllByRole('combobox')
-        .find((el) => el.querySelector('option[value="user"]') && !el.querySelector('option[value=""]'));
-      const options = Array.from(roleSelect.querySelectorAll('option')).map((o) => o.value);
-      expect(options).toEqual(['user', 'assignment_manager']);
-      expect(options).not.toContain('admin');
     });
   });
 

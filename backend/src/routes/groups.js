@@ -306,7 +306,8 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'One or more IDs have an invalid format' });
         }
 
-        const deleted = await Group.bulkDelete(ids);
+        const uniqueIds = [...new Set(ids)];
+        const deleted = await Group.bulkDelete(uniqueIds);
         return reply.send({ message: 'Groups deleted successfully', deleted });
       } catch (error) {
         console.error('Bulk delete groups error:', error);
@@ -515,8 +516,8 @@ async function groupsRoutes(fastify, _options) {
           const parseResult = importGroupMappingRowSchema.safeParse(rawRow);
           if (!parseResult.success) {
             errors.push({
-              email: rawRow.email || '?',
-              groupName: rawRow.groupName || '?',
+              email: typeof rawRow.email === 'string' ? sanitize(rawRow.email).slice(0, 255) : '?',
+              groupName: typeof rawRow.groupName === 'string' ? sanitize(rawRow.groupName).slice(0, 100) : '?',
               error: parseResult.error.issues[0]?.message || 'Validation failed',
             });
             continue;
