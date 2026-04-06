@@ -1,17 +1,19 @@
 # G.A.P. Portal
 
-Group Assignment Portal - A role-based access control system for managing student groups and assignments.
+Group Assignment Portal — a role-based access control system for managing student groups and assignments.
 
 ## Features
 
-- 🔐 **JWT Authentication** - Secure login/logout with token-based authentication
-- 👥 **User Management** - Create, update, and manage users with different roles
-- 📁 **Group Management** - Create and manage student groups/teams
-- 🎭 **Role-Based Access Control (RBAC)** - Three-tier role system (Admin, Assignment Manager, User)
-- 🚀 **Kubernetes Ready** - Full K8s manifests for production deployment
-- 🐳 **Docker Support** - Local development with Docker Compose
-- 🧪 **Comprehensive Testing** - ≥80% test coverage requirement (backend and frontend)
-- 🔄 **CI/CD Pipeline** - Automated linting, formatting, testing, and build validation
+- **JWT Authentication** — Secure login/logout with token-based auth; account setup and password reset via email
+- **User Management** — Create, update, enable/disable, bulk-delete, and CSV-import users
+- **Group Management** — Create, edit, bulk-create, enable/disable groups with optional member caps
+- **Role-Based Access Control (RBAC)** — Three-tier role system (Admin, Assignment Manager, User)
+- **Group Assignment** — Assign users to groups manually, via UI, or via CSV import/export
+- **Group Join/Leave** — Users can self-join/leave groups when the join lock is off
+- **Email Notifications** — Account setup and password-reset emails (optional SMTP; links logged to console when
+  disabled)
+- **System Config** — Admins/AMs can lock/unlock group joining system-wide
+- **Docker Support** — Dev environment with Docker Compose; production deployment with Traefik + Let's Encrypt
 
 ## Architecture
 
@@ -23,15 +25,19 @@ Group Assignment Portal - A role-based access control system for managing studen
 └─────────────┘     └──────────────┘     └─────────────┘
 ```
 
+All API routes are prefixed with `/api`. The production setup adds Traefik in front, terminating TLS and routing `/api`
+and `/health` to the backend, everything else to the frontend nginx.
+
 ## Tech Stack
 
 ### Backend
 
-- **Runtime:** Node.js 20+
+- **Runtime:** Node.js 20
 - **Framework:** Fastify
-- **Database:** PostgreSQL 15
-- **Authentication:** JWT (@fastify/jwt)
-- **Password Hashing:** Multiple libraries in use (bcrypt, bcryptjs, fastify-bcrypt) - standardization pending in PR #75
+- **Database:** PostgreSQL 15 (dev) / 16 (production)
+- **Authentication:** JWT (`@fastify/jwt`)
+- **Password Hashing:** bcrypt (`@fastify/bcrypt`)
+- **Email:** Nodemailer (optional — disabled when `SMTP_HOST` is blank)
 
 ### Frontend
 
@@ -41,513 +47,255 @@ Group Assignment Portal - A role-based access control system for managing studen
 - **Routing:** React Router v6
 - **HTTP Client:** Axios
 
-### Infrastructure
-
-- **Containerization:** Docker & Docker Compose
-- **Orchestration:** Kubernetes
-- **Ingress:** Traefik
-
-## Setup Instructions
+## Quick Start — Local Development
 
 ### Prerequisites
 
-- **Node.js 20 or higher** (use `nvm` to manage versions if needed)
-- **npm 9+** (comes with Node.js 20)
-- **Docker & Docker Compose** (for local development)
-- **PostgreSQL 15** (if not using Docker)
+- Docker Engine 24+ and Docker Compose v2
 
-### Installation Steps
-
-**Always use `npm ci` instead of `npm install` to ensure consistent dependency versions:**
+### 1. Clone the repo
 
 ```bash
-# Clone the repository
-git clone https://github.com/alwyn-bot/gap-app.git
+git clone <repo-url>
 cd gap-app
-
-# Install root dependencies first (required for Husky hooks and lint-staged)
-npm ci
-
-# Install dependencies for all packages
-cd backend && npm ci
-cd ../frontend && npm ci
-cd ../tests && npm install
 ```
 
-### Environment Variables
+### 2. Configure environment (optional)
 
-Copy the example environment file and configure as needed:
-
-```bash
-# Backend environment
-cp backend/.env.example backend/.env
-```
-
-**Required Environment Variables:**
-
-#### Backend (.env)
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `JWT_SECRET` | Secret key for JWT signing | your-super-secret-jwt-key-change-in-production | ✅ Yes |
-| `JWT_EXPIRES_IN` | Token expiration time | `24h` | No |
-| `DB_HOST` | PostgreSQL host | `postgres` | No |
-| `DB_PORT` | PostgreSQL port | `5432` | No |
-| `DB_NAME` | Database name | `gap_db` | No |
-| `DB_USER` | Database user | `gap_user` | No |
-| `DB_PASSWORD` | Database password | change_this_password_in_production | ✅ Yes |
-| `ADMIN_USERNAME` | Initial admin username | `admin` | No |
-| `ADMIN_PASSWORD` | Initial admin password | change_this_in_production | ✅ Yes |
-| `REGISTRATION_ENABLED` | Enable user registration | `true` | No |
-| `NODE_ENV` | Environment mode | `development` | No |
-| `PORT` | Server port | `3001` | No |
-| `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:3000` | No |
-
-#### Frontend (.env.local)
-
-Create `frontend/.env.local` if you need to override the default API URL:
-
-```env
-VITE_API_URL=http://localhost:3001
-```
-
-### Database Migration Instructions
-
-Run database migrations to create tables and seed initial admin user:
-
-```bash
-# Using Docker Compose (recommended)
-docker-compose up -d
-docker-compose exec backend npm run migrate
-
-# Manual setup
-cd backend
-npm run migrate
-```
-
-⚠️ **Important:** Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in your `.env` file **before** running migrations!
-
-### Docker Compose Setup
-
-```bash
-# Start all services
-docker-compose up -d
-
-# Run database migrations (if not auto-run)
-docker-compose exec backend npm run migrate
-
-# Access the application
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:3001
-# API Docs: http://localhost:3001/api
-
-# Stop services
-docker-compose down
-```
-
-To override default credentials, create a `.env` file in the project root:
+Without a `.env` file the app starts with safe development defaults. To override credentials, create `.env` in the
+project root:
 
 ```bash
 ADMIN_PASSWORD=my-secure-password
 JWT_SECRET=my-jwt-secret
+
+# Optional SMTP — leave SMTP_HOST blank to disable email (links logged to console instead)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=user@example.com
+SMTP_PASS=secret
+SMTP_FROM=no-reply@example.com
+APP_URL=http://localhost:3000
 ```
 
-Useful commands:
+### 3. Start all services
 
 ```bash
-docker-compose logs -f backend    # Watch backend logs
-docker-compose logs -f frontend   # Watch frontend logs
-docker-compose down               # Stop all services
-docker-compose down -v            # Stop and wipe database data
+docker compose up -d
 ```
 
-### Kubernetes Deployment
+Migrations run automatically on backend startup. The first run seeds the `admin` account.
 
-See [Kubernetes Deployment](#kubernetes-deployment) section below.
+| Service      | URL                          |
+| ------------ | ---------------------------- |
+| Frontend     | http://localhost:3000        |
+| Backend API  | http://localhost:3001/api    |
+| Health check | http://localhost:3001/health |
 
-## Development Workflow
-
-### Pre-commit Hooks (Husky)
-
-The project uses **Husky** with **lint-staged** to automatically:
-
-- Format code with Prettier
-- Fix ESLint issues
-- Prevent commits with lint errors
-
-**Hooks are automatically installed when you run `npm ci` at the root level.**
-
-To manually trigger pre-commit hooks:
+### Useful dev commands
 
 ```bash
-# Run lint-staged on staged files
-npx lint-staged
+docker compose logs -f backend     # Watch backend logs
+docker compose logs -f frontend    # Watch frontend logs
+docker compose down                # Stop all services
+docker compose down -v             # Stop and wipe database
 ```
 
-### Linting Commands
+### Manual setup (without Docker)
 
 ```bash
-# Backend linting
+# Install dependencies
+npm run install:all
+
+# Backend
 cd backend
-npm run lint          # Check for lint errors
-npm run lint:fix      # Auto-fix fixable issues
+cp .env.example .env   # then edit .env
+npm run migrate
+npm run dev            # http://localhost:3001
 
-# Frontend linting  
+# Frontend (new terminal)
 cd frontend
-npm run lint          # Check for lint errors
-npm run lint:fix      # Auto-fix fixable issues
+npm run dev            # http://localhost:3000
 ```
 
-### Code Formatting (Prettier)
+## Default Credentials
+
+After migrations, the built-in admin account is seeded automatically:
+
+| Field    | Value                                  |
+| -------- | -------------------------------------- |
+| Username | `admin` (hardcoded, cannot be changed) |
+| Password | Value of `ADMIN_PASSWORD` env var      |
+| Role     | Admin                                  |
+
+> **Set a strong `ADMIN_PASSWORD` before running migrations in production.**
+
+## Production Deployment (Docker Compose + Traefik)
+
+The production stack lives in `deployment/docker/`. It adds:
+
+- **Traefik** reverse proxy with automatic Let's Encrypt TLS
+- **PostgreSQL 16**
+- **Scheduled database backups** (daily dumps to `/backups/` on the host)
+
+### Prerequisites
+
+- Docker Engine 24+ and Docker Compose v2
+- A server with a public IP
+- A domain with an A record pointing to that IP
+- Ports 80 and 443 open in the firewall
+
+### Deploy
 
 ```bash
-# Backend formatting
+git clone <repo-url>
+cd gap-app/deployment/docker
+
+cp .env.example .env
+# Edit .env — fill in at minimum:
+#   DOMAIN, LETSENCRYPT_EMAIL, DB_PASSWORD, JWT_SECRET, ADMIN_PASSWORD
+
+docker compose up -d --build
+```
+
+Traefik provisions a Let's Encrypt certificate on first startup (allow 1–2 minutes).
+
+```bash
+docker compose ps              # Verify all services are running
+docker compose logs traefik    # Check TLS provisioning
+```
+
+### Production environment variables
+
+| Variable               | Required | Default             | Description                                             |
+| ---------------------- | :------: | ------------------- | ------------------------------------------------------- |
+| `DOMAIN`               |   Yes    | —                   | FQDN (e.g. `gap.example.com`)                           |
+| `LETSENCRYPT_EMAIL`    |   Yes    | —                   | Email for Let's Encrypt registration                    |
+| `DB_PASSWORD`          |   Yes    | —                   | PostgreSQL password                                     |
+| `JWT_SECRET`           |   Yes    | —                   | JWT signing secret (min 32 chars)                       |
+| `ADMIN_PASSWORD`       |   Yes    | —                   | Initial admin password (seeded on first migration only) |
+| `JWT_EXPIRES_IN`       |    No    | `24h`               | Token expiry                                            |
+| `REGISTRATION_ENABLED` |    No    | `false`             | Allow public self-registration                          |
+| `SMTP_HOST`            |    No    | _(empty)_           | SMTP host; leave blank to log email links to console    |
+| `SMTP_PORT`            |    No    | `587`               | SMTP port                                               |
+| `SMTP_SECURE`          |    No    | `false`             | `true` for SMTPS; `false` for STARTTLS on port 587      |
+| `SMTP_USER`            |    No    | _(empty)_           | SMTP auth username                                      |
+| `SMTP_PASS`            |    No    | _(empty)_           | SMTP auth password                                      |
+| `SMTP_FROM`            |    No    | `no-reply@<DOMAIN>` | Sender address                                          |
+| `BACKUP_FREQ`          |    No    | `1440`              | Backup interval in minutes (default: every 24 h)        |
+| `BACKUP_BEGIN`         |    No    | `0300`              | First backup time, HHMM (default: 3:00 AM)              |
+| `BACKUP_CLEANUP_TIME`  |    No    | `10080`             | Delete backups older than N minutes (default: 7 days)   |
+
+### Database backups
+
+```bash
+# List backups
+ls /backups/
+
+# Restore
+gunzip -c /backups/<file>.sql.gz | \
+  docker compose exec -T postgres psql -U gap_user -d gap_db
+```
+
+### Common production operations
+
+```bash
+docker compose logs -f backend                   # Tail backend logs
+docker compose restart backend                   # Restart a service
+git pull && docker compose up -d --build         # Update to new version
+docker compose down                              # Stop
+docker compose down -v                           # Stop and wipe all data
+```
+
+## Database Migrations
+
+```bash
 cd backend
-npm run format:check  # Check formatting
-npm run format:write  # Apply formatting
-
-# Frontend formatting
-cd frontend
-npm run format:check  # Check formatting  
-npm run format:write  # Apply formatting
+npm run migrate        # Apply pending migrations (safe for existing data)
+npm run migrate:up     # Alias for migrate
+npm run migrate:reset  # Full reset — drops all tables (requires confirmation in production)
 ```
 
-### Testing Commands
-
-The project requires **≥80% test coverage** for backend and frontend (E2E tests have no coverage threshold).
-
-```bash
-# Backend testing (with coverage)
-cd backend
-npm test                    # Run tests
-npm test -- --coverage      # Run with coverage report
-
-# Frontend testing
-cd frontend
-npm test                    # Run frontend tests
-
-# End-to-end testing
-cd tests
-npm test                    # Run E2E tests
-npm run test:coverage       # Run E2E tests with coverage
-npm run test:watch          # Watch mode for development
-
-# Test file locations:
-# - Backend unit tests: backend/tests/
-# - Frontend tests: frontend/tests/
-# - E2E tests: tests/e2e/
-```
-
-### Build Commands
-
-```bash
-# Backend build
-cd backend
-npm run build
-
-# Frontend build  
-cd frontend
-npm run build
-```
-
-### CI/CD Pipeline
-
-The project uses **GitHub Actions** for automated CI/CD with the following workflow:
-
-1. **Lint Stage**: Runs ESLint on both backend and frontend
-2. **Test Stage**: Runs Jest tests for backend and frontend with ≥80% coverage requirement (E2E tests not run in CI)
-3. **Format Stage**: Validates Prettier formatting
-4. **Build Stage**: Verifies successful builds
-
-**Pipeline triggers:**
-
-- On every push to `main`
-- On every pull request to `main`
-
-**Requirements for merge:**
-
-- All lint checks pass
-- All backend and frontend tests pass with ≥80% coverage
-- Code formatting is correct
-- Build succeeds
-
-## API Documentation
-
-### Authentication
-
-- `POST /auth/register` - Register new user
-- `POST /auth/login` - Login
-- `POST /auth/logout` - Logout
-- `GET /auth/me` - Get current user
-
-### Users (Admin/Assignment Manager)
-
-- `GET /users` - List all users
-- `GET /users/:id` - Get user by ID
-- `POST /users` - Create user (Admin only)
-- `PUT /users/:id` - Update user (Admin only)
-- `PUT /users/:id/group` - Assign user to group
-- `DELETE /users/:id` - Delete user (Admin only)
-
-### Groups
-
-- `GET /groups` - List all groups
-- `GET /groups/enabled` - List enabled groups
-- `GET /groups/:id` - Get group with members
-- `POST /groups` - Create group (Admin only)
-- `PUT /groups/:id` - Update group (Admin only)
-- `DELETE /groups/:id` - Delete group (Admin only)
-
-### Authentication Flow
-
-1. User registers or logs in via `/auth/register` or `/auth/login`
-2. Server returns JWT token in response
-3. Client stores token and includes in `Authorization: Bearer <token>` header
-4. All protected routes validate the token and user permissions
-
-### Request/Response Examples
-
-#### Register User
-```bash
-curl -X POST http://localhost:3001/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "newuser",
-    "email": "user@example.com",
-    "password": "SecurePass123!",
-    "role": "user"
-  }'
-```
-
-**Response (201 Created):**
-```json
-{
-  "message": "User registered successfully",
-  "user": {
-    "id": "uuid-here",
-    "username": "newuser",
-    "email": "user@example.com",
-    "studentId": "S123456"
-  }
-}
-```
-
-#### Login
-```bash
-curl -X POST http://localhost:3001/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "admin",
-    "password": "your-password"
-  }'
-```
-
-**Response (200 OK):**
-```json
-{
-  "message": "Login successful",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": "uuid-here",
-    "username": "admin",
-    "email": "admin@example.com",
-    "role": "admin",
-    "groupId": null,
-    "groupName": null,
-    "studentId": "S123456"
-  }
-}
-```
-
-#### Get Current User (Protected Route)
-```bash
-curl -X GET http://localhost:3001/auth/me \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-```
-
-**Response (200 OK):**
-```json
-{
-  "user": {
-    "id": "uuid-here",
-    "username": "admin",
-    "email": "admin@example.com",
-    "role": "admin",
-    "groupId": null,
-    "groupName": null
-  }
-}
-```
-
-#### Create User (Admin Only)
-```bash
-curl -X POST http://localhost:3001/users \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "teammanager1",
-    "email": "tm@example.com",
-    "password": "SecurePass123!",
-    "role": "team_manager"
-  }'
-```
-
-**Response (201 Created):**
-```json
-{
-  "message": "User created successfully",
-  "user": {
-    "id": "uuid-here",
-    "username": "teammanager1",
-    "email": "tm@example.com",
-    "studentId": "S123456"
-  }
-}
-```
-
-### Error Codes
-
-- `401 Unauthorized` - Invalid or missing authentication token
-- `403 Forbidden` - Insufficient permissions for requested action
-- `400 Bad Request` - Invalid request data
-- `404 Not Found` - Resource not found
-- `500 Internal Server Error` - Server error
+Incremental migrations live in `backend/src/db/migrations/` as numbered SQL files. Always add schema changes as a new
+migration file — never edit existing ones.
 
 ## Testing
 
-### Coverage Requirements
-
-- **Backend**: ≥80% test coverage required (enforced by Jest config)
-- **Frontend**: ≥80% test coverage required (enforced by Jest config)
-- **E2E**: No coverage threshold enforced
-
-### How to Run Tests
+### Backend unit tests
 
 ```bash
-# Run all backend tests with coverage
-cd backend
-npm test
-
-# Run specific test file
-cd backend  
-npm test -- users.test.js
-
-# Run E2E tests
-cd tests
-npm test
-
-# View coverage report
-# After running tests, check backend/coverage/index.html
+npm test                                        # Run all (from project root)
+cd backend && npx jest --coverage               # With coverage report
+cd backend && npx jest tests/unit/auth.test.js  # Single file
 ```
 
-### Test File Locations
-
-- **Backend Unit Tests**: `backend/tests/`
-- **E2E Tests**: `tests/e2e/`
-- **Test Configuration**: `backend/jest.config.js`, `tests/package.json`
-
-## Deployment
-
-### Docker Build Instructions
+### Frontend unit tests
 
 ```bash
-# Build backend image
-cd backend
-docker build -t gap-backend:latest .
-
-# Build frontend image  
-cd frontend
-docker build -t gap-frontend:latest .
-
-# Or use docker-compose for multi-service build
-docker-compose build
+cd frontend && npx jest --coverage
+cd frontend && npx jest tests/unit/pages/Login.test.jsx
 ```
 
-### Kubernetes Deployment
-
-#### Prerequisites
-
-- Kubernetes cluster (v1.25+)
-- kubectl configured
-- Traefik ingress controller
-- local-path storage provisioner
-
-#### Deploy to Kubernetes
+### E2E tests (requires running services)
 
 ```bash
-# Create namespace
-kubectl apply -f k8s/gap-namespace.yaml
-
-# Create secrets (replace with secure values)
-kubectl create secret generic gap-secrets \
-  -n gap-portal \
-  --from-literal=db-password='your-secure-password' \
-  --from-literal=jwt-secret='your-jwt-secret'
-
-# Deploy PostgreSQL
-kubectl apply -f k8s/postgres-deployment.yaml
-kubectl apply -f k8s/postgres-service.yaml
-
-# Wait for PostgreSQL to be ready
-kubectl wait --for=condition=available deployment/postgres -n gap-portal --timeout=300s
-
-# Run migrations
-kubectl run migrate --rm -it --image=gap-backend:latest --namespace=gap-portal -- npm run migrate
-
-# Deploy backend
-kubectl apply -f k8s/gap-backend-deployment.yaml
-
-# Deploy frontend
-kubectl apply -f k8s/gap-frontend-deployment.yaml
-
-# Deploy service and ingress
-kubectl apply -f k8s/gap-service.yaml
-kubectl apply -f k8s/gap-ingress.yaml
+cd tests && npm install
+npm test                           # All e2e tests
+npm test -- auth.spec.js           # Single file
 ```
 
-#### Environment-specific Configs
+Coverage thresholds: **80% branches**, **85% functions/lines/statements** (backend and frontend).
 
-- **Development**: Use `.env` files with Docker Compose
-- **Production**: Use Kubernetes secrets and config maps
-- **Staging**: Separate namespace with staging-specific configs
+### Linting & formatting
 
-#### Health Check Endpoints
+```bash
+npm run lint              # Lint both backend and frontend
+npm run format:check      # Check formatting
+cd backend && npm run lint:fix    # Auto-fix backend
+cd frontend && npm run lint:fix   # Auto-fix frontend
+```
 
-- **Backend**: `GET /health` (returns 200 OK)
-- **Kubernetes**: Liveness and readiness probes configured in deployment manifests
+Pre-commit hooks (Husky + lint-staged) automatically apply Prettier and ESLint on staged files. ESLint runs with
+`--max-warnings 0`.
 
-## Security
+## Role System
 
-### Environment Variables for Secrets
+| Role                   | Capabilities                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| **Admin**              | Full access: manage users, groups, config; assign users to groups; bulk operations  |
+| **Assignment Manager** | View/create/edit users; assign users to groups; import/export mappings; lock config |
+| **User**               | View own profile and groups; self-join/leave groups (when join lock is off)         |
 
-- **Never commit secrets** to version control
-- Use `.env` files locally (add to `.gitignore`)
-- Use Kubernetes secrets in production
-- Rotate secrets regularly
+## Environment Variables Reference
 
-### Rate Limiting
+### Backend
 
-- Rate limiting is not globally enabled
-- Per-route rate limiting only (3/min for registration, 5/min for login)
-- Can be extended via Fastify rate-limit plugin if needed
+| Variable               | Description                                          | Default                  |
+| ---------------------- | ---------------------------------------------------- | ------------------------ |
+| `JWT_SECRET`           | JWT signing secret (required)                        | —                        |
+| `JWT_EXPIRES_IN`       | Token expiry                                         | `24h`                    |
+| `DB_HOST`              | PostgreSQL host                                      | `localhost`              |
+| `DB_PORT`              | PostgreSQL port                                      | `5432`                   |
+| `DB_NAME`              | Database name                                        | `gap_db`                 |
+| `DB_USER`              | Database user                                        | `gap_user`               |
+| `DB_PASSWORD`          | Database password (required)                         | —                        |
+| `ADMIN_PASSWORD`       | Initial admin password (required at first migration) | —                        |
+| `REGISTRATION_ENABLED` | Allow public registration                            | `true`                   |
+| `PORT`                 | Server port                                          | `3001`                   |
+| `CORS_ORIGIN`          | Allowed CORS origin                                  | `http://localhost:3000`  |
+| `SMTP_HOST`            | SMTP hostname (blank = disable email)                | _(empty)_                |
+| `SMTP_PORT`            | SMTP port                                            | `587`                    |
+| `SMTP_SECURE`          | Use TLS (SMTPS)                                      | `false`                  |
+| `SMTP_USER`            | SMTP username                                        | _(empty)_                |
+| `SMTP_PASS`            | SMTP password                                        | _(empty)_                |
+| `SMTP_FROM`            | Sender address                                       | `no-reply@gap-app.local` |
+| `APP_URL`              | Frontend public URL (used in email links)            | `http://localhost:3000`  |
 
-### Authentication/Authorization
+### Frontend
 
-- JWT tokens with configurable expiration
-- Role-based access control (RBAC)
-- Password hashing with bcrypt/bcryptjs
-- JWT via Authorization header (no cookies used)
-- CORS protection
-
-### Security Best Practices
-
-- Change default admin credentials immediately
-- Use strong JWT secrets in production (32+ characters)
-- Enable HTTPS in production
-- Set appropriate CORS origins
-- Keep dependencies updated (run `npm audit`)
-- Use Kubernetes network policies
-- Implement proper logging and monitoring
+| Variable       | Description          | Default                 |
+| -------------- | -------------------- | ----------------------- |
+| `VITE_API_URL` | Backend API base URL | `http://localhost:3001` |
 
 ## Project Structure
 
@@ -555,134 +303,84 @@ kubectl apply -f k8s/gap-ingress.yaml
 gap-app/
 ├── backend/
 │   ├── src/
-│   │   ├── config/
-│   │   │   ├── database.js
-│   │   │   └── index.js
+│   │   ├── config/          # Environment config and DB pool
 │   │   ├── db/
-│   │   │   └── migrate.js
+│   │   │   ├── migrations/  # Numbered SQL migration files
+│   │   │   ├── migrate.js   # Migration runner
+│   │   │   └── pool.js      # Shared pg pool
 │   │   ├── middleware/
-│   │   │   ├── auth.js
-│   │   │   └── rbac.js
-│   │   ├── models/
-│   │   │   ├── User.js
-│   │   │   ├── Group.js
-│   │   │   └── Role.js
-│   │   ├── routes/
-│   │   │   ├── auth.js
-│   │   │   ├── users.js
-│   │   │   └── groups.js
-│   │   └── server.js
-│   ├── tests/                 # Backend unit tests
-│   ├── package.json
-│   ├── Dockerfile              # Production (node, npm ci --only=production)
-│   ├── Dockerfile.dev          # Development (includes nodemon)
-│   └── .env.example
+│   │   │   ├── auth.js      # JWT plugin + verifyToken decorator
+│   │   │   └── rbac.js      # checkRole, requireAdmin, requireAssignmentManager
+│   │   ├── models/          # User, Group, Role, Config, PasswordResetToken
+│   │   ├── routes/          # auth, users, groups, config
+│   │   ├── services/
+│   │   │   └── email.js     # Nodemailer email service
+│   │   └── server.js        # App entry point
+│   ├── tests/unit/
+│   ├── Dockerfile           # Production image
+│   └── Dockerfile.dev       # Dev image (nodemon)
 ├── frontend/
 │   ├── src/
-│   │   ├── components/
-│   │   │   └── ProtectedRoute.jsx
+│   │   ├── components/      # Header, ProtectedRoute, CsvDropzone, etc.
 │   │   ├── context/
 │   │   │   └── AuthContext.jsx
-│   │   ├── pages/
-│   │   │   ├── Login.jsx
-│   │   │   ├── Register.jsx
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── Users.jsx
-│   │   │   └── Groups.jsx
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── package.json
-│   ├── Dockerfile              # Production (multi-stage: build + nginx)
-│   ├── Dockerfile.dev          # Development (Vite dev server)
-│   └── tailwind.config.js
-├── k8s/
-│   ├── gap-namespace.yaml
-│   ├── postgres-deployment.yaml
-│   ├── postgres-service.yaml
-│   ├── gap-backend-deployment.yaml
-│   ├── gap-frontend-deployment.yaml
-│   ├── gap-service.yaml
-│   └── gap-ingress.yaml
-├── tests/                     # E2E tests
-│   └── e2e/
-│       ├── auth.spec.js
-│       ├── registration.spec.js
-│       └── rbac.spec.js
-├── .github/
-│   └── workflows/
-│       └── ci.yml            # CI pipeline configuration
-├── .husky/                   # Pre-commit hooks
-├── docker-compose.yml
+│   │   ├── pages/           # Login, Register, Dashboard, Users, Groups, ImportGroupMappings
+│   │   └── utils/           # csv, formatting, schemas
+│   ├── tests/unit/
+│   ├── Dockerfile           # Production (multi-stage: build + nginx)
+│   └── Dockerfile.dev       # Dev (Vite dev server)
+├── tests/
+│   └── e2e/                 # auth, users, groups, rbac, registration specs
+├── deployment/
+│   └── docker/              # Production Docker Compose + Traefik
+│       ├── docker-compose.yaml
+│       └── .env.example
+├── docs/
+│   ├── api-reference.md     # All API endpoints with access requirements
+│   └── user-guide.md        # Feature-level usage instructions
+├── docker-compose.dev.yaml  # Local development stack
 └── README.md
 ```
 
-## Role System
+## Security
 
-| Role | Permissions |
-|------|-------------|
-| **Admin** | Full access to all features, user management, group management |
-| **Team Manager** | View all users, assign users to groups |
-| **User** | View own profile, view groups |
-
-## Default Credentials
-
-After running migrations, the admin username and password are set via environment variables:
-
-- **Username:** `admin` (or set `ADMIN_USERNAME` before migration)
-- **Password:** Set via `ADMIN_PASSWORD` environment variable before migration
-- **Role:** Admin
-
-⚠️ **Set secure values for `ADMIN_USERNAME` and `ADMIN_PASSWORD` before running migrations in production!**
+- Change the default admin password immediately after first deployment
+- Use a long random string (32+ chars) for `JWT_SECRET`
+- Enable HTTPS in production (handled automatically by the Traefik stack)
+- Set `REGISTRATION_ENABLED=false` in production unless public registration is needed
+- Rate limiting: 100 req/min global (production); stricter per-endpoint limits on auth routes
+- All passwords are bcrypt-hashed; password hashes are never returned in API responses
+- Parameterised SQL queries throughout
 
 ## Troubleshooting
 
-### Database Connection Issues
+### Database connection issues
 
 ```bash
-# Check PostgreSQL is running
-docker-compose ps postgres
-
-# View logs
-docker-compose logs postgres
-
-# Test connection
-docker-compose exec backend npm run migrate
+docker compose ps postgres
+docker compose logs postgres
+docker compose exec backend npm run migrate
 ```
 
-### Frontend Build Issues
+### Frontend build issues
 
 ```bash
-# Clear cache and rebuild
-cd frontend
-rm -rf node_modules dist
-npm ci
-npm run build
+cd frontend && rm -rf node_modules dist && npm install && npm run build
 ```
 
-### Kubernetes Deployment Issues
+### Email links not arriving
+
+If `SMTP_HOST` is not configured, email links are printed to the backend container logs:
 
 ```bash
-# Check pod status
-kubectl get pods -n gap-portal
-
-# View logs
-kubectl logs -f deployment/gap-backend -n gap-portal
-
-# Check events
-kubectl get events -n gap-portal --sort-by='.lastTimestamp'
+docker compose logs backend | grep "http"
 ```
 
-### CI Pipeline Failures
+## Further Reading
 
-- **Lint errors**: Run `npm run lint:fix` in backend/ or frontend/ before committing (no root-level lint scripts)
-- **Coverage below 80%**: Add missing test cases (backend/frontend only, E2E has no threshold)
-- **Formatting issues**: Run `npm run format:write` in backend/ or frontend/ before committing
-- **Build failures**: Ensure all dependencies are properly declared
+- [API Reference](docs/api-reference.md) — all endpoints, methods, and access requirements
+- [User Guide](docs/user-guide.md) — detailed feature usage instructions by role
 
 ## License
 
 MIT
-
-## Support
-
-For issues and questions, please open an issue on the repository.
