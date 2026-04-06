@@ -20,7 +20,7 @@ no stubs.
 ```bash
 # From repo root (requires: npm run install:all && cd tests && npm install)
 npm run test:e2e          # headless
-npm run test:e2e:headed   # watch mode
+npm run test:e2e:headed   # headed (non-headless) mode
 npm run test:e2e:report   # open last Playwright HTML report
 npm run test:e2e:allure   # run tests → generate → open Allure report
 
