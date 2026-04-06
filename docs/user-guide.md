@@ -74,7 +74,8 @@ If you did not receive the email:
 
 - Check your spam folder
 - Ask an admin or AM to resend it (Users page → select user → Send Setup Email)
-- If SMTP is not configured, the admin can find the link in the backend logs
+- If SMTP is not configured (development only), the admin can find the link in the backend logs; in production SMTP must
+  be configured for emails to be sent
 
 ---
 
@@ -107,18 +108,19 @@ After logging in you land on the **Dashboard**, which shows:
 
 The Dashboard shows your current profile information. To update your name, email, or student ID:
 
-1. Navigate to the **Users** page.
-2. Find your own row and click the **Edit** (pencil) icon.
+1. Click your **username / avatar** in the top-right corner to open the user dropdown menu.
+2. Select **Edit Profile** (or equivalent menu item).
 3. Update the fields and click **Save**.
 
 You cannot change your username.
 
 ### Changing your password
 
-1. On the Dashboard, click **Change Password** (or navigate to your profile).
-2. Enter your current password.
-3. Enter and confirm your new password.
-4. Click **Save**.
+1. Click your **username / avatar** in the top-right corner to open the user dropdown menu.
+2. Select **Change Password**.
+3. Enter your current password.
+4. Enter and confirm your new password.
+5. Click **Save**.
 
 ### Joining a group
 
@@ -142,7 +144,7 @@ Joining is available when the group-join lock is **off** and you are not already
 
 ### Managing users
 
-Navigate to **Users** from the top navigation.
+Navigate to **Users** from the **Administration** panel on the Dashboard (or via the top navigation if visible).
 
 #### Viewing and filtering users
 
@@ -158,12 +160,16 @@ The users table shows all accounts. Use the filter bar to narrow the list:
 1. Click **Add User** (top-right).
 2. Fill in the required fields (username, email, first name, last name).
 3. Optionally set student ID, group assignment, and role.
-4. Toggle **Send setup email** if you want the user to receive an account-setup email immediately.
+4. Toggle **Send setup email** if you want the user to receive an account-setup email immediately (only Admins can
+   suppress this; Assignment Managers always send the email).
 5. Click **Create**.
 
 The account is created in `pending` status. The user must set a password via the email link before logging in.
 
-> Only admins can create Admin or Assignment Manager accounts.
+> Only Admins can create Admin or Assignment Manager accounts.
+>
+> If SMTP is not configured (development only), setup links are printed to the backend logs instead of being emailed. In
+> production, SMTP must be configured for emails to be delivered.
 
 #### Editing a user
 
@@ -207,7 +213,7 @@ To (re)send account-setup emails to pending users:
 > All group create, edit, and delete operations are **Admin only**. Assignment Managers can view groups and use the
 > import/export mappings tools, but cannot create or modify groups.
 
-Navigate to **Groups** from the top navigation.
+Navigate to **Groups** from the **Administration** panel on the Dashboard (or via the top navigation if visible).
 
 #### Creating a group
 

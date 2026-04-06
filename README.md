@@ -91,7 +91,7 @@ If you skip this step, `docker compose up` will fail because `docker-compose.dev
 docker compose up -d
 ```
 
-Migrations run automatically on backend startup. The first run seeds the `admin` account.
+Migrations run automatically on backend startup (Docker stacks only). The first run seeds the `admin` account.
 
 | Service      | URL                          |
 | ------------ | ---------------------------- |
@@ -231,8 +231,8 @@ migration file — never edit existing ones.
 ### Backend unit tests
 
 ```bash
-npm test                                        # Run all (from project root)
-cd backend && npx jest --coverage               # With coverage report
+npm test                                        # Run all unit tests (backend + frontend, from project root)
+cd backend && npx jest --coverage               # Backend only, with coverage report
 cd backend && npx jest tests/unit/auth.test.js  # Single file
 ```
 
@@ -377,7 +377,10 @@ cd frontend && rm -rf node_modules dist && npm install && npm run build
 
 ### Email links not arriving
 
-If `SMTP_HOST` is not configured, email links are printed to the backend container logs:
+> **Note:** In production, SMTP must be configured — without it, account setup and password reset emails will not be
+> sent.
+
+If `SMTP_HOST` is not configured (development only), email links are printed to the backend logs:
 
 ```bash
 docker compose logs backend | grep "http"
