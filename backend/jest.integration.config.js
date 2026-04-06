@@ -15,12 +15,15 @@ module.exports = {
   coverageReporters: ['text', 'cobertura'],
   coverageDirectory: 'coverage-integration',
   collectCoverageFrom: ['src/**/*.js', '!src/db/migrate.js', '!src/config/**/*.js'],
+  // Integration tests exercise API behaviour rather than exhaustive code paths,
+  // so thresholds are intentionally lower than the unit test suite.
+  // Unit tests (jest.config.js) enforce the 80%/85% thresholds on the same files.
   coverageThreshold: {
     global: {
-      branches: 80,
-      functions: 85,
-      lines: 85,
-      statements: 85,
+      branches: 60,
+      functions: 80,
+      lines: 70,
+      statements: 70,
     },
   },
 };
