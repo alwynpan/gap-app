@@ -65,7 +65,7 @@ describe('ProtectedRoute', () => {
     expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
   });
 
-  it('redirects users without team-manager access to /dashboard when required', () => {
+  it('redirects users without assignment-manager access to /dashboard when required', () => {
     useAuth.mockReturnValue({
       loading: false,
       isAuthenticated: true,

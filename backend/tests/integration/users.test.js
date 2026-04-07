@@ -757,9 +757,12 @@ describe('POST /api/users/import', () => {
     });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
+    const serializedErrors = body.errors.map((e) => JSON.stringify(e));
     expect(body.imported).toBe(1);
     expect(body.errors.length).toBeGreaterThanOrEqual(2);
-    expect(body.errors.some((e) => e.reason.match(/admin|assignment manager/i))).toBe(true);
+    expect(serializedErrors.some((error) => /admin/i.test(error))).toBe(true);
+    expect(serializedErrors.some((error) => /am1|assignment manager/i.test(error))).toBe(true);
+    expect(serializedErrors.some((error) => /newuser/i.test(error))).toBe(false);
   });
 
   it('returns 400 for empty users array', async () => {

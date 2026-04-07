@@ -289,7 +289,8 @@ describe('POST /api/auth/set-password', () => {
 
     // Get user id and create a setup token via model (since email delivery is mocked)
     const db = getPool();
-    const { rows } = await db.query("SELECT id FROM users WHERE username = 'e2euser'");
+    const { rows } = await db.query('SELECT id FROM users WHERE username = $1', ['e2euser']);
+    expect(rows).toHaveLength(1);
     const userId = rows[0].id;
     const PasswordResetToken = require('../../src/models/PasswordResetToken');
     const tokenRow = await PasswordResetToken.create(userId, 'setup');
