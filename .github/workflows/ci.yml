@@ -217,11 +217,16 @@ jobs:
       - name: Generate Allure report
         working-directory: ./tests
         if: always()
-        run: npx allure generate -o allure-report
+        run: |
+          if [ -d allure-results ]; then
+            npx allure generate -o allure-report
+          else
+            echo "No allure-results directory found, skipping report generation."
+          fi
 
       - name: Publish Allure report
-        uses: allure-framework/allure-action@v0
-        if: always()
+        uses: allure-framework/allure-action@v0.6.6
+        if: always() && hashFiles('tests/allure-report/summary.json') != ''
         with:
           report-directory: tests/allure-report
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -233,6 +238,7 @@ jobs:
           name: playwright-artifacts
           path: tests/artifacts/
           retention-days: 7
+          if-no-files-found: ignore
 
   # Build Docker images for every run; push only on pushes to main or version tags.
   # Renamed to 'docker' so the fan-in 'build' job below can serve as the single
