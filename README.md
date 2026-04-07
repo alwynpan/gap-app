@@ -93,6 +93,14 @@ docker compose up -d
 
 Migrations run automatically on backend startup (Docker stacks only). The first run seeds the `admin` account.
 
+> **Git revision in the UI:** The frontend displays the current git hash for build traceability. The dev stack mounts
+> `.git` read-only into the frontend container so Vite resolves the hash automatically via `git`. After each new commit,
+> restart the frontend container to pick up the updated hash:
+>
+> ```bash
+> docker-compose -f docker-compose.dev.yaml restart frontend
+> ```
+
 | Service      | URL                          |
 | ------------ | ---------------------------- |
 | Frontend     | http://localhost:3000        |
@@ -192,6 +200,7 @@ docker compose logs traefik    # Check TLS provisioning
 | `BACKUP_FREQ`          |    No    | `1440`              | Backup interval in minutes (default: every 24 h)        |
 | `BACKUP_BEGIN`         |    No    | `0300`              | First backup time, HHMM (default: 3:00 AM)              |
 | `BACKUP_CLEANUP_TIME`  |    No    | `10080`             | Delete backups older than N minutes (default: 7 days)   |
+| `LOG_LEVEL`            |    No    | _(unset)_           | Set to `silent` to suppress all backend log output      |
 
 ### Database backups
 

@@ -4,6 +4,7 @@ const PasswordResetToken = require('../models/PasswordResetToken');
 const { sendPasswordResetEmail, sendPasswordSetupEmail } = require('../services/email');
 const config = require('../config/index');
 const { parseBody, registerSchema, loginSchema, forgotPasswordSchema, setPasswordSchema } = require('../utils/schemas');
+const { logger } = require('../utils/logger');
 
 async function authRoutes(fastify, _options) {
   const isDev = config.app.nodeEnv === 'development';
@@ -69,7 +70,7 @@ async function authRoutes(fastify, _options) {
           const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
           await sendPasswordSetupEmail(newUser, tokenRecord.token);
         } catch (emailError) {
-          console.error('Failed to send setup email:', emailError);
+          logger.error('Failed to send setup email', { err: emailError.message });
           // Don't fail the request - user was created successfully
         }
 
@@ -83,7 +84,7 @@ async function authRoutes(fastify, _options) {
           },
         });
       } catch (error) {
-        console.error('Registration error:', error);
+        logger.error('Registration error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Registration failed' });
       }
     }
@@ -163,7 +164,7 @@ async function authRoutes(fastify, _options) {
           },
         });
       } catch (error) {
-        console.error('Login error:', error);
+        logger.error('Login error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Login failed' });
       }
     }
@@ -205,7 +206,7 @@ async function authRoutes(fastify, _options) {
           },
         });
       } catch (error) {
-        console.error('Get current user error:', error);
+        logger.error('Get current user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve user info' });
       }
     }
@@ -251,7 +252,7 @@ async function authRoutes(fastify, _options) {
         }
         return reply.send(successMsg);
       } catch (error) {
-        console.error('Forgot password error:', error);
+        logger.error('Forgot password error', { err: error.message, code: error.code });
         // Still return 200 to avoid timing-based enumeration
         return reply.send(successMsg);
       }
@@ -299,7 +300,7 @@ async function authRoutes(fastify, _options) {
 
         return reply.send({ message: 'Password set successfully. You can now log in.' });
       } catch (error) {
-        console.error('Set password error:', error);
+        logger.error('Set password error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to set password' });
       }
     }

@@ -4,13 +4,23 @@ import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-const gitHash = (() => {
+/* eslint-disable no-undef */
+function resolveGitHash() {
+  if (process.env.GIT_HASH) {
+    return process.env.GIT_HASH;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return 'unknown';
+  }
   try {
     return execSync('git rev-parse --short HEAD').toString().trim();
   } catch {
     return 'unknown';
   }
-})();
+}
+/* eslint-enable no-undef */
+
+const gitHash = resolveGitHash();
 
 export default defineConfig({
   plugins: [react()],

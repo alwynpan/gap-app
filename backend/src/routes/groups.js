@@ -11,6 +11,7 @@ const {
   bulkCreateGroupItemSchema,
   BULK_CREATE_MAX,
 } = require('../utils/schemas');
+const { logger } = require('../utils/logger');
 
 const _parsedImportMax = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
 const MAX_IMPORT_MAPPINGS = Number.isNaN(_parsedImportMax) ? 2000 : _parsedImportMax;
@@ -31,7 +32,7 @@ async function groupsRoutes(fastify, _options) {
         const groups = await Group.findAll();
         return reply.send({ groups });
       } catch (error) {
-        console.error('Get groups error:', error);
+        logger.error('Get groups error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve groups' });
       }
     }
@@ -52,7 +53,7 @@ async function groupsRoutes(fastify, _options) {
         const groups = await Group.findEnabled();
         return reply.send({ groups });
       } catch (error) {
-        console.error('Get enabled groups error:', error);
+        logger.error('Get enabled groups error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve groups' });
       }
     }
@@ -96,7 +97,7 @@ async function groupsRoutes(fastify, _options) {
           members,
         });
       } catch (error) {
-        console.error('Get group error:', error);
+        logger.error('Get group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve group' });
       }
     }
@@ -143,7 +144,7 @@ async function groupsRoutes(fastify, _options) {
           },
         });
       } catch (error) {
-        console.error('Create group error:', error);
+        logger.error('Create group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to create group' });
       }
     }
@@ -209,7 +210,7 @@ async function groupsRoutes(fastify, _options) {
           groups,
         });
       } catch (error) {
-        console.error('Bulk create groups error:', error);
+        logger.error('Bulk create groups error', { err: error.message, code: error.code });
         if (error.code === '23505') {
           return reply.code(409).send({ error: 'One or more group names already exist' });
         }
@@ -273,7 +274,7 @@ async function groupsRoutes(fastify, _options) {
           group: updatedGroup,
         });
       } catch (error) {
-        console.error('Update group error:', error);
+        logger.error('Update group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to update group' });
       }
     }
@@ -310,7 +311,7 @@ async function groupsRoutes(fastify, _options) {
         const deleted = await Group.bulkDelete(uniqueIds);
         return reply.send({ message: 'Groups deleted successfully', deleted });
       } catch (error) {
-        console.error('Bulk delete groups error:', error);
+        logger.error('Bulk delete groups error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to delete groups' });
       }
     }
@@ -345,7 +346,7 @@ async function groupsRoutes(fastify, _options) {
 
         return reply.send({ message: 'Group deleted successfully' });
       } catch (error) {
-        console.error('Delete group error:', error);
+        logger.error('Delete group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to delete group' });
       }
     }
@@ -412,7 +413,7 @@ async function groupsRoutes(fastify, _options) {
 
         return reply.send({ message: 'Successfully joined group', groupId, groupName: group.name });
       } catch (error) {
-        console.error('Join group error:', error);
+        logger.error('Join group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to join group' });
       }
     }
@@ -468,7 +469,7 @@ async function groupsRoutes(fastify, _options) {
 
         return reply.send({ message: 'Successfully left group' });
       } catch (error) {
-        console.error('Leave group error:', error);
+        logger.error('Leave group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to leave group' });
       }
     }
@@ -551,14 +552,14 @@ async function groupsRoutes(fastify, _options) {
             imported++;
           } catch (rowErr) {
             const reason = rowErr.statusCode === 409 ? 'Group is full' : 'Failed to process row';
-            console.error('Import mapping row error:', rowErr);
+            logger.error('Import mapping row error', { err: rowErr.message, code: rowErr.code });
             errors.push({ email, groupName, error: reason });
           }
         }
 
         return reply.send({ imported, skipped, errors });
       } catch (error) {
-        console.error('Import group mappings error:', error);
+        logger.error('Import group mappings error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to import mappings' });
       }
     }
@@ -584,7 +585,7 @@ async function groupsRoutes(fastify, _options) {
         const mappings = rows.map((r) => ({ email: r.email, groupName: r.group_name }));
         return reply.send({ mappings });
       } catch (error) {
-        console.error('Export group mappings error:', error);
+        logger.error('Export group mappings error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to export mappings' });
       }
     }

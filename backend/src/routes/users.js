@@ -13,6 +13,7 @@ const {
   validateUUID,
   ROLE_VALUES,
 } = require('../utils/schemas');
+const { logger } = require('../utils/logger');
 
 const _parsed = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
 const MAX_IMPORT_SIZE = Number.isNaN(_parsed) ? 2000 : _parsed;
@@ -50,7 +51,7 @@ async function usersRoutes(fastify, _options) {
         const users = await User.findAll({ role, status, groupId });
         return reply.send({ users });
       } catch (error) {
-        console.error('Get users error:', error);
+        logger.error('Get users error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve users' });
       }
     }
@@ -90,7 +91,7 @@ async function usersRoutes(fastify, _options) {
         const { password_hash: _password_hash, ...userWithoutPassword } = user;
         return reply.send({ user: userWithoutPassword });
       } catch (error) {
-        console.error('Get user error:', error);
+        logger.error('Get user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve user' });
       }
     }
@@ -189,7 +190,7 @@ async function usersRoutes(fastify, _options) {
             const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
             await sendPasswordSetupEmail(newUser, tokenRecord.token);
           } catch (emailError) {
-            console.error('Failed to send setup email:', emailError);
+            logger.error('Failed to send setup email', { err: emailError.message });
             // Don't fail the request — user was created successfully
           }
         }
@@ -217,7 +218,7 @@ async function usersRoutes(fastify, _options) {
           }
           return reply.code(409).send({ error: 'A user with these details already exists' });
         }
-        console.error('Create user error:', error);
+        logger.error('Create user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to create user' });
       }
     }
@@ -278,7 +279,7 @@ async function usersRoutes(fastify, _options) {
         if (error.statusCode && error.statusCode < 500) {
           return reply.code(error.statusCode).send({ error: error.message });
         }
-        console.error('Update user group error:', error);
+        logger.error('Update user group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to update user group' });
       }
     }
@@ -398,7 +399,7 @@ async function usersRoutes(fastify, _options) {
           user: safeUser,
         });
       } catch (error) {
-        console.error('Update user error:', error);
+        logger.error('Update user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to update user' });
       }
     }
@@ -447,7 +448,7 @@ async function usersRoutes(fastify, _options) {
 
         return reply.send({ message: 'Password updated successfully' });
       } catch (error) {
-        console.error('Change password error:', error);
+        logger.error('Change password error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to change password' });
       }
     }
@@ -487,7 +488,7 @@ async function usersRoutes(fastify, _options) {
 
         return reply.send({ message: 'User deleted successfully' });
       } catch (error) {
-        console.error('Delete user error:', error);
+        logger.error('Delete user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to delete user' });
       }
     }
@@ -528,7 +529,7 @@ async function usersRoutes(fastify, _options) {
         const deleted = await User.bulkDelete(uniqueIds);
         return reply.send({ message: 'Users deleted successfully', deleted });
       } catch (error) {
-        console.error('Bulk delete users error:', error);
+        logger.error('Bulk delete users error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to delete users' });
       }
     }
@@ -674,7 +675,7 @@ async function usersRoutes(fastify, _options) {
                 const tokenRecord = await PasswordResetToken.create(newUser.id, 'setup', 24);
                 await sendPasswordSetupEmail(newUser, tokenRecord.token);
               } catch (emailError) {
-                console.error('Failed to send setup email:', emailError);
+                logger.error('Failed to send setup email', { err: emailError.message });
               }
             }
 
@@ -687,7 +688,7 @@ async function usersRoutes(fastify, _options) {
 
         return reply.send({ imported, skipped, errors });
       } catch (error) {
-        console.error('Import error:', error);
+        logger.error('Import error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Import failed' });
       }
     }
@@ -739,14 +740,14 @@ async function usersRoutes(fastify, _options) {
             await sendPasswordSetupEmail(u, tokenRecord.token);
             sent++;
           } catch (emailError) {
-            console.error(`Failed to send setup email to ${u.username}:`, emailError);
+            logger.error('Failed to send setup email', { username: u.username, err: emailError.message });
             errors.push({ userId: u.id, username: u.username, reason: 'Failed to send email' });
           }
         }
 
         return reply.send({ sent, errors });
       } catch (error) {
-        console.error('Send setup emails error:', error);
+        logger.error('Send setup emails error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to send setup emails' });
       }
     }

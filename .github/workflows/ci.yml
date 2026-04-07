@@ -287,6 +287,10 @@ jobs:
             type=ref,event=pr
             type=ref,event=branch
 
+      - name: Extract short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push ${{ matrix.service }} image
         uses: docker/build-push-action@v7
         with:
@@ -296,6 +300,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          build-args: ${{ matrix.service == 'frontend' && format('GIT_HASH={0}', steps.sha.outputs.short) || '' }}
 
   # Fan-in job: succeeds only when both docker matrix variants pass.
   # Named 'build' to match the required status check configured in branch protection.

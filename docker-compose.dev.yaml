@@ -68,6 +68,7 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - ./.git:/app/.git:ro
 
 volumes:
   postgres_data:

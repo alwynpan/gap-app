@@ -2,6 +2,7 @@
 
 const Config = require('../models/Config');
 const { parseBody, updateConfigSchema } = require('../utils/schemas');
+const { logger } = require('../utils/logger');
 
 const ALLOWED_KEYS = ['group_join_locked'];
 
@@ -21,7 +22,7 @@ async function configRoutes(fastify, _options) {
         const value = await Config.get('group_join_locked');
         return reply.send({ locked: value === 'true' });
       } catch (error) {
-        console.error('Get config error:', error);
+        logger.error('Get config error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve config' });
       }
     }
@@ -46,7 +47,7 @@ async function configRoutes(fastify, _options) {
         const rows = await Config.getAll();
         return reply.send({ config: rows });
       } catch (error) {
-        console.error('Get all config error:', error);
+        logger.error('Get all config error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve config' });
       }
     }
@@ -82,7 +83,7 @@ async function configRoutes(fastify, _options) {
         const updated = await Config.set(key, body.value);
         return reply.send({ message: 'Config updated successfully', config: updated });
       } catch (error) {
-        console.error('Update config error:', error);
+        logger.error('Update config error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to update config' });
       }
     }

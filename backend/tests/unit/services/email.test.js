@@ -2,6 +2,29 @@ jest.mock('nodemailer', () => ({
   createTransport: jest.fn(),
 }));
 
+jest.mock('../../../src/utils/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), trace: jest.fn(), fatal: jest.fn() },
+  maskEmail: (e) => {
+    if (!e || typeof e !== 'string') {
+      return e;
+    }
+    const atIdx = e.indexOf('@');
+    if (atIdx < 0) {
+      return '***@***';
+    }
+    const local = e.slice(0, atIdx);
+    const domain = e.slice(atIdx + 1);
+    if (local.length <= 2) {
+      return `${local}@${domain}`;
+    }
+    return `${local.slice(0, 2)}***${local.slice(-1)}@${domain}`;
+  },
+  maskName: (n) => n,
+  maskToken: (t) => t,
+  maskStudentId: (s) => s,
+  redactMeta: (m) => m,
+}));
+
 describe('Email Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -10,8 +33,6 @@ describe('Email Service', () => {
 
   describe('sendEmail', () => {
     it('logs to console when SMTP host is not configured', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-
       jest.mock('../../../src/config/index', () => ({
         smtp: { host: '', port: 587, secure: false, user: '', pass: '', from: 'no-reply@gap-app.local' },
         appUrl: 'http://localhost:3000',
@@ -19,11 +40,10 @@ describe('Email Service', () => {
       jest.mock('nodemailer', () => ({ createTransport: jest.fn() }));
 
       const { sendEmail } = require('../../../src/services/email');
+      const { logger: mockLogger } = require('../../../src/utils/logger');
       await sendEmail('to@test.com', 'Subject', '<p>Body</p>');
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('To: to@test.com'));
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Subject: Subject'));
-      consoleSpy.mockRestore();
+      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('To: to@test.com'));
     });
 
     it('sends email via transporter when SMTP is configured', async () => {
