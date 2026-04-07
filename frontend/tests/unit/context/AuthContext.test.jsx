@@ -279,6 +279,10 @@ describe('AuthContext', () => {
 });
 
 describe('useAuth', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('throws when used outside AuthProvider', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
 

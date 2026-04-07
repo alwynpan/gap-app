@@ -1,7 +1,7 @@
 'use strict';
 
 const { buildTestServer, closeTestServer } = require('./helpers/server');
-const { cleanDatabase, createUser, loginAs } = require('./helpers/db');
+const { cleanDatabase, createUser, loginAs, getPool } = require('./helpers/db');
 
 let app;
 let adminToken;
@@ -268,5 +268,50 @@ describe('POST /api/auth/set-password', () => {
       payload: { token: 'sometoken' },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('full e2e: register → set-password → login', async () => {
+    // Enable registration
+    await app.inject({
+      method: 'PUT',
+      url: '/api/config/registration_enabled',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { value: 'true' },
+    });
+
+    // Register a pending user
+    const regRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: { username: 'e2euser', email: 'e2e@test.com', firstName: 'E2E', lastName: 'User' },
+    });
+    expect(regRes.statusCode).toBe(201);
+
+    // Get user id and create a setup token via model (since email delivery is mocked)
+    const db = getPool();
+    const { rows } = await db.query("SELECT id FROM users WHERE username = 'e2euser'");
+    const userId = rows[0].id;
+    const PasswordResetToken = require('../../src/models/PasswordResetToken');
+    const tokenRow = await PasswordResetToken.create(userId, 'setup');
+    const rawToken = tokenRow.token;
+
+    // Set password using the token
+    const setRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/set-password',
+      payload: { token: rawToken, password: 'SecurePass123!' },
+    });
+    expect(setRes.statusCode).toBe(200);
+
+    // Login with the new password
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'e2euser', password: 'SecurePass123!' },
+    });
+    expect(loginRes.statusCode).toBe(200);
+    const loginBody = JSON.parse(loginRes.body);
+    expect(loginBody.token).toBeDefined();
+    expect(loginBody.user.username).toBe('e2euser');
   });
 });

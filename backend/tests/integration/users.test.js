@@ -98,6 +98,18 @@ describe('GET /api/users', () => {
     expect(body.users.every((u) => u.status === 'active')).toBe(true);
   });
 
+  it('filters by combined role + status', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/users?role=user&status=active',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.users.every((u) => u.role_name === 'user' && u.status === 'active')).toBe(true);
+    expect(body.users.length).toBeGreaterThan(0);
+  });
+
   it('returns 400 for invalid status filter', async () => {
     const res = await app.inject({
       method: 'GET',
@@ -520,6 +532,23 @@ describe('PUT /api/users/:id/password', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('returns 400 for too-short new password', async () => {
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const user1 = JSON.parse(listRes.body).users.find((u) => u.username === 'user1');
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${user1.id}/password`,
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: { currentPassword: 'TestPass123!', newPassword: 'abc' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('user cannot change another user password', async () => {
     const other = await createUser({ username: 'otherpass', email: 'otherpass@test.com' });
     const res = await app.inject({
@@ -711,6 +740,28 @@ describe('POST /api/users/import', () => {
     expect(body.errors[0].reason).toMatch(/admin/i);
   });
 
+  it('AM importing skips admin/AM accounts on overwrite', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: {
+        users: [
+          { username: 'admin', email: 'admin@test.com', firstName: 'H', lastName: 'K' },
+          { username: 'am1', email: 'am1@test.com', firstName: 'A', lastName: 'M' },
+          { username: 'newuser', email: 'new@test.com', firstName: 'New', lastName: 'User' },
+        ],
+        conflictAction: 'overwrite',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.imported).toBe(1);
+    expect(body.errors.length).toBeGreaterThanOrEqual(2);
+    expect(body.errors.some((e) => e.reason.match(/admin|assignment manager/i))).toBe(true);
+  });
+
   it('returns 400 for empty users array', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -719,6 +770,22 @@ describe('POST /api/users/import', () => {
       payload: { users: [], conflictAction: 'skip', sendSetupEmail: false },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('assignment_manager can import users', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: {
+        users: [{ username: 'amimp1', email: 'amimp1@test.com', firstName: 'AM', lastName: 'Imp' }],
+        conflictAction: 'skip',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.imported).toBe(1);
   });
 
   it('regular user cannot import', async () => {

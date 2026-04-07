@@ -101,4 +101,4 @@ async function closePool() {
   }
 }
 
-module.exports = { cleanDatabase, createUser, createGroup, loginAs, closePool };
+module.exports = { cleanDatabase, createUser, createGroup, loginAs, closePool, getPool };

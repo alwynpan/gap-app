@@ -222,6 +222,25 @@ describe('group_join_locked enforcement', () => {
     expect(JSON.parse(res.body).error).toMatch(/locked/i);
   });
 
+  it('allows assignment_manager to join group even when locked', async () => {
+    const g = await createGroup({ name: 'AMCanJoin', enabled: true });
+
+    await app.inject({
+      method: 'PUT',
+      url: '/api/config/group_join_locked',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { value: 'true' },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/groups/${g.id}/join`,
+      headers: { authorization: `Bearer ${amToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).error).toBeUndefined();
+  });
+
   it('allows admin to join group even when locked', async () => {
     const g = await createGroup({ name: 'AdminCanJoin', enabled: true });
 
