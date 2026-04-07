@@ -115,13 +115,15 @@ function redactMeta(meta) {
     if (REDACT_FIELDS.has(key)) {
       safe[key] = '[REDACTED]'; // eslint-disable-line security/detect-object-injection
     } else if (TOKEN_FIELDS.has(key)) {
-      safe[key] = maskToken(String(safe[key])); // eslint-disable-line security/detect-object-injection
+      const tv = safe[key]; // eslint-disable-line security/detect-object-injection
+      safe[key] = tv === null || tv === undefined ? tv : maskToken(String(tv)); // eslint-disable-line security/detect-object-injection
     } else if (key === 'email') {
       safe[key] = maskEmail(safe[key]); // eslint-disable-line security/detect-object-injection
-    } else if (key === 'firstName' || key === 'lastName' || key === 'fullName') {
+    } else if (key === 'firstName' || key === 'lastName' || key === 'fullName' || key === 'name') {
       safe[key] = maskName(safe[key]); // eslint-disable-line security/detect-object-injection
     } else if (key === 'studentId' || key === 'student_id') {
-      safe[key] = maskStudentId(String(safe[key])); // eslint-disable-line security/detect-object-injection
+      const sv = safe[key]; // eslint-disable-line security/detect-object-injection
+      safe[key] = sv === null || sv === undefined ? sv : maskStudentId(String(sv)); // eslint-disable-line security/detect-object-injection
     }
   }
   return safe;
