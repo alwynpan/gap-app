@@ -98,7 +98,7 @@ Migrations run automatically on backend startup (Docker stacks only). The first 
 > restart the frontend container to pick up the updated hash:
 >
 > ```bash
-> docker-compose -f docker-compose.dev.yaml restart frontend
+> docker compose -f docker-compose.dev.yaml restart frontend
 > ```
 
 | Service      | URL                          |
@@ -182,25 +182,25 @@ docker compose logs traefik    # Check TLS provisioning
 
 ### Production environment variables
 
-| Variable               | Required | Default             | Description                                             |
-| ---------------------- | :------: | ------------------- | ------------------------------------------------------- |
-| `DOMAIN`               |   Yes    | —                   | FQDN (e.g. `gap.example.com`)                           |
-| `LETSENCRYPT_EMAIL`    |   Yes    | —                   | Email for Let's Encrypt registration                    |
-| `DB_PASSWORD`          |   Yes    | —                   | PostgreSQL password                                     |
-| `JWT_SECRET`           |   Yes    | —                   | JWT signing secret (min 32 chars)                       |
-| `ADMIN_PASSWORD`       |   Yes    | —                   | Initial admin password (seeded on first migration only) |
-| `JWT_EXPIRES_IN`       |    No    | `24h`               | Token expiry                                            |
-| `REGISTRATION_ENABLED` |    No    | `false`             | Allow public self-registration                          |
-| `SMTP_HOST`            |    No    | _(empty)_           | SMTP host; leave blank to log email links to console    |
-| `SMTP_PORT`            |    No    | `587`               | SMTP port                                               |
-| `SMTP_SECURE`          |    No    | `false`             | `true` for SMTPS; `false` for STARTTLS on port 587      |
-| `SMTP_USER`            |    No    | _(empty)_           | SMTP auth username                                      |
-| `SMTP_PASS`            |    No    | _(empty)_           | SMTP auth password                                      |
-| `SMTP_FROM`            |    No    | `no-reply@<DOMAIN>` | Sender address                                          |
-| `BACKUP_FREQ`          |    No    | `1440`              | Backup interval in minutes (default: every 24 h)        |
-| `BACKUP_BEGIN`         |    No    | `0300`              | First backup time, HHMM (default: 3:00 AM)              |
-| `BACKUP_CLEANUP_TIME`  |    No    | `10080`             | Delete backups older than N minutes (default: 7 days)   |
-| `LOG_LEVEL`            |    No    | _(unset)_           | Set to `silent` to suppress all backend log output      |
+| Variable               | Required | Default             | Description                                                                              |
+| ---------------------- | :------: | ------------------- | ---------------------------------------------------------------------------------------- |
+| `DOMAIN`               |   Yes    | —                   | FQDN (e.g. `gap.example.com`)                                                            |
+| `LETSENCRYPT_EMAIL`    |   Yes    | —                   | Email for Let's Encrypt registration                                                     |
+| `DB_PASSWORD`          |   Yes    | —                   | PostgreSQL password                                                                      |
+| `JWT_SECRET`           |   Yes    | —                   | JWT signing secret (min 32 chars)                                                        |
+| `ADMIN_PASSWORD`       |   Yes    | —                   | Initial admin password (seeded on first migration only)                                  |
+| `JWT_EXPIRES_IN`       |    No    | `24h`               | Token expiry                                                                             |
+| `REGISTRATION_ENABLED` |    No    | `false`             | Allow public self-registration                                                           |
+| `SMTP_HOST`            |    No    | _(empty)_           | SMTP host; leave blank to log email links to console                                     |
+| `SMTP_PORT`            |    No    | `587`               | SMTP port                                                                                |
+| `SMTP_SECURE`          |    No    | `false`             | `true` for SMTPS; `false` for STARTTLS on port 587                                       |
+| `SMTP_USER`            |    No    | _(empty)_           | SMTP auth username                                                                       |
+| `SMTP_PASS`            |    No    | _(empty)_           | SMTP auth password                                                                       |
+| `SMTP_FROM`            |    No    | `no-reply@<DOMAIN>` | Sender address                                                                           |
+| `BACKUP_FREQ`          |    No    | `1440`              | Backup interval in minutes (default: every 24 h)                                         |
+| `BACKUP_BEGIN`         |    No    | `0300`              | First backup time, HHMM (default: 3:00 AM)                                               |
+| `BACKUP_CLEANUP_TIME`  |    No    | `10080`             | Delete backups older than N minutes (default: 7 days)                                    |
+| `LOG_LEVEL`            |    No    | _(unset)_           | Set to `silent` to suppress non-fatal backend logs (fatal errors always write to stderr) |
 
 ### Database backups
 

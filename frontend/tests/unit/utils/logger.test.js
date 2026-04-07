@@ -133,7 +133,11 @@ describe('logger (dev mode)', () => {
   });
 
   afterAll(() => {
-    process.env.DEV = origDev;
+    if (origDev === undefined) {
+      delete process.env.DEV;
+    } else {
+      process.env.DEV = origDev;
+    }
   });
 
   beforeEach(() => {
@@ -179,7 +183,11 @@ describe('logger (production mode)', () => {
   });
 
   afterAll(() => {
-    process.env.DEV = origDev;
+    if (origDev === undefined) {
+      delete process.env.DEV;
+    } else {
+      process.env.DEV = origDev;
+    }
   });
 
   beforeEach(() => {

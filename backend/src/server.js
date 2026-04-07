@@ -16,8 +16,9 @@ const authPlugin = require('./middleware/auth');
 const rbacPlugin = require('./middleware/rbac');
 
 async function buildServer({ logger: disableLogger } = {}) {
-  // We manage logging ourselves via hooks; disable Fastify's built-in Pino logger.
-  // Pass logger:false in tests (via buildTestServer) to suppress all log output.
+  // We manage request/access logging ourselves via hooks; disable Fastify's built-in Pino logger.
+  // Pass logger:false in tests (via buildTestServer) to suppress access-log hook output only;
+  // route/service logs are controlled separately via NODE_ENV=test or LOG_LEVEL=silent.
   const enableLogging = disableLogger !== false && config.app.nodeEnv !== 'test';
 
   const fastify = Fastify({ logger: false });

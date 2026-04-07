@@ -103,7 +103,7 @@ export function sanitizeMeta(meta) {
     } else if (key === 'firstName' || key === 'lastName' || key === 'fullName' || key === 'name') {
       safe[key] = maskName(safe[key]);
     } else if (key === 'studentId') {
-      safe[key] = maskStudentId(String(safe[key]));
+      safe[key] = maskStudentId(safe[key]);
     }
   }
   /* eslint-enable security/detect-object-injection */
@@ -113,8 +113,9 @@ export function sanitizeMeta(meta) {
 // ---------------------------------------------------------------------------
 // Logger — only active in development builds
 //
-// Note: import.meta.env.DEV is evaluated at call time (not module load time)
-// so that test helpers can toggle process.env.DEV to control logger output.
+// Note: in Vite builds, import.meta.env.DEV is inlined at compile time, not
+// read dynamically at runtime. In Jest, the Babel transform rewrites
+// import.meta.env to process.env, so tests can toggle it via process.env.DEV.
 // ---------------------------------------------------------------------------
 
 /* eslint-disable no-console */
