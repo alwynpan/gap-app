@@ -40,6 +40,15 @@ jest.mock('../../src/config/index', () => ({
   },
 }));
 
+jest.mock('../../src/utils/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), trace: jest.fn(), fatal: jest.fn() },
+  maskEmail: (e) => e,
+  maskName: (n) => n,
+  maskToken: (t) => t,
+  maskStudentId: (s) => s,
+  redactMeta: (m) => m,
+}));
+
 const User = require('../../src/models/User');
 const Role = require('../../src/models/Role');
 const PasswordResetToken = require('../../src/models/PasswordResetToken');
@@ -371,18 +380,16 @@ describe('Auth Routes', () => {
       Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
       User.create.mockRejectedValue(new Error('Database error'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/register']({ body: validRegisterBody }, mockReply);
 
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Registration failed' });
-
-      consoleSpy.mockRestore();
     });
   });
 
@@ -524,18 +531,16 @@ describe('Auth Routes', () => {
     it('handles login error', async () => {
       User.findByUsername.mockRejectedValue(new Error('Database error'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/login']({ body: { username: 'test', password: 'password' } }, mockReply);
 
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Login failed' });
-
-      consoleSpy.mockRestore();
     });
   });
 
@@ -742,14 +747,12 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       User.findByEmail.mockRejectedValue(new Error('DB error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
       await capturedHandlers['/auth/forgot-password']({ body: { email: 'user@test.com' } }, mockReply);
 
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'If that email is registered, a reset link has been sent.',
       });
-      consoleSpy.mockRestore();
     });
   });
 
@@ -885,13 +888,11 @@ describe('Auth Routes', () => {
       authRoutes(mockFastify, {});
 
       PasswordResetToken.findByToken.mockRejectedValue(new Error('DB error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
       await capturedHandlers['/auth/set-password']({ body: { token: 'sometoken', password: 'newpass1' } }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(500);
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Failed to set password' });
-      consoleSpy.mockRestore();
     });
   });
 });

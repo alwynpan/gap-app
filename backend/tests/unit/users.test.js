@@ -15,6 +15,15 @@ jest.mock('../../src/services/email', () => ({
   sendEmail: jest.fn(),
 }));
 
+jest.mock('../../src/utils/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), trace: jest.fn(), fatal: jest.fn() },
+  maskEmail: (e) => e,
+  maskName: (n) => n,
+  maskToken: (t) => t,
+  maskStudentId: (s) => s,
+  redactMeta: (m) => m,
+}));
+
 const User = require('../../src/models/User');
 const Group = require('../../src/models/Group');
 const Role = require('../../src/models/Role');
@@ -136,14 +145,13 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findAll.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_get']({}, mockReply);
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -197,14 +205,13 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findById.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id_get']({ params: { id: '00000000-0000-4000-8000-000000000001' } }, mockReply);
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
 
     it('returns 400 for invalid UUID in :id param (M5)', async () => {
@@ -693,7 +700,7 @@ describe('Users Routes', () => {
       User.findByEmail.mockResolvedValue(null);
       Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
       User.create.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -701,9 +708,8 @@ describe('Users Routes', () => {
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post']({ body: validCreateBody }, mockReply);
 
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
 
     it('returns 409 when User.create throws Postgres 23505 unique violation on student_id', async () => {
@@ -979,7 +985,7 @@ describe('Users Routes', () => {
         username: 'test',
       });
       Group.assignUserToGroup.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -993,9 +999,8 @@ describe('Users Routes', () => {
         mockReply
       );
 
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -1274,7 +1279,7 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.update.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -1290,9 +1295,8 @@ describe('Users Routes', () => {
         mockReply
       );
 
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
 
     it('prevents disabling the built-in admin user', async () => {
@@ -1828,7 +1832,7 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.delete.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -1842,9 +1846,8 @@ describe('Users Routes', () => {
         mockReply
       );
 
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -1857,7 +1860,7 @@ describe('Users Routes', () => {
         username: 'test',
       });
       Group.assignUserToGroup.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -1871,9 +1874,8 @@ describe('Users Routes', () => {
         mockReply
       );
 
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -2103,7 +2105,6 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findById.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2116,7 +2117,6 @@ describe('Users Routes', () => {
         mockReply
       );
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -2125,7 +2125,7 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.delete.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2139,9 +2139,8 @@ describe('Users Routes', () => {
         mockReply
       );
 
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -2587,7 +2586,6 @@ describe('Users Routes', () => {
       User.findByEmail.mockResolvedValue(null);
       User.findByStudentId.mockResolvedValue(null);
       User.create.mockRejectedValue(new Error('DB constraint violation'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2604,7 +2602,6 @@ describe('Users Routes', () => {
         skipped: 0,
         errors: [{ row: 1, identifier: 'baduser', reason: 'Processing failed' }],
       });
-      consoleSpy.mockRestore();
     });
 
     it('handles mix of new, skipped, and errored rows', async () => {
@@ -2645,7 +2642,6 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockRejectedValue(new Error('DB down'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2656,7 +2652,6 @@ describe('Users Routes', () => {
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
 
     it('errors when new user email conflicts with existing user', async () => {
@@ -2891,7 +2886,6 @@ describe('Users Routes', () => {
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
       PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
       sendPasswordSetupEmail.mockRejectedValue(new Error('SMTP down'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2902,14 +2896,12 @@ describe('Users Routes', () => {
         sent: 0,
         errors: [{ userId: 'u1', username: 'pending1', reason: 'Failed to send email' }],
       });
-      consoleSpy.mockRestore();
     });
 
     it('handles top-level errors with 500', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findAll.mockRejectedValue(new Error('DB down'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2917,7 +2909,6 @@ describe('Users Routes', () => {
       await handlers['/users/send-setup-emails_post']({ user: { id: 'admin1', role: 'admin' }, body: {} }, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -3049,7 +3040,7 @@ describe('Users Routes', () => {
     it('returns 500 on DB error', async () => {
       const { handlers, reply } = setupUsersRoute();
       User.bulkDelete.mockRejectedValue(new Error('DB exploded'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       await handlers['/users/bulk_delete'](
         {
           user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' },
@@ -3057,10 +3048,9 @@ describe('Users Routes', () => {
         },
         reply
       );
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
       expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to delete users' });
-      consoleSpy.mockRestore();
     });
   });
 });

@@ -3,6 +3,7 @@ const cors = require('@fastify/cors');
 const helmet = require('@fastify/helmet');
 const rateLimit = require('@fastify/rate-limit');
 const config = require('./config/index');
+const { logger } = require('./utils/logger');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -14,10 +15,12 @@ const configRoutes = require('./routes/config');
 const authPlugin = require('./middleware/auth');
 const rbacPlugin = require('./middleware/rbac');
 
-async function buildServer({ logger } = {}) {
-  const fastify = Fastify({
-    logger: logger !== undefined ? logger : config.app.nodeEnv !== 'production',
-  });
+async function buildServer({ logger: disableLogger } = {}) {
+  // We manage logging ourselves via hooks; disable Fastify's built-in Pino logger.
+  // Pass logger:false in tests (via buildTestServer) to suppress all log output.
+  const enableLogging = disableLogger !== false && config.app.nodeEnv !== 'test';
+
+  const fastify = Fastify({ logger: false });
 
   // Register security plugins
   await fastify.register(helmet, {
@@ -49,6 +52,37 @@ async function buildServer({ logger } = {}) {
     } catch (err) {
       reply.code(401).send({ error: 'Unauthorized', message: err.message });
       throw err;
+    }
+  });
+
+  // Access logging — record start time on every request
+  fastify.addHook('onRequest', async (request) => {
+    request._startTime = Date.now();
+  });
+
+  // Access logging — emit a structured line after each response is sent
+  fastify.addHook('onResponse', async (request, reply) => {
+    if (!enableLogging) {
+      return;
+    }
+    const duration = Date.now() - (request._startTime || Date.now());
+    const ip = (request.headers['x-forwarded-for'] || '').split(',')[0].trim() || request.ip || 'unknown';
+    const status = reply.statusCode;
+    const meta = { ip, duration: `${duration}ms` };
+    if (request.user?.id) {
+      meta.userId = request.user.id;
+    }
+    if (request.user?.role) {
+      meta.role = request.user.role;
+    }
+    const safeUrl = request.url.replace(/[\r\n\x1b]/g, ''); // eslint-disable-line no-control-regex
+    const line = `${request.method} ${safeUrl} ${status}`;
+    if (status >= 500) {
+      logger.error(line, meta);
+    } else if (status >= 400) {
+      logger.warn(line, meta);
+    } else {
+      logger.info(line, meta);
     }
   });
 
@@ -126,14 +160,14 @@ async function buildServer({ logger } = {}) {
 let _serverInstance = null;
 
 async function shutdown(signal) {
-  console.log(`${signal} received, shutting down gracefully...`);
+  logger.info(`${signal} received, shutting down gracefully...`);
   try {
     if (_serverInstance) {
       await _serverInstance.close();
     }
     process.exit(0);
   } catch (err) {
-    console.error('Error during shutdown:', err);
+    logger.error('Error during shutdown', { err: err.message });
     process.exit(1);
   }
 }
@@ -149,11 +183,11 @@ async function start() {
       host: config.app.host,
     });
 
-    console.log(`🚀 G.A.P. Backend server running at http://${config.app.host}:${config.app.port}`);
-    console.log(`📝 Environment: ${config.app.nodeEnv}`);
-    console.log(`🔐 Registration: ${config.app.registrationEnabled ? 'enabled' : 'disabled'}`);
+    logger.info(`G.A.P. Backend server running at http://${config.app.host}:${config.app.port}`);
+    logger.info(`Environment: ${config.app.nodeEnv}`);
+    logger.info(`Registration: ${config.app.registrationEnabled ? 'enabled' : 'disabled'}`);
   } catch (err) {
-    console.error('Failed to start server:', err);
+    logger.error('Failed to start server', { err: err.message });
     process.exit(1);
   }
 }
@@ -162,13 +196,13 @@ async function start() {
 if (require.main === module) {
   process.on('SIGTERM', () => {
     shutdown('SIGTERM').catch((err) => {
-      console.error('Error during graceful shutdown on SIGTERM:', err);
+      logger.error('Error during graceful shutdown on SIGTERM', { err: err.message });
       process.exit(1);
     });
   });
   process.on('SIGINT', () => {
     shutdown('SIGINT').catch((err) => {
-      console.error('Error during graceful shutdown on SIGINT:', err);
+      logger.error('Error during graceful shutdown on SIGINT', { err: err.message });
       process.exit(1);
     });
   });

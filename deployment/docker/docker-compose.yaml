@@ -80,6 +80,8 @@ services:
     build:
       context: ../../frontend
       dockerfile: Dockerfile
+      args:
+        GIT_HASH: ${GIT_HASH:-unknown}
     container_name: gap-frontend
     depends_on:
       - backend

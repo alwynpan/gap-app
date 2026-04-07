@@ -3,6 +3,15 @@ jest.mock('../../src/models/Group');
 jest.mock('../../src/models/User');
 jest.mock('../../src/models/Config');
 
+jest.mock('../../src/utils/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), trace: jest.fn(), fatal: jest.fn() },
+  maskEmail: (e) => e,
+  maskName: (n) => n,
+  maskToken: (t) => t,
+  maskStudentId: (s) => s,
+  redactMeta: (m) => m,
+}));
+
 const Group = require('../../src/models/Group');
 const User = require('../../src/models/User');
 const Config = require('../../src/models/Config');
@@ -82,12 +91,11 @@ describe('Groups Routes', () => {
     it('handles error when fetching groups', async () => {
       const { handlers } = setupRoute();
       Group.findAll.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups_get']({}, reply);
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -112,12 +120,11 @@ describe('Groups Routes', () => {
     it('handles error when fetching enabled groups', async () => {
       const { handlers } = setupRoute();
       Group.findEnabled.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/enabled_get']({}, reply);
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -164,12 +171,11 @@ describe('Groups Routes', () => {
     it('handles error when fetching group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/:id_get']({ params: { id: '10000000-0000-4000-8000-000000000001' } }, reply);
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -315,7 +321,7 @@ describe('Groups Routes', () => {
       const { handlers } = setupRoute();
       Group.findByName.mockResolvedValue(null);
       Group.create.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups_post'](
         {
@@ -324,9 +330,8 @@ describe('Groups Routes', () => {
         },
         reply
       );
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -548,7 +553,7 @@ describe('Groups Routes', () => {
         enabled: true,
       });
       Group.update.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         {
@@ -558,9 +563,8 @@ describe('Groups Routes', () => {
         },
         reply
       );
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -621,7 +625,7 @@ describe('Groups Routes', () => {
     it('handles error when deleting group', async () => {
       const { handlers } = setupRoute();
       Group.delete.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/:id_delete'](
         {
@@ -630,9 +634,8 @@ describe('Groups Routes', () => {
         },
         reply
       );
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -853,7 +856,7 @@ describe('Groups Routes', () => {
     it('handles error when joining group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/:id/join_post'](
         {
@@ -862,9 +865,8 @@ describe('Groups Routes', () => {
         },
         reply
       );
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
 
     it('rejects normal user when join lock is enabled', async () => {
@@ -1090,7 +1092,7 @@ describe('Groups Routes', () => {
     it('handles error when leaving group', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockRejectedValue(new Error('Database error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/:id/leave_post'](
         {
@@ -1099,9 +1101,8 @@ describe('Groups Routes', () => {
         },
         reply
       );
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
 
     it('rejects normal user when join lock is enabled', async () => {
@@ -1263,7 +1264,6 @@ describe('Groups Routes', () => {
       const fullErr = new Error('Group is full');
       fullErr.statusCode = 409;
       Group.assignUserToGroup.mockRejectedValue(fullErr);
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
         {
@@ -1274,13 +1274,11 @@ describe('Groups Routes', () => {
       );
       const result = reply.send.mock.calls[0][0];
       expect(result.errors[0].error).toBe('Group is full');
-      consoleSpy.mockRestore();
     });
 
     it('records per-row DB error in errors array', async () => {
       const { handlers } = setupRoute();
       User.findByEmail.mockRejectedValue(new Error('DB down'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
         {
@@ -1291,7 +1289,6 @@ describe('Groups Routes', () => {
       );
       const result = reply.send.mock.calls[0][0];
       expect(result.errors[0].error).toBe('Failed to process row');
-      consoleSpy.mockRestore();
     });
 
     it('skips row when target user is an admin', async () => {
@@ -1390,11 +1387,9 @@ describe('Groups Routes', () => {
     it('handles DB error (500)', async () => {
       const { handlers } = setupRoute();
       Group.getExportMappings.mockRejectedValue(new Error('DB error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
       await handlers['/groups/export-mappings_get']({ user: { id: 'u1', role: 'admin' } }, reply);
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -1601,7 +1596,6 @@ describe('Groups Routes', () => {
       const err = new Error('duplicate key value violates unique constraint');
       err.code = '23505';
       Group.bulkCreate.mockRejectedValue(err);
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
       await handlers['/groups/bulk_post'](
         {
@@ -1612,7 +1606,6 @@ describe('Groups Routes', () => {
       );
       expect(reply.code).toHaveBeenCalledWith(409);
       expect(reply.send).toHaveBeenCalledWith({ error: 'One or more group names already exist' });
-      consoleSpy.mockRestore();
     });
 
     it('rejects duplicate names within the batch itself (400)', async () => {
@@ -1634,7 +1627,7 @@ describe('Groups Routes', () => {
     it('returns 500 on unexpected database error and rolls back', async () => {
       const { handlers } = setupRoute();
       Group.bulkCreate.mockRejectedValue(new Error('Connection lost'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/bulk_post'](
         {
@@ -1643,10 +1636,9 @@ describe('Groups Routes', () => {
         },
         reply
       );
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
       expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to create groups' });
-      consoleSpy.mockRestore();
     });
   });
 
@@ -1748,7 +1740,7 @@ describe('Groups Routes', () => {
     it('returns 500 on DB error', async () => {
       const { handlers } = setupRoute();
       Group.bulkDelete.mockRejectedValue(new Error('DB exploded'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/bulk_delete'](
         {
@@ -1757,10 +1749,9 @@ describe('Groups Routes', () => {
         },
         reply
       );
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
       expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to delete groups' });
-      consoleSpy.mockRestore();
     });
   });
 });

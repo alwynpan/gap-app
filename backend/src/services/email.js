@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const config = require('../config/index');
+const { logger, maskEmail } = require('../utils/logger');
 
 let _transporter = null;
 
@@ -32,16 +33,17 @@ function getTransporter() {
 async function sendEmail(to, subject, html) {
   const transporter = getTransporter();
   if (!transporter) {
-    // SMTP not configured — log to console so dev flows (password setup/reset) remain usable
+    // SMTP not configured — log so dev flows (password setup/reset) remain usable
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`[EMAIL DEV] To: ${to} | Subject: ${subject}`); // eslint-disable-line no-console
-      console.log('[EMAIL DEV] Body:', html); // eslint-disable-line no-console
+      logger.info(`[EMAIL DEV] To: ${maskEmail(to)}`);
+      logger.info('[EMAIL DEV] Body omitted — set SMTP_HOST to send real emails');
     } else {
-      console.warn('[EMAIL] SMTP not configured; email not sent.'); // eslint-disable-line no-console
+      logger.warn('[EMAIL] SMTP not configured; email not sent.');
     }
     return;
   }
   await transporter.sendMail({ from: config.smtp.from, to, subject, html });
+  logger.info(`Email sent to: ${maskEmail(to)}`);
 }
 
 function emailLayout(content) {

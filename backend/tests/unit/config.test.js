@@ -2,6 +2,15 @@
 
 jest.mock('../../src/models/Config');
 
+jest.mock('../../src/utils/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), trace: jest.fn(), fatal: jest.fn() },
+  maskEmail: (e) => e,
+  maskName: (n) => n,
+  maskToken: (t) => t,
+  maskStudentId: (s) => s,
+  redactMeta: (m) => m,
+}));
+
 const Config = require('../../src/models/Config');
 
 describe('Config Routes', () => {
@@ -80,11 +89,9 @@ describe('Config Routes', () => {
     it('returns 500 on database error', async () => {
       const { handlers } = setupRoute();
       Config.get.mockRejectedValue(new Error('DB error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
       await handlers['/config/group-join-locked_get']({ user: { id: 'u1', role: 'user' } }, reply);
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -118,11 +125,9 @@ describe('Config Routes', () => {
     it('returns 500 on database error', async () => {
       const { handlers } = setupRoute();
       Config.getAll.mockRejectedValue(new Error('DB error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const reply = mockReply();
       await handlers['/config_get']({}, reply);
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 
@@ -195,7 +200,7 @@ describe('Config Routes', () => {
     it('returns 500 on database error', async () => {
       const { handlers } = setupRoute();
       Config.set.mockRejectedValue(new Error('DB error'));
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/config/:key_put'](
         {
@@ -205,9 +210,8 @@ describe('Config Routes', () => {
         },
         reply
       );
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-      consoleSpy.mockRestore();
     });
   });
 });

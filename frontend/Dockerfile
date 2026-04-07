@@ -10,6 +10,10 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# GIT_HASH injected by CI/CD via --build-arg; defaults to 'unknown'
+ARG GIT_HASH=unknown
+ENV GIT_HASH=${GIT_HASH}
+
 # Build application
 RUN npm run build
 
