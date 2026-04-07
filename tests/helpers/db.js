@@ -21,7 +21,9 @@ function getPool() {
     }
     const { dbConfig } = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     pool = new Pool(dbConfig);
-    pool.on('error', () => {});
+    pool.on('error', (err) => {
+      console.error('[e2e] Unexpected pg pool error:', err.message);
+    });
   }
   return pool;
 }
@@ -101,11 +103,14 @@ async function createPasswordResetToken(userEmail, options = {}) {
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const expiresAt = options.expiresAt || new Date(Date.now() + 3600 * 1000);
   const tokenType = options.tokenType || 'reset';
-  await db.query(
+  const result = await db.query(
     `INSERT INTO password_reset_tokens (user_id, token, token_type, expires_at)
      SELECT id, $1, $2, $3 FROM users WHERE LOWER(email) = LOWER($4)`,
     [tokenHash, tokenType, expiresAt, userEmail]
   );
+  if (result.rowCount !== 1) {
+    throw new Error(`createPasswordResetToken: no user found for email ${userEmail}`);
+  }
   return rawToken;
 }
 

@@ -30,7 +30,7 @@ npx playwright test auth.spec.js     # single file
 npx playwright test --debug          # debug mode with Playwright Inspector
 
 # Allure (separate steps)
-npx allure generate allure-results --clean -o allure-report
+npx allure generate -o allure-report
 npx allure open allure-report
 ```
 
@@ -447,7 +447,7 @@ attachments.
 ```bash
 # After running tests (allure-results/ is written automatically)
 cd tests
-npx allure generate allure-results --clean -o allure-report
+npx allure generate -o allure-report
 npx allure open allure-report
 ```
 
@@ -458,8 +458,8 @@ The report shows:
 - **Behaviours** — same tree, grouped by feature
 - **Graphs** — pass/fail breakdown by suite
 
-In CI the `allure-report/` directory is uploaded as a GitHub Actions artifact (`allure-report`) and retained for 14
-days.
+In CI the `allure-framework/allure-action` publishes the report as a PR comment with a live summary table and creates a
+GitHub Check — no artifact download needed.
 
 ## Artifacts
 
@@ -476,6 +476,12 @@ npx playwright show-trace tests/artifacts/<test-name>/trace.zip
 ```
 
 These directories are git-ignored (`tests/artifacts/`, `tests/playwright-report/`, `tests/test-results/`).
+
+## Out-of-Scope Flows
+
+**Registration** (`/register`) is intentionally not covered. The registration feature is disabled in most deployments
+(controlled by a `registrationEnabled` config flag) and is off by default in the test environment. Tests for it would
+require enabling the flag per-test and would not reflect the standard deployment posture.
 
 ## CI
 

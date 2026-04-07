@@ -59,7 +59,7 @@ async function waitForVitePreview(proc, timeoutMs = 30000) {
 
     const onOutput = (data) => {
       const text = data.toString();
-      if (text.includes('Local:') || text.includes('ready') || text.includes('localhost')) {
+      if (text.includes('Local:') || text.includes('Network:')) {
         clearTimeout(timer);
         resolve();
       }
@@ -131,14 +131,20 @@ module.exports = async function globalSetup() {
 
   // 4. Build frontend with VITE_API_URL pointing to backend
   console.log('[e2e] Building frontend...');
-  execSync('npm run build', {
-    cwd: FRONTEND_DIR,
-    env: {
-      ...process.env,
-      VITE_API_URL: `http://localhost:${BACKEND_PORT}/api`,
-    },
-    stdio: 'pipe',
-  });
+  try {
+    execSync('npm run build', {
+      cwd: FRONTEND_DIR,
+      env: {
+        ...process.env,
+        VITE_API_URL: `http://localhost:${BACKEND_PORT}/api`,
+      },
+      stdio: 'pipe',
+    });
+  } catch (err) {
+    if (err.stdout) process.stdout.write(err.stdout);
+    if (err.stderr) process.stderr.write(err.stderr);
+    throw err;
+  }
   console.log('[e2e] Frontend build complete.');
 
   // 5. Start vite preview
