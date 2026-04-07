@@ -25,7 +25,7 @@ backend/
     │   └── setupEnv.js                     # Set process.env from container config (runs before modules load)
     ├── helpers/
     │   ├── server.js                       # buildTestServer() / closeTestServer() helpers
-    │   └── db.js                           # cleanDatabase(), createUser(), createGroup(), loginAs()
+    │   └── db.js                           # cleanDatabase(), createUser(), createGroup(), loginAs(), getPool()
     ├── auth.test.js
     ├── users.test.js
     ├── groups.test.js
@@ -47,87 +47,92 @@ backend/
 
 ## Test Coverage
 
-### `auth.test.js` — 26 tests
+### `auth.test.js` — 22 tests
 
-| Endpoint                         | Scenario                                                |
-| -------------------------------- | ------------------------------------------------------- |
-| `POST /api/auth/login`           | ✅ Valid admin credentials → 200 + token                |
-|                                  | ✅ Wrong password → 401                                 |
-|                                  | ✅ Unknown username → 401                               |
-|                                  | ✅ Missing username field → 400                         |
-|                                  | ✅ Disabled user → 401                                  |
-|                                  | ✅ Pending user (no password set) → 401                 |
-| `POST /api/auth/register`        | ✅ Creates pending user when registration enabled → 201 |
-|                                  | ✅ Duplicate username → 409                             |
-|                                  | ✅ Duplicate email → 409                                |
-|                                  | ✅ Attempt to register as admin → 403                   |
-|                                  | ✅ Missing required fields → 400                        |
-| `POST /api/auth/logout`          | ✅ Always 200 (stateless JWT)                           |
-| `GET /api/auth/me`               | ✅ Valid token → 200, user in response                  |
-|                                  | ✅ No token → 401                                       |
-|                                  | ✅ Invalid token → 401                                  |
-|                                  | ✅ `password_hash` not exposed                          |
-| `GET /api/auth/config`           | ✅ Returns `registrationEnabled` flag                   |
-| `POST /api/auth/forgot-password` | ✅ Unknown email → 200 (no enumeration)                 |
-|                                  | ✅ Known email → 200 (creates token)                    |
-|                                  | ✅ Invalid email format → 400                           |
-| `POST /api/auth/set-password`    | ✅ Invalid token → 400                                  |
-|                                  | ✅ Missing fields → 400                                 |
+| Endpoint                         | Scenario                                                                     |
+| -------------------------------- | ---------------------------------------------------------------------------- |
+| `POST /api/auth/login`           | ✅ Valid admin credentials → 200 + token                                     |
+|                                  | ✅ Wrong password → 401                                                      |
+|                                  | ✅ Unknown username → 401                                                    |
+|                                  | ✅ Missing username field → 400                                              |
+|                                  | ✅ Disabled user → 401                                                       |
+|                                  | ✅ Pending user (no password set) → 401                                      |
+| `POST /api/auth/register`        | ✅ Creates pending user when registration enabled → 201                      |
+|                                  | ✅ Duplicate username → 409                                                  |
+|                                  | ✅ Duplicate email → 409                                                     |
+|                                  | ✅ Attempt to register as admin → 403                                        |
+|                                  | ✅ Missing required fields → 400                                             |
+| `POST /api/auth/logout`          | ✅ Always 200 (stateless JWT)                                                |
+| `GET /api/auth/me`               | ✅ Valid token → 200, user in response                                       |
+|                                  | ✅ No token → 401                                                            |
+|                                  | ✅ Invalid token → 401                                                       |
+|                                  | ✅ `password_hash` not exposed                                               |
+| `GET /api/auth/config`           | ✅ Returns `registrationEnabled` flag                                        |
+| `POST /api/auth/forgot-password` | ✅ Unknown email → 200 (no enumeration)                                      |
+|                                  | ✅ Known email → 200 (creates token)                                         |
+|                                  | ✅ Invalid email format → 400                                                |
+| `POST /api/auth/set-password`    | ✅ Invalid token → 400                                                       |
+|                                  | ✅ Missing fields → 400                                                      |
+|                                  | ✅ End-to-end: register → create setup token → set-password → login succeeds |
 
 ---
 
-### `users.test.js` — 47 tests
+### `users.test.js` — 53 tests
 
-| Endpoint                      | Scenario                                         |
-| ----------------------------- | ------------------------------------------------ |
-| `GET /api/users`              | ✅ Admin can list users                          |
-|                               | ✅ Assignment manager can list users             |
-|                               | ✅ Regular user → 403                            |
-|                               | ✅ No token → 401                                |
-|                               | ✅ Filter by `role=admin`                        |
-|                               | ✅ Invalid role filter → 400                     |
-|                               | ✅ Filter by `status=active`                     |
-|                               | ✅ Invalid status filter → 400                   |
-| `GET /api/users/:id`          | ✅ Admin gets any user                           |
-|                               | ✅ User gets own profile                         |
-|                               | ✅ User cannot get another user → 403            |
-|                               | ✅ Non-existent user → 404                       |
-|                               | ✅ Invalid UUID → 400                            |
-|                               | ✅ `password_hash` not exposed                   |
-| `POST /api/users`             | ✅ Admin creates user (pending status)           |
-|                               | ✅ Admin creates assignment_manager              |
-|                               | ✅ Assignment manager cannot create admin → 403  |
-|                               | ✅ Regular user cannot create users → 403        |
-|                               | ✅ Duplicate username → 409                      |
-|                               | ✅ Duplicate email → 409                         |
-|                               | ✅ Non-existent group → 404                      |
-|                               | ✅ Group at capacity → 400                       |
-| `PUT /api/users/:id`          | ✅ Admin updates email                           |
-|                               | ✅ Admin disables user                           |
-|                               | ✅ Cannot disable built-in admin → 400           |
-|                               | ✅ Assignment manager cannot edit admin → 403    |
-|                               | ✅ Username change prevented → 400               |
-| `PUT /api/users/:id/group`    | ✅ Admin assigns user to group                   |
-|                               | ✅ Admin removes user from group (null)          |
-|                               | ✅ Missing groupId in body → 400                 |
-|                               | ✅ Regular user → 403                            |
-| `PUT /api/users/:id/password` | ✅ User changes own password                     |
-|                               | ✅ Wrong current password → 401                  |
-|                               | ✅ Cannot change another user's password → 403   |
-| `DELETE /api/users/:id`       | ✅ Admin deletes user                            |
-|                               | ✅ Non-existent user → 404                       |
-|                               | ✅ Cannot delete own account → 400               |
-|                               | ✅ Regular user → 403                            |
-| `DELETE /api/users/bulk`      | ✅ Admin bulk deletes                            |
-|                               | ✅ Empty ids → 400                               |
-|                               | ✅ Invalid UUIDs → 400                           |
-|                               | ✅ Own ID in list → 400                          |
-| `POST /api/users/import`      | ✅ Admin imports new users                       |
-|                               | ✅ Skip existing (conflictAction=skip)           |
-|                               | ✅ Overwrite existing (conflictAction=overwrite) |
-|                               | ✅ Cannot overwrite admin account                |
-|                               | ✅ Empty users array → 400                       |
-|                               | ✅ Regular user → 403                            |
+| Endpoint                      | Scenario                                                             |
+| ----------------------------- | -------------------------------------------------------------------- |
+| `GET /api/users`              | ✅ Admin can list users                                              |
+|                               | ✅ Assignment manager can list users                                 |
+|                               | ✅ Regular user → 403                                                |
+|                               | ✅ No token → 401                                                    |
+|                               | ✅ Filter by `role=admin`                                            |
+|                               | ✅ Invalid role filter → 400                                         |
+|                               | ✅ Filter by `status=active`                                         |
+|                               | ✅ Invalid status filter → 400                                       |
+|                               | ✅ Combined filters (`role=user&status=active`)                      |
+| `GET /api/users/:id`          | ✅ Admin gets any user                                               |
+|                               | ✅ User gets own profile                                             |
+|                               | ✅ User cannot get another user → 403                                |
+|                               | ✅ Non-existent user → 404                                           |
+|                               | ✅ Invalid UUID → 400                                                |
+|                               | ✅ `password_hash` not exposed                                       |
+| `POST /api/users`             | ✅ Admin creates user (pending status)                               |
+|                               | ✅ Admin creates assignment_manager                                  |
+|                               | ✅ Assignment manager cannot create admin → 403                      |
+|                               | ✅ Regular user cannot create users → 403                            |
+|                               | ✅ Duplicate username → 409                                          |
+|                               | ✅ Duplicate email → 409                                             |
+|                               | ✅ Non-existent group → 404                                          |
+|                               | ✅ Group at capacity → 400                                           |
+| `PUT /api/users/:id`          | ✅ Admin updates email                                               |
+|                               | ✅ Admin disables user                                               |
+|                               | ✅ Cannot disable built-in admin → 400                               |
+|                               | ✅ Assignment manager cannot edit admin → 403                        |
+|                               | ✅ Username change prevented → 400                                   |
+| `PUT /api/users/:id/group`    | ✅ Admin assigns user to group                                       |
+|                               | ✅ Admin removes user from group (null)                              |
+|                               | ✅ Missing groupId in body → 400                                     |
+|                               | ✅ Regular user → 403                                                |
+| `PUT /api/users/:id/password` | ✅ User changes own password                                         |
+|                               | ✅ Wrong current password → 401                                      |
+|                               | ✅ New password too short → 400                                      |
+|                               | ✅ Cannot change another user's password → 403                       |
+| `DELETE /api/users/:id`       | ✅ Admin deletes user                                                |
+|                               | ✅ Non-existent user → 404                                           |
+|                               | ✅ Cannot delete own account → 400                                   |
+|                               | ✅ Regular user → 403                                                |
+| `DELETE /api/users/bulk`      | ✅ Admin bulk deletes                                                |
+|                               | ✅ Empty ids → 400                                                   |
+|                               | ✅ Invalid UUIDs → 400                                               |
+|                               | ✅ Own ID in list → 400                                              |
+| `POST /api/users/import`      | ✅ Admin imports new users                                           |
+|                               | ✅ Skip existing (conflictAction=skip)                               |
+|                               | ✅ Overwrite existing (conflictAction=overwrite)                     |
+|                               | ✅ Cannot overwrite admin account                                    |
+|                               | ✅ Assignment manager can import users                               |
+|                               | ✅ AM importing with overwrite skips admin/AM accounts → error entry |
+|                               | ✅ Empty users array → 400                                           |
+|                               | ✅ Regular user → 403                                                |
 
 ---
 
@@ -179,11 +184,12 @@ backend/
 |                                    | ✅ Regular user → 403                       |
 | `GET /api/groups/export-mappings`  | ✅ Admin exports mappings                   |
 |                                    | ✅ Assignment manager can export            |
+|                                    | ✅ Empty mappings → `{ mappings: [] }`      |
 |                                    | ✅ Regular user → 403                       |
 
 ---
 
-### `config.test.js` — 12 tests
+### `config.test.js` — 18 tests
 
 | Endpoint                            | Scenario                                               |
 | ----------------------------------- | ------------------------------------------------------ |
@@ -203,7 +209,8 @@ backend/
 |                                     | ✅ Regular user → 403                                  |
 |                                     | ✅ No token → 401                                      |
 | `group_join_locked` enforcement     | ✅ Regular user blocked from joining when locked → 403 |
-|                                     | ✅ Admin bypasses lock when joining                    |
+|                                     | ✅ Assignment manager bypasses lock when joining → 200 |
+|                                     | ✅ Admin bypasses lock when joining → 200              |
 
 ---
 
@@ -215,5 +222,5 @@ backend/
 2. Update the test count in the section heading.
 3. Update the total in the [Running](#running) section if the overall count changes.
 
-The per-section test counts (26 / 47 / 46 / 12 = **131 total**) must always match
+The per-section test counts (22 / 53 / 46 / 18 = **139 total**) must always match
 `jest --config jest.integration.config.js` output.

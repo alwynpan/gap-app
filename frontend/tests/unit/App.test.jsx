@@ -40,6 +40,7 @@ jest.mock('../../src/context/AuthContext.jsx', () => ({
 
 describe('App', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     useAuth.mockReturnValue({
       isAuthenticated: false,
       loading: false,

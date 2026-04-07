@@ -606,6 +606,17 @@ describe('GET /api/groups/export-mappings', () => {
     expect(res.statusCode).toBe(200);
   });
 
+  it('returns empty array when no mappings exist', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/groups/export-mappings',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.mappings).toEqual([]);
+  });
+
   it('regular user cannot export mappings', async () => {
     const res = await app.inject({
       method: 'GET',

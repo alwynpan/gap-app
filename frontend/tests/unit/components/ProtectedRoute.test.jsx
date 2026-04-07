@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ProtectedRoute from '../../../src/components/ProtectedRoute.jsx';
 import { useAuth } from '../../../src/context/AuthContext.jsx';
 
@@ -10,9 +10,18 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
 function renderRoute(props = {}) {
   return render(
     <MemoryRouter initialEntries={['/secure']}>
-      <ProtectedRoute {...props}>
-        <div>Secret Content</div>
-      </ProtectedRoute>
+      <Routes>
+        <Route
+          path="/secure"
+          element={
+            <ProtectedRoute {...props}>
+              <div>Secret Content</div>
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/login" element={<div>Login Page</div>} />
+        <Route path="/dashboard" element={<div>Dashboard Page</div>} />
+      </Routes>
     </MemoryRouter>
   );
 }
@@ -30,7 +39,7 @@ describe('ProtectedRoute', () => {
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
-  it('redirects unauthenticated users to login', () => {
+  it('redirects unauthenticated users to /login', () => {
     useAuth.mockReturnValue({
       loading: false,
       isAuthenticated: false,
@@ -40,9 +49,10 @@ describe('ProtectedRoute', () => {
 
     renderRoute();
     expect(screen.queryByText('Secret Content')).not.toBeInTheDocument();
+    expect(screen.getByText('Login Page')).toBeInTheDocument();
   });
 
-  it('redirects non-admin users when admin is required', () => {
+  it('redirects non-admin users to /dashboard when admin is required', () => {
     useAuth.mockReturnValue({
       loading: false,
       isAuthenticated: true,
@@ -52,9 +62,10 @@ describe('ProtectedRoute', () => {
 
     renderRoute({ requireAdmin: true });
     expect(screen.queryByText('Secret Content')).not.toBeInTheDocument();
+    expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
   });
 
-  it('redirects users without team-manager access when required', () => {
+  it('redirects users without team-manager access to /dashboard when required', () => {
     useAuth.mockReturnValue({
       loading: false,
       isAuthenticated: true,
@@ -64,6 +75,7 @@ describe('ProtectedRoute', () => {
 
     renderRoute({ requireAssignmentManager: true });
     expect(screen.queryByText('Secret Content')).not.toBeInTheDocument();
+    expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
   });
 
   it('renders children when requirements are met', () => {
