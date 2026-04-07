@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-/* eslint-disable no-undef */
+/* global process */
 function resolveGitHash() {
   if (process.env.GIT_HASH) {
     return process.env.GIT_HASH;
@@ -18,7 +18,6 @@ function resolveGitHash() {
     return 'unknown';
   }
 }
-/* eslint-enable no-undef */
 
 const gitHash = resolveGitHash();
 
