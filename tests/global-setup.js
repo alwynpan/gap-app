@@ -51,33 +51,42 @@ async function seedAdminUser(client) {
   );
 }
 
-async function waitForVitePreview(proc, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error('Timed out waiting for vite preview to start'));
-    }, timeoutMs);
+async function waitForVitePreview(proc, port, timeoutMs = 30000) {
+  const http = require('http');
+  const deadline = Date.now() + timeoutMs;
 
-    const onOutput = (data) => {
-      const text = data.toString();
-      if (text.includes('Local:') || text.includes('Network:')) {
-        clearTimeout(timer);
-        resolve();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (fn, val) => {
+      if (!settled) {
+        settled = true;
+        fn(val);
       }
     };
-    proc.stdout.on('data', onOutput);
-    proc.stderr.on('data', onOutput);
 
-    proc.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-
+    proc.on('error', (err) => settle(reject, err));
     proc.on('exit', (code) => {
-      if (code !== 0) {
-        clearTimeout(timer);
-        reject(new Error(`vite preview exited with code ${code}`));
+      if (code !== 0 && code !== null) {
+        settle(reject, new Error(`vite preview exited with code ${code}`));
       }
     });
+
+    const poll = () => {
+      if (Date.now() >= deadline) {
+        settle(reject, new Error('Timed out waiting for vite preview to start'));
+        return;
+      }
+      const req = http.get(`http://localhost:${port}`, () => {
+        req.destroy();
+        settle(resolve, undefined);
+      });
+      req.on('error', () => setTimeout(poll, 500));
+      req.setTimeout(1000, () => {
+        req.destroy();
+        setTimeout(poll, 500);
+      });
+    };
+    setTimeout(poll, 500);
   });
 }
 
@@ -157,7 +166,7 @@ module.exports = async function globalSetup() {
     }
   );
 
-  await waitForVitePreview(previewProc);
+  await waitForVitePreview(previewProc, FRONTEND_PORT);
   console.log(`[e2e] Vite preview running on http://localhost:${FRONTEND_PORT}`);
 
   // 6. Write state file for helpers
