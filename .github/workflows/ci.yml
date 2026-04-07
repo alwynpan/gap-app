@@ -217,7 +217,7 @@ jobs:
       - name: Generate Allure report
         working-directory: ./tests
         if: always()
-        run: npx allure generate allure-results --clean -o allure-report
+        run: npx allure generate -o allure-report
 
       - name: Publish Allure report
         uses: allure-framework/allure-action@v0

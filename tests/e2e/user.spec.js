@@ -35,8 +35,8 @@ test.describe('Regular User', () => {
     await expect(page.getByText('JoinableGroup')).toBeVisible();
     await page.getByRole('button', { name: /^join$/i }).first().click();
 
-    // After joining, the group name is shown in the profile
-    await expect(page.getByText('JoinableGroup')).toBeVisible();
+    // After joining, the group name is shown in the profile (definition list)
+    await expect(page.getByRole('definition').filter({ hasText: 'JoinableGroup' })).toBeVisible();
   });
 
   test('cannot access /users — redirected to dashboard', async ({ page }) => {

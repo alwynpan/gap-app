@@ -47,7 +47,7 @@ test.describe('Admin', () => {
       // Confirm deletion in modal — button text is "Delete 1 user"
       await page.getByRole('button', { name: /^Delete \d+ user/i }).click();
 
-      await expect(page.getByText('deleteme')).not.toBeVisible();
+      await expect(page.getByText('deleteme', { exact: true })).not.toBeVisible();
     });
   });
 
