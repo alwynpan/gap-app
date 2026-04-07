@@ -5,11 +5,9 @@ const { loginAs } = require('../helpers/auth');
 const { cleanDatabase, createUser, createGroup, assignUserToGroup } = require('../helpers/db');
 
 test.describe('Regular User', () => {
-  let user;
-
   test.beforeEach(async ({ page }) => {
     await cleanDatabase();
-    user = await createUser({ username: 'normaluser', email: 'normal@test.com', role: 'user' });
+    await createUser({ username: 'normaluser', email: 'normal@test.com', role: 'user' });
     await loginAs(page, 'normaluser');
   });
 

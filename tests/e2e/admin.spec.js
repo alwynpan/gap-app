@@ -1,13 +1,13 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { loginAs } = require('../helpers/auth');
+const { loginAsAdmin } = require('../helpers/auth');
 const { cleanDatabase, createUser, createGroup } = require('../helpers/db');
 
 test.describe('Admin', () => {
   test.beforeEach(async ({ page }) => {
     await cleanDatabase();
-    await loginAs(page, 'admin', 'AdminPass123!');
+    await loginAsAdmin(page);
   });
 
   test.describe('User management', () => {

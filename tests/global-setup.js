@@ -72,6 +72,10 @@ async function waitForVitePreview(proc, port, timeoutMs = 30000) {
     });
 
     const poll = () => {
+      if (proc.exitCode !== null || proc.killed) {
+        settle(reject, new Error('vite preview process exited before becoming ready'));
+        return;
+      }
       if (Date.now() >= deadline) {
         settle(reject, new Error('Timed out waiting for vite preview to start'));
         return;
