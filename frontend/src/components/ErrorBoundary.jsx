@@ -13,9 +13,10 @@ class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.error('Unhandled error caught by ErrorBoundary', {
-      message: error.message,
-      componentStack: info.componentStack,
+      message,
+      componentStack: info?.componentStack,
     });
   }
 
