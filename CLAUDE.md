@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-G.A.P. (Group Assignment Portal) - A role-based access control system for managing student groups and assignments. pnpm
-workspace monorepo with three packages: backend, frontend, and e2e tests.
+G.A.P. (Group Assignment Portal) is a role-based access control system for managing student groups and assignments. This
+is a pnpm workspace monorepo with three packages: backend, frontend, and e2e tests.
 
 ## Common Commands
 

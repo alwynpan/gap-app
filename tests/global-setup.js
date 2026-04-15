@@ -160,14 +160,13 @@ module.exports = async function globalSetup() {
   }
   console.log('[e2e] Frontend build complete.');
 
-  // 5. Start vite preview (use shell: true so the .bin/vite shell wrapper is executed properly)
+  // 5. Start vite preview via pnpm exec so it resolves the correct vite binary cross-platform
   const previewProc = spawn(
-    path.join('node_modules', '.bin', 'vite'),
-    ['preview', '--port', String(FRONTEND_PORT), '--strictPort'],
+    'pnpm',
+    ['exec', 'vite', 'preview', '--port', String(FRONTEND_PORT), '--strictPort'],
     {
       cwd: FRONTEND_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
     }
   );
 
