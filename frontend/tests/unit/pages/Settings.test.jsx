@@ -1,11 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import Settings from '../../../src/pages/Settings.jsx';
 import { useAuth } from '../../../src/context/AuthContext.jsx';
 
-jest.mock('axios');
+jest.mock('@/utils/api');
 jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(),
 }));
@@ -27,7 +27,7 @@ describe('Settings page', () => {
   });
 
   it('renders the Settings heading', async () => {
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { config: [{ key: 'group_join_locked', value: 'false' }] },
     });
 
@@ -41,7 +41,7 @@ describe('Settings page', () => {
   });
 
   it('shows the group join lock toggle', async () => {
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { config: [{ key: 'group_join_locked', value: 'false' }] },
     });
 
@@ -57,7 +57,7 @@ describe('Settings page', () => {
   });
 
   it('loads and reflects current locked=false state', async () => {
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { config: [{ key: 'group_join_locked', value: 'false' }] },
     });
 
@@ -74,7 +74,7 @@ describe('Settings page', () => {
   });
 
   it('loads and reflects current locked=true state', async () => {
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { config: [{ key: 'group_join_locked', value: 'true' }] },
     });
 
@@ -91,10 +91,10 @@ describe('Settings page', () => {
   });
 
   it('enables the lock when toggle is clicked', async () => {
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { config: [{ key: 'group_join_locked', value: 'false' }] },
     });
-    axios.put.mockResolvedValue({});
+    api.put.mockResolvedValue({});
 
     render(
       <MemoryRouter>
@@ -107,15 +107,15 @@ describe('Settings page', () => {
     await userEvent.click(screen.getByRole('button', { name: /enable group join lock/i }));
 
     await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/config\/group_join_locked$/), { value: 'true' });
+      expect(api.put).toHaveBeenCalledWith(expect.stringMatching(/\/config\/group_join_locked$/), { value: 'true' });
     });
   });
 
   it('disables the lock when toggle is clicked while enabled', async () => {
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { config: [{ key: 'group_join_locked', value: 'true' }] },
     });
-    axios.put.mockResolvedValue({});
+    api.put.mockResolvedValue({});
 
     render(
       <MemoryRouter>
@@ -128,7 +128,7 @@ describe('Settings page', () => {
     await userEvent.click(screen.getByRole('button', { name: /disable group join lock/i }));
 
     await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(expect.stringMatching(/\/config\/group_join_locked$/), { value: 'false' });
+      expect(api.put).toHaveBeenCalledWith(expect.stringMatching(/\/config\/group_join_locked$/), { value: 'false' });
     });
   });
 
@@ -136,10 +136,10 @@ describe('Settings page', () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { config: [{ key: 'group_join_locked', value: 'false' }] },
     });
-    axios.put.mockResolvedValue({});
+    api.put.mockResolvedValue({});
 
     render(
       <MemoryRouter>
@@ -157,10 +157,10 @@ describe('Settings page', () => {
   });
 
   it('shows error message when update fails', async () => {
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { config: [{ key: 'group_join_locked', value: 'false' }] },
     });
-    axios.put.mockRejectedValue(new Error('Network error'));
+    api.put.mockRejectedValue(new Error('Network error'));
 
     render(
       <MemoryRouter>
@@ -178,7 +178,7 @@ describe('Settings page', () => {
   });
 
   it('shows error message when initial load fails', async () => {
-    axios.get.mockRejectedValue(new Error('Network error'));
+    api.get.mockRejectedValue(new Error('Network error'));
 
     render(
       <MemoryRouter>

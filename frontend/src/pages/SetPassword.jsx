@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import { setPasswordSchema, parseBody } from '../utils/schemas.js';
 import { API_BASE } from '../config.js';
 
@@ -35,7 +35,7 @@ function SetPassword() {
 
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE}/auth/set-password`, { token, password });
+      const response = await api.post(`${API_BASE}/auth/set-password`, { token, password });
       setSuccess(response.data.message || 'Password set successfully. You can now log in.');
       setTimeout(() => navigate('/login'), 2500);
     } catch (err) {

@@ -1,10 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import axios from 'axios';
+import api from '@/utils/api';
 import UserMenu from '../../../src/components/UserMenu.jsx';
 import { useAuth } from '../../../src/context/AuthContext.jsx';
 
-jest.mock('axios');
+jest.mock('@/utils/api');
 jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(),
 }));
@@ -143,7 +143,7 @@ describe('UserMenu', () => {
       jest.useFakeTimers();
       setup({ user: { ...baseUser } });
       const ue = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      axios.put.mockResolvedValue({ data: { user: { ...baseUser, email: 'new@example.com' } } });
+      api.put.mockResolvedValue({ data: { user: { ...baseUser, email: 'new@example.com' } } });
       renderMenu();
       await ue.click(screen.getByRole('button', { name: /testuser/i }));
       await ue.click(screen.getByRole('button', { name: /edit profile/i }));
@@ -155,7 +155,7 @@ describe('UserMenu', () => {
       await ue.click(screen.getByRole('button', { name: /^save$/i }));
 
       await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(
+        expect(api.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/),
           expect.objectContaining({ email: 'new@example.com' })
         );
@@ -187,7 +187,7 @@ describe('UserMenu', () => {
 
     it('shows API error message on failed save', async () => {
       const user = setup();
-      axios.put.mockRejectedValue({ response: { data: { error: 'Email already in use' } } });
+      api.put.mockRejectedValue({ response: { data: { error: 'Email already in use' } } });
       renderMenu();
       await user.click(screen.getByRole('button', { name: /testuser/i }));
       await user.click(screen.getByRole('button', { name: /edit profile/i }));
@@ -246,7 +246,7 @@ describe('UserMenu', () => {
       jest.useFakeTimers();
       setup();
       const ue = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      axios.put.mockResolvedValue({});
+      api.put.mockResolvedValue({});
       renderMenu();
       await ue.click(screen.getByRole('button', { name: /testuser/i }));
       await ue.click(screen.getByRole('button', { name: /change password/i }));
@@ -256,7 +256,7 @@ describe('UserMenu', () => {
       await ue.click(screen.getByRole('button', { name: /^change password$/i }));
 
       await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(
+        expect(api.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/password$/),
           { currentPassword: 'oldpass', newPassword: 'newpass123' }
         );
@@ -272,7 +272,7 @@ describe('UserMenu', () => {
 
     it('shows API error on failed password change', async () => {
       const user = setup();
-      axios.put.mockRejectedValue({ response: { data: { error: 'Current password is incorrect' } } });
+      api.put.mockRejectedValue({ response: { data: { error: 'Current password is incorrect' } } });
       renderMenu();
       await user.click(screen.getByRole('button', { name: /testuser/i }));
       await user.click(screen.getByRole('button', { name: /change password/i }));

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, UserCircle } from 'lucide-react';
-import axios from 'axios';
+import api from '@/utils/api';
 import { useAuth } from '../context/AuthContext.jsx';
 import { formatRoleName } from '../utils/formatting.js';
 import { parseBody, updateUserSchema, newPasswordSchema } from '../utils/schemas.js';
@@ -90,7 +90,7 @@ function UserMenu() {
 
     setProfileSaving(true);
     try {
-      await axios.put(`${API_BASE}/users/${user.id}`, body);
+      await api.put(`${API_BASE}/users/${user.id}`, body);
       await refreshUser();
       setProfileSuccess('Profile updated successfully');
       clearTimeout(dismissTimerRef.current);
@@ -121,7 +121,7 @@ function UserMenu() {
 
     setPasswordSaving(true);
     try {
-      await axios.put(`${API_BASE}/users/${user.id}/password`, {
+      await api.put(`${API_BASE}/users/${user.id}/password`, {
         currentPassword: passwordForm.currentPassword,
         newPassword: passwordForm.newPassword,
       });

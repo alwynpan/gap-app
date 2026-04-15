@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import { ArrowLeft, ArrowRight, Check, AlertTriangle, ChevronDown } from 'lucide-react';
 import Header from '../components/Header.jsx';
 import CsvDropzone from '../components/CsvDropzone.jsx';
@@ -352,7 +352,7 @@ export default function ImportUsers() {
     setPreviewLoading(true);
     setPreviewError('');
     try {
-      const res = await axios.get(`${API_BASE}/users`);
+      const res = await api.get(`${API_BASE}/users`);
       const existing = res.data.users || [];
       const byUname = new Map(existing.map((u) => [u.username?.toLowerCase(), u]));
       const byMail = new Map(existing.map((u) => [u.email?.toLowerCase(), u]));
@@ -449,7 +449,7 @@ export default function ImportUsers() {
           return clean;
         });
 
-      const res = await axios.post(`${API_BASE}/users/import`, {
+      const res = await api.post(`${API_BASE}/users/import`, {
         users: validUsers,
         conflictAction,
         sendSetupEmail,

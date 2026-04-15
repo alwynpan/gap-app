@@ -1,10 +1,10 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import ForgotPassword from '../../../src/pages/ForgotPassword.jsx';
 
-jest.mock('axios');
+jest.mock('@/utils/api');
 
 describe('ForgotPassword page', () => {
   beforeEach(() => {
@@ -39,13 +39,13 @@ describe('ForgotPassword page', () => {
     await waitFor(() => {
       expect(screen.getByText('Email is required')).toBeInTheDocument();
     });
-    expect(axios.post).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it('submits email and shows success message', async () => {
     const user = userEvent.setup();
 
-    axios.post.mockResolvedValue({
+    api.post.mockResolvedValue({
       data: { message: 'If that email is registered, a reset link has been sent.' },
     });
 
@@ -59,7 +59,7 @@ describe('ForgotPassword page', () => {
     await user.click(screen.getByRole('button', { name: /send reset link/i }));
 
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/auth\/forgot-password$/), {
+      expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/auth\/forgot-password$/), {
         email: 'test@example.com',
       });
       expect(screen.getByText('If that email is registered, a reset link has been sent.')).toBeInTheDocument();
@@ -69,7 +69,7 @@ describe('ForgotPassword page', () => {
   it('disables button after successful submission', async () => {
     const user = userEvent.setup();
 
-    axios.post.mockResolvedValue({
+    api.post.mockResolvedValue({
       data: { message: 'Reset link sent.' },
     });
 
@@ -92,7 +92,7 @@ describe('ForgotPassword page', () => {
   it('shows generic error message on API failure (does not leak backend error)', async () => {
     const user = userEvent.setup();
 
-    axios.post.mockRejectedValue({
+    api.post.mockRejectedValue({
       response: { data: { error: 'Too many requests. Please try again later.' } },
     });
 
@@ -115,7 +115,7 @@ describe('ForgotPassword page', () => {
   it('shows generic error when no response body on failure', async () => {
     const user = userEvent.setup();
 
-    axios.post.mockRejectedValue(new Error('Network Error'));
+    api.post.mockRejectedValue(new Error('Network Error'));
 
     render(
       <MemoryRouter>
@@ -134,7 +134,7 @@ describe('ForgotPassword page', () => {
   it('trims whitespace from email before submitting', async () => {
     const user = userEvent.setup();
 
-    axios.post.mockResolvedValue({ data: { message: 'Sent.' } });
+    api.post.mockResolvedValue({ data: { message: 'Sent.' } });
 
     render(
       <MemoryRouter>
@@ -146,7 +146,7 @@ describe('ForgotPassword page', () => {
     await user.click(screen.getByRole('button', { name: /send reset link/i }));
 
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(expect.any(String), { email: 'user@example.com' });
+      expect(api.post).toHaveBeenCalledWith(expect.any(String), { email: 'user@example.com' });
     });
   });
 });

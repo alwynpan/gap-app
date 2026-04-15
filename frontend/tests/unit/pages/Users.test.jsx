@@ -1,11 +1,11 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import Users from '../../../src/pages/Users.jsx';
 import { useAuth } from '../../../src/context/AuthContext.jsx';
 
-jest.mock('axios');
+jest.mock('@/utils/api');
 jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(),
 }));
@@ -43,7 +43,7 @@ describe('Users page', () => {
   });
 
   it('shows loading spinner before data resolves', () => {
-    axios.get.mockImplementation(() => new Promise(() => {}));
+    api.get.mockImplementation(() => new Promise(() => {}));
 
     const { container } = render(
       <MemoryRouter>
@@ -56,7 +56,7 @@ describe('Users page', () => {
   });
 
   it('renders users after successful fetch', async () => {
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { users: initialUsers } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -75,7 +75,7 @@ describe('Users page', () => {
   });
 
   it('shows error when fetch fails', async () => {
-    axios.get.mockRejectedValue(new Error('nope'));
+    api.get.mockRejectedValue(new Error('nope'));
 
     render(
       <MemoryRouter>
@@ -89,7 +89,7 @@ describe('Users page', () => {
   });
 
   it('shows empty state when no users are returned', async () => {
-    axios.get.mockResolvedValue({ data: { users: [], groups: [] } });
+    api.get.mockResolvedValue({ data: { users: [], groups: [] } });
 
     render(
       <MemoryRouter>
@@ -106,14 +106,14 @@ describe('Users page', () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { users: initialUsers } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } })
       .mockResolvedValueOnce({
         data: { users: [{ ...initialUsers[0], group_name: 'Group A' }] },
       })
       .mockResolvedValueOnce({ data: { groups: initialGroups } });
-    axios.put.mockResolvedValue({});
+    api.put.mockResolvedValue({});
 
     render(
       <MemoryRouter>
@@ -133,7 +133,7 @@ describe('Users page', () => {
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(
+      expect(api.put).toHaveBeenCalledWith(
         expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/group$/),
         { groupId: 'g0000000-0000-0000-0000-000000000002' }
       );
@@ -161,7 +161,7 @@ describe('Users page', () => {
       member_count: 2,
     };
 
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { users: initialUsers } })
       .mockResolvedValueOnce({ data: { groups: [fullGroup, openGroup] } });
 
@@ -189,12 +189,12 @@ describe('Users page', () => {
       { ...initialUsers[0], group_name: 'Group A', group_id: 'g0000000-0000-0000-0000-000000000002' },
     ];
 
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { users: usersInGroup } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } })
       .mockResolvedValueOnce({ data: { users: initialUsers } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } });
-    axios.put.mockResolvedValue({});
+    api.put.mockResolvedValue({});
 
     render(
       <MemoryRouter>
@@ -211,7 +211,7 @@ describe('Users page', () => {
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
-      expect(axios.put).toHaveBeenCalledWith(
+      expect(api.put).toHaveBeenCalledWith(
         expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/group$/),
         {
           groupId: null,
@@ -230,10 +230,10 @@ describe('Users page', () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { users: initialUsers } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } });
-    axios.put.mockRejectedValue({ response: { data: { error: 'Update denied' } } });
+    api.put.mockRejectedValue({ response: { data: { error: 'Update denied' } } });
 
     render(
       <MemoryRouter>
@@ -264,7 +264,7 @@ describe('Users page', () => {
 
   describe('Create User', () => {
     const setupRenderedPage = async () => {
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -321,9 +321,9 @@ describe('Users page', () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupRenderedPage();
 
-      axios.post.mockResolvedValue({ data: { message: 'User created successfully' } });
+      api.post.mockResolvedValue({ data: { message: 'User created successfully' } });
       // Mock refetch after create
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -335,7 +335,7 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(
+        expect(api.post).toHaveBeenCalledWith(
           expect.stringMatching(/\/users$/),
           expect.objectContaining({
             username: 'newuser',
@@ -359,7 +359,7 @@ describe('Users page', () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      axios.post.mockRejectedValue({ response: { data: { error: 'Username already exists' }, status: 409 } });
+      api.post.mockRejectedValue({ response: { data: { error: 'Username already exists' }, status: 409 } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
       await user.type(screen.getByPlaceholderText('Enter username'), 'existing');
@@ -377,7 +377,7 @@ describe('Users page', () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      axios.post.mockRejectedValue({ response: { data: { error: 'Invalid input' }, status: 400 } });
+      api.post.mockRejectedValue({ response: { data: { error: 'Invalid input' }, status: 400 } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
       await user.type(screen.getByPlaceholderText('Enter username'), 'baduser');
@@ -395,7 +395,7 @@ describe('Users page', () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      axios.post.mockRejectedValue({ response: { data: { error: 'Server error' }, status: 500 } });
+      api.post.mockRejectedValue({ response: { data: { error: 'Server error' }, status: 500 } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
       await user.type(screen.getByPlaceholderText('Enter username'), 'baduser');
@@ -441,8 +441,8 @@ describe('Users page', () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupRenderedPage();
 
-      axios.post.mockResolvedValue({ data: { message: 'User created' } });
-      axios.get
+      api.post.mockResolvedValue({ data: { message: 'User created' } });
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -455,7 +455,7 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(
+        expect(api.post).toHaveBeenCalledWith(
           expect.stringMatching(/\/users$/),
           expect.objectContaining({
             username: 'jdoe',
@@ -483,8 +483,8 @@ describe('Users page', () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupRenderedPage();
 
-      axios.post.mockResolvedValue({ data: { message: 'User created successfully' } });
-      axios.get
+      api.post.mockResolvedValue({ data: { message: 'User created successfully' } });
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -496,7 +496,7 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(
+        expect(api.post).toHaveBeenCalledWith(
           expect.stringMatching(/\/users$/),
           expect.objectContaining({ sendSetupEmail: false })
         );
@@ -508,8 +508,8 @@ describe('Users page', () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupRenderedPage();
 
-      axios.post.mockResolvedValue({ data: { message: 'User created successfully' } });
-      axios.get
+      api.post.mockResolvedValue({ data: { message: 'User created successfully' } });
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -522,7 +522,7 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(
+        expect(api.post).toHaveBeenCalledWith(
           expect.stringMatching(/\/users$/),
           expect.objectContaining({ sendSetupEmail: true })
         );
@@ -564,7 +564,7 @@ describe('Users page', () => {
       },
     ];
 
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { users: usersWithRoles } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -594,7 +594,7 @@ describe('Users page', () => {
       ...initialUsers[0],
       role_name: 'admin',
     };
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { users: [adminUser] } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -613,7 +613,7 @@ describe('Users page', () => {
       ...initialUsers[0],
       role_name: 'assignment_manager',
     };
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { users: [managerUser] } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -630,7 +630,7 @@ describe('Users page', () => {
   it('cancels group assignment inline', async () => {
     const user = userEvent.setup();
 
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { users: initialUsers } })
       .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -653,7 +653,7 @@ describe('Users page', () => {
 
   describe('Edit User', () => {
     const setupRenderedPage = async () => {
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -725,15 +725,15 @@ describe('Users page', () => {
       await user.clear(lastNameInput);
       await user.type(lastNameInput, 'NewLast');
 
-      axios.put.mockResolvedValue({});
-      axios.get
+      api.put.mockResolvedValue({});
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(
+        expect(api.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/),
           expect.objectContaining({ email: 'u1@test.com', firstName: 'NewFirst', lastName: 'NewLast' })
         );
@@ -770,15 +770,15 @@ describe('Users page', () => {
       const enabledCheckbox = screen.getByRole('checkbox', { name: /enabled/i });
       await user.click(enabledCheckbox);
 
-      axios.put.mockResolvedValue({});
-      axios.get
+      api.put.mockResolvedValue({});
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(
+        expect(api.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/),
           expect.objectContaining({
             email: 'new@test.com',
@@ -827,7 +827,7 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
-      axios.put.mockRejectedValue({ response: { data: { error: 'Username taken' } } });
+      api.put.mockRejectedValue({ response: { data: { error: 'Username taken' } } });
 
       await user.click(screen.getByRole('button', { name: /save/i }));
 
@@ -846,15 +846,15 @@ describe('Users page', () => {
       const roleSelect = within(modal).getByRole('combobox');
       await user.selectOptions(roleSelect, 'assignment_manager');
 
-      axios.put.mockResolvedValue({});
-      axios.get
+      api.put.mockResolvedValue({});
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(
+        expect(api.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\//),
           expect.objectContaining({ role: 'assignment_manager' })
         );
@@ -875,15 +875,15 @@ describe('Users page', () => {
       const enabledCheckbox = screen.getByRole('checkbox', { name: /enabled/i });
       await user.click(enabledCheckbox);
 
-      axios.put.mockResolvedValue({});
-      axios.get
+      api.put.mockResolvedValue({});
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(
+        expect(api.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\//),
           expect.objectContaining({ enabled: false })
         );
@@ -938,7 +938,7 @@ describe('Users page', () => {
     let anchorClick;
 
     const setupRenderedPage = async () => {
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: multiUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -1049,7 +1049,7 @@ describe('Users page', () => {
   // ── Delete user ────────────────────────────────────────────────────────
   describe('Delete user', () => {
     const setupDeletePage = async (users = initialUsers) => {
-      axios.get.mockResolvedValueOnce({ data: { users } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.get.mockResolvedValueOnce({ data: { users } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
       render(
         <MemoryRouter>
           <Users />
@@ -1146,16 +1146,14 @@ describe('Users page', () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupDeletePage();
-      axios.delete.mockResolvedValueOnce({});
-      axios.get
-        .mockResolvedValueOnce({ data: { users: [] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.delete.mockResolvedValueOnce({});
+      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /delete user/i }));
       await user.click(screen.getByRole('button', { name: /delete 1 user$/i }));
 
       await waitFor(() => {
-        expect(axios.delete).toHaveBeenCalledWith(
+        expect(api.delete).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/)
         );
         expect(screen.getByText('User deleted successfully')).toBeInTheDocument();
@@ -1169,7 +1167,7 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /delete user/i }));
       await user.click(screen.getByRole('button', { name: /cancel/i }));
 
-      expect(axios.delete).not.toHaveBeenCalled();
+      expect(api.delete).not.toHaveBeenCalled();
       expect(screen.queryByText(/delete 1 user\?/i)).not.toBeInTheDocument();
     });
 
@@ -1177,7 +1175,7 @@ describe('Users page', () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupDeletePage();
-      axios.delete.mockRejectedValue({ response: { data: { error: 'Cannot delete user' } } });
+      api.delete.mockRejectedValue({ response: { data: { error: 'Cannot delete user' } } });
 
       await user.click(screen.getByRole('button', { name: /delete user/i }));
       await user.click(screen.getByRole('button', { name: /delete 1 user$/i }));
@@ -1245,16 +1243,14 @@ describe('Users page', () => {
       await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
       await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
-      axios.delete.mockResolvedValue({});
-      axios.get
-        .mockResolvedValueOnce({ data: { users: [] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.delete.mockResolvedValue({});
+      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
 
       await waitFor(() => {
-        expect(axios.delete).toHaveBeenCalledTimes(1);
-        expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/users\/bulk$/), {
+        expect(api.delete).toHaveBeenCalledTimes(1);
+        expect(api.delete).toHaveBeenCalledWith(expect.stringMatching(/\/users\/bulk$/), {
           data: { ids: expect.arrayContaining(['u1', 'u2']) },
         });
         expect(screen.getByText('Deleted 2 users')).toBeInTheDocument();
@@ -1279,7 +1275,7 @@ describe('Users page', () => {
     };
 
     it('shows "Send Setup Email" button when pending users exist', async () => {
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: [pendingUser] } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -1295,7 +1291,7 @@ describe('Users page', () => {
     });
 
     it('does not show "Send Setup Email" button when no pending users exist', async () => {
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: [activeUser] } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -1313,7 +1309,7 @@ describe('Users page', () => {
 
     it('shows confirmation modal when clicking Send Setup Emails button', async () => {
       const user = userEvent.setup();
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: [pendingUser] } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -1331,12 +1327,12 @@ describe('Users page', () => {
 
       expect(screen.getByRole('heading', { name: /send setup email\??/i })).toBeInTheDocument();
       expect(screen.getByText(/1 pending user/i)).toBeInTheDocument();
-      expect(axios.post).not.toHaveBeenCalled();
+      expect(api.post).not.toHaveBeenCalled();
     });
 
     it('cancels sending when Cancel is clicked in confirmation modal', async () => {
       const user = userEvent.setup();
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: [pendingUser] } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -1354,16 +1350,16 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /cancel/i }));
 
       expect(screen.queryByText(/1 pending user/i)).not.toBeInTheDocument();
-      expect(axios.post).not.toHaveBeenCalled();
+      expect(api.post).not.toHaveBeenCalled();
     });
 
     it('calls send-setup-emails API for all pending users after confirming', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: [pendingUser, activeUser] } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
-      axios.post.mockResolvedValue({ data: { sent: 1, errors: [] } });
+      api.post.mockResolvedValue({ data: { sent: 1, errors: [] } });
 
       render(
         <MemoryRouter>
@@ -1379,7 +1375,7 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /^send$/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/users/send-setup-emails'), {});
+        expect(api.post).toHaveBeenCalledWith(expect.stringContaining('/users/send-setup-emails'), {});
       });
     });
 
@@ -1392,10 +1388,10 @@ describe('Users page', () => {
         username: 'pending2',
         email: 'pending2@test.com',
       };
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: [pendingUser, pendingUser2] } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
-      axios.post.mockResolvedValue({ data: { sent: 1, errors: [] } });
+      api.post.mockResolvedValue({ data: { sent: 1, errors: [] } });
 
       render(
         <MemoryRouter>
@@ -1415,7 +1411,7 @@ describe('Users page', () => {
       await user.click(screen.getByRole('button', { name: /^send$/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/users/send-setup-emails'), {
+        expect(api.post).toHaveBeenCalledWith(expect.stringContaining('/users/send-setup-emails'), {
           userIds: ['u0000000-0000-0000-0000-000000000010'],
         });
       });
@@ -1453,7 +1449,7 @@ describe('Users page', () => {
     ];
 
     const renderSearchPage = async () => {
-      axios.get.mockResolvedValueOnce({ data: { users: searchUsers } }).mockResolvedValueOnce({ data: { groups: [] } });
+      api.get.mockResolvedValueOnce({ data: { users: searchUsers } }).mockResolvedValueOnce({ data: { groups: [] } });
       render(
         <MemoryRouter>
           <Users />
@@ -1525,7 +1521,7 @@ describe('Users page', () => {
   // ── handleDeleteConfirmed routing (single vs bulk) ─────────────────────
   describe('handleDeleteConfirmed routing (single vs bulk)', () => {
     const setupDeletePage = async (users = initialUsers) => {
-      axios.get.mockResolvedValueOnce({ data: { users } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.get.mockResolvedValueOnce({ data: { users } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
       render(
         <MemoryRouter>
           <Users />
@@ -1538,19 +1534,17 @@ describe('Users page', () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
       await setupDeletePage();
-      axios.delete.mockResolvedValueOnce({});
-      axios.get
-        .mockResolvedValueOnce({ data: { users: [] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.delete.mockResolvedValueOnce({});
+      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /delete user/i }));
       await user.click(screen.getByRole('button', { name: /delete 1 user$/i }));
 
       await waitFor(() => {
-        expect(axios.delete).toHaveBeenCalledWith(
+        expect(api.delete).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001$/)
         );
-        expect(axios.delete).not.toHaveBeenCalledWith(expect.stringMatching(/\/users\/bulk/));
+        expect(api.delete).not.toHaveBeenCalledWith(expect.stringMatching(/\/users\/bulk/));
       });
     });
 
@@ -1566,16 +1560,14 @@ describe('Users page', () => {
       await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
       await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
-      axios.delete.mockResolvedValueOnce({});
-      axios.get
-        .mockResolvedValueOnce({ data: { users: [] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.delete.mockResolvedValueOnce({});
+      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
 
       await waitFor(() => {
-        expect(axios.delete).toHaveBeenCalledTimes(1);
-        expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/users\/bulk$/), {
+        expect(api.delete).toHaveBeenCalledTimes(1);
+        expect(api.delete).toHaveBeenCalledWith(expect.stringMatching(/\/users\/bulk$/), {
           data: { ids: expect.arrayContaining(['u1', 'u2']) },
         });
       });
@@ -1593,10 +1585,8 @@ describe('Users page', () => {
       await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
       await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
-      axios.delete.mockResolvedValueOnce({});
-      axios.get
-        .mockResolvedValueOnce({ data: { users: [] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.delete.mockResolvedValueOnce({});
+      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
 
@@ -1615,7 +1605,7 @@ describe('Users page', () => {
       await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
       await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
-      axios.delete.mockRejectedValue({ response: { data: { error: 'Bulk user delete failed' } } });
+      api.delete.mockRejectedValue({ response: { data: { error: 'Bulk user delete failed' } } });
 
       await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
 
@@ -1633,7 +1623,7 @@ describe('Users page', () => {
       };
 
       // Initial load — user has no group
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: [staleUser] } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -1646,7 +1636,7 @@ describe('Users page', () => {
       await waitFor(() => expect(screen.getByText('Not assigned')).toBeInTheDocument());
 
       // Simulate another tab assigning the user to a group, then this tab regaining focus
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: [freshUser] } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -1657,7 +1647,7 @@ describe('Users page', () => {
     });
 
     it('does not re-fetch when the tab becomes hidden', async () => {
-      axios.get
+      api.get
         .mockResolvedValueOnce({ data: { users: initialUsers } })
         .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
@@ -1669,12 +1659,12 @@ describe('Users page', () => {
 
       await waitFor(() => expect(screen.getByText('u1')).toBeInTheDocument());
 
-      const callsBefore = axios.get.mock.calls.length;
+      const callsBefore = api.get.mock.calls.length;
 
       Object.defineProperty(document, 'hidden', { value: true, configurable: true, writable: true });
       document.dispatchEvent(new Event('visibilitychange'));
 
-      expect(axios.get.mock.calls.length).toBe(callsBefore);
+      expect(api.get.mock.calls.length).toBe(callsBefore);
     });
   });
 });

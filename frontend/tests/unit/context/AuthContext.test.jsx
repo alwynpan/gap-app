@@ -1,9 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import axios from 'axios';
+import api from '@/utils/api';
 import { AuthProvider, useAuth } from '../../../src/context/AuthContext.jsx';
 
-jest.mock('axios');
+jest.mock('@/utils/api');
 
 function TestHarness() {
   const { user, loading, token, isAuthenticated, isAdmin, isAssignmentManager, login, register, logout, refreshUser } =
@@ -38,10 +38,10 @@ function TestHarness() {
 describe('AuthContext', () => {
   beforeEach(() => {
     localStorage.clear();
-    delete axios.defaults.headers.common.Authorization;
     delete window.__authResult;
+    jest.clearAllMocks();
     // Provide a default mock for the /auth/config fetch that fires on mount
-    axios.get.mockResolvedValue({ data: { registrationEnabled: false } });
+    api.get.mockResolvedValue({ data: { registrationEnabled: false } });
   });
 
   it('starts unauthenticated with no token', async () => {
@@ -58,12 +58,12 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('auth')).toHaveTextContent('no');
     expect(screen.getByTestId('user')).toHaveTextContent('none');
     // /auth/config is always fetched on mount; /auth/me is only called when a token exists
-    expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining('/auth/me'));
+    expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/auth/me'));
   });
 
   it('hydrates user from token via /auth/me', async () => {
     localStorage.setItem('token', 'existing-token');
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { user: { username: 'alice', role: 'assignment_manager' } },
     });
 
@@ -80,12 +80,11 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('user')).toHaveTextContent('alice');
     expect(screen.getByTestId('is-admin')).toHaveTextContent('no');
     expect(screen.getByTestId('is-assignment-manager')).toHaveTextContent('yes');
-    expect(axios.defaults.headers.common.Authorization).toBe('Bearer existing-token');
   });
 
   it('clears invalid token when /auth/me fails', async () => {
     localStorage.setItem('token', 'bad-token');
-    axios.get.mockRejectedValue(new Error('unauthorized'));
+    api.get.mockRejectedValue(new Error('unauthorized'));
 
     render(
       <AuthProvider>
@@ -102,11 +101,11 @@ describe('AuthContext', () => {
   });
 
   it('login stores token and authenticates user on success', async () => {
-    axios.get.mockResolvedValue({
+    api.get.mockResolvedValue({
       data: { user: { username: 'demo', role: 'normal_user' } },
     });
 
-    axios.post.mockResolvedValue({
+    api.post.mockResolvedValue({
       data: { token: 'jwt-token', user: { username: 'demo', role: 'normal_user' } },
     });
 
@@ -129,7 +128,7 @@ describe('AuthContext', () => {
   });
 
   it('login returns error on failure', async () => {
-    axios.post.mockRejectedValue({
+    api.post.mockRejectedValue({
       response: { data: { error: 'Invalid credentials' } },
     });
 
@@ -142,14 +141,14 @@ describe('AuthContext', () => {
     await userEvent.click(screen.getByText('Login'));
 
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalled();
+      expect(api.post).toHaveBeenCalled();
     });
 
     expect(window.__authResult).toEqual({ success: false, error: 'Invalid credentials' });
   });
 
   it('register sends expected payload and returns success message', async () => {
-    axios.post.mockResolvedValue({ data: { message: 'Registered' } });
+    api.post.mockResolvedValue({ data: { message: 'Registered' } });
 
     render(
       <AuthProvider>
@@ -160,7 +159,7 @@ describe('AuthContext', () => {
     await userEvent.click(screen.getByText('Register'));
 
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(
+      expect(api.post).toHaveBeenCalledWith(
         expect.stringMatching(/\/auth\/register$/),
         expect.objectContaining({
           username: 'demo',
@@ -175,7 +174,7 @@ describe('AuthContext', () => {
   });
 
   it('register returns default error message when response has no error', async () => {
-    axios.post.mockRejectedValue(new Error('network'));
+    api.post.mockRejectedValue(new Error('network'));
 
     render(
       <AuthProvider>
@@ -186,7 +185,7 @@ describe('AuthContext', () => {
     await userEvent.click(screen.getByText('Register'));
 
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalled();
+      expect(api.post).toHaveBeenCalled();
     });
 
     expect(window.__authResult).toEqual({ success: false, error: 'Registration failed' });
@@ -194,7 +193,7 @@ describe('AuthContext', () => {
 
   it('refreshUser updates user data from /auth/me', async () => {
     localStorage.setItem('token', 'existing-token');
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { registrationEnabled: false } }) // /auth/config on mount
       .mockResolvedValueOnce({ data: { user: { username: 'alice', role: 'user', groupId: null } } })
       .mockResolvedValueOnce({
@@ -221,13 +220,13 @@ describe('AuthContext', () => {
     await userEvent.click(screen.getByText('Refresh'));
 
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledTimes(3); // config + /auth/me on mount + refreshUser
+      expect(api.get).toHaveBeenCalledTimes(3); // config + /auth/me on mount + refreshUser
     });
   });
 
   it('refreshUser clears auth on failure', async () => {
     localStorage.setItem('token', 'existing-token');
-    axios.get
+    api.get
       .mockResolvedValueOnce({ data: { registrationEnabled: false } }) // /auth/config on mount
       .mockResolvedValueOnce({ data: { user: { username: 'alice', role: 'user' } } })
       .mockRejectedValueOnce(new Error('unauthorized'));
@@ -252,8 +251,8 @@ describe('AuthContext', () => {
 
   it('logout clears local state and storage', async () => {
     localStorage.setItem('token', 'existing-token');
-    axios.get.mockResolvedValue({ data: { user: { username: 'root', role: 'admin' } } });
-    axios.post.mockRejectedValue(new Error('network error'));
+    api.get.mockResolvedValue({ data: { user: { username: 'root', role: 'admin' } } });
+    api.post.mockRejectedValue(new Error('network error'));
 
     render(
       <AuthProvider>

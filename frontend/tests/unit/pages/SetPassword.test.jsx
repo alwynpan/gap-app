@@ -1,10 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import SetPassword from '../../../src/pages/SetPassword.jsx';
 
-jest.mock('axios');
+jest.mock('@/utils/api');
 
 const mockNavigate = jest.fn();
 jest.mock('react-router-dom', () => ({
@@ -57,7 +57,7 @@ describe('SetPassword page', () => {
     await waitFor(() => {
       expect(screen.getByText('Password must be at least 6 characters')).toBeInTheDocument();
     });
-    expect(axios.post).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it('shows error when passwords do not match', async () => {
@@ -71,7 +71,7 @@ describe('SetPassword page', () => {
     await waitFor(() => {
       expect(screen.getByText('Passwords do not match.')).toBeInTheDocument();
     });
-    expect(axios.post).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it('submits token and password on success, then navigates to login', async () => {
@@ -79,14 +79,14 @@ describe('SetPassword page', () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     renderWithToken('validtoken123');
 
-    axios.post.mockResolvedValue({ data: { message: 'Password set successfully. You can now log in.' } });
+    api.post.mockResolvedValue({ data: { message: 'Password set successfully. You can now log in.' } });
 
     await user.type(screen.getByPlaceholderText('At least 6 characters'), 'newpass1');
     await user.type(screen.getByPlaceholderText('Repeat your password'), 'newpass1');
     await user.click(screen.getByRole('button', { name: /set password/i }));
 
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/auth\/set-password$/), {
+      expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/auth\/set-password$/), {
         token: 'validtoken123',
         password: 'newpass1',
       });
@@ -105,7 +105,7 @@ describe('SetPassword page', () => {
     const user = userEvent.setup();
     renderWithToken('validtoken123');
 
-    axios.post.mockResolvedValue({ data: { message: 'Password updated.' } });
+    api.post.mockResolvedValue({ data: { message: 'Password updated.' } });
 
     await user.type(screen.getByPlaceholderText('At least 6 characters'), 'newpass1');
     await user.type(screen.getByPlaceholderText('Repeat your password'), 'newpass1');
@@ -122,7 +122,7 @@ describe('SetPassword page', () => {
     const user = userEvent.setup();
     renderWithToken('expiredtoken');
 
-    axios.post.mockRejectedValue({
+    api.post.mockRejectedValue({
       response: { data: { error: 'Token has expired or already been used.' } },
     });
 
@@ -139,7 +139,7 @@ describe('SetPassword page', () => {
     const user = userEvent.setup();
     renderWithToken('sometoken');
 
-    axios.post.mockRejectedValue(new Error('Network Error'));
+    api.post.mockRejectedValue(new Error('Network Error'));
 
     await user.type(screen.getByPlaceholderText('At least 6 characters'), 'newpass1');
     await user.type(screen.getByPlaceholderText('Repeat your password'), 'newpass1');
