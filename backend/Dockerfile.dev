@@ -5,7 +5,7 @@ RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 WORKDIR /app
 
 # Copy workspace config and package files
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY .npmrc pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY backend/package.json backend/
 
 # Install all dependencies (including devDependencies like nodemon)
