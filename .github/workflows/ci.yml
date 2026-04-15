@@ -278,7 +278,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/gap-${{ matrix.service }}
+          images: ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/gap-${{ matrix.service }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
