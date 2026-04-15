@@ -84,7 +84,7 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('Safe content')).toBeInTheDocument();
   });
 
-  it('logs the error via componentDidCatch', () => {
+  it('logs the error via componentDidCatch with name, message, and stack', () => {
     jest.spyOn(logger, 'error').mockImplementation(() => {});
 
     render(
@@ -95,7 +95,11 @@ describe('ErrorBoundary', () => {
 
     expect(logger.error).toHaveBeenCalledWith(
       'Unhandled error caught by ErrorBoundary',
-      expect.objectContaining({ message: 'Test error' })
+      expect.objectContaining({
+        name: 'Error',
+        message: 'Test error',
+        stack: expect.stringContaining('Test error'),
+      })
     );
   });
 
@@ -114,7 +118,7 @@ describe('ErrorBoundary', () => {
 
     expect(logger.error).toHaveBeenCalledWith(
       'Unhandled error caught by ErrorBoundary',
-      expect.objectContaining({ message: 'raw string error' })
+      expect.objectContaining({ name: undefined, message: 'raw string error', stack: undefined })
     );
   });
 });

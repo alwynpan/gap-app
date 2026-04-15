@@ -13,9 +13,12 @@ class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    const message = error instanceof Error ? error.message : String(error);
+    const isError = error instanceof Error;
+    const message = isError ? error.message : String(error);
     logger.error('Unhandled error caught by ErrorBoundary', {
+      name: isError ? error.name : undefined,
       message,
+      stack: isError ? error.stack : undefined,
       componentStack: info?.componentStack,
     });
   }
@@ -37,7 +40,7 @@ class ErrorBoundary extends Component {
             <p className="text-gray-600 mb-6">An unexpected error occurred. Please try refreshing the page.</p>
             <button
               onClick={this.handleReload}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             >
               Refresh page
             </button>
