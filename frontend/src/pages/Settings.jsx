@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '@/utils/api';
 import Header from '../components/Header.jsx';
 import { API_BASE } from '../config.js';
 
@@ -11,7 +11,7 @@ function Settings() {
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    axios
+    api
       .get(`${API_BASE}/config`)
       .then((res) => {
         const rows = res.data.config || [];
@@ -28,7 +28,7 @@ function Settings() {
     setSuccess('');
     const newValue = !groupJoinLocked;
     try {
-      await axios.put(`${API_BASE}/config/group_join_locked`, { value: String(newValue) });
+      await api.put(`${API_BASE}/config/group_join_locked`, { value: String(newValue) });
       setGroupJoinLocked(newValue);
       setSuccess('Settings updated successfully');
       setTimeout(() => setSuccess(''), 2000);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import { Pencil, UserPlus, Check, X, Download, Trash2, Upload, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
@@ -76,8 +76,8 @@ function Users() {
   const fetchData = async () => {
     try {
       const [usersRes, groupsRes] = await Promise.all([
-        axios.get(`${API_BASE}/users`),
-        axios.get(`${API_BASE}/groups/enabled`),
+        api.get(`${API_BASE}/users`),
+        api.get(`${API_BASE}/groups/enabled`),
       ]);
       setUsers(usersRes.data.users || []);
       setGroups(groupsRes.data.groups || []);
@@ -90,7 +90,7 @@ function Users() {
 
   const handleGroupChange = async (userId, groupId) => {
     try {
-      await axios.put(`${API_BASE}/users/${userId}/group`, { groupId });
+      await api.put(`${API_BASE}/users/${userId}/group`, { groupId });
       showSuccess('User group updated successfully');
       fetchData();
     } catch (err) {
@@ -121,7 +121,7 @@ function Users() {
 
     setCreating(true);
     try {
-      await axios.post(`${API_BASE}/users`, {
+      await api.post(`${API_BASE}/users`, {
         username: body.username,
         email: body.email,
         firstName: body.firstName || undefined,
@@ -195,7 +195,7 @@ function Users() {
         payload.enabled = body.enabled;
       }
 
-      await axios.put(`${API_BASE}/users/${editingUser.id}`, payload);
+      await api.put(`${API_BASE}/users/${editingUser.id}`, payload);
       showSuccess('User updated successfully');
       setEditingUser(null);
       fetchData();
@@ -282,7 +282,7 @@ function Users() {
     setDeleting(true);
     try {
       if (toDelete.length === 1) {
-        await axios.delete(`${API_BASE}/users/${toDelete[0].id}`);
+        await api.delete(`${API_BASE}/users/${toDelete[0].id}`);
         showSuccess('User deleted successfully');
         setSelectedIds((prev) => {
           const next = new Set(prev);
@@ -294,7 +294,7 @@ function Users() {
         const BULK_DELETE_BATCH_SIZE = 2000;
         for (let i = 0; i < ids.length; i += BULK_DELETE_BATCH_SIZE) {
           const batch = ids.slice(i, i + BULK_DELETE_BATCH_SIZE);
-          await axios.delete(`${API_BASE}/users/bulk`, { data: { ids: batch } });
+          await api.delete(`${API_BASE}/users/bulk`, { data: { ids: batch } });
         }
         showSuccess(`Deleted ${toDelete.length} users`);
         setSelectedIds((prev) => {
@@ -325,7 +325,7 @@ function Users() {
     setSendingEmails(true);
     try {
       const body = selectedIds.size > 0 ? { userIds: targets.map((u) => u.id) } : {};
-      const res = await axios.post(`${API_BASE}/users/send-setup-emails`, body);
+      const res = await api.post(`${API_BASE}/users/send-setup-emails`, body);
       const { sent = 0, errors: emailErrors = [] } = res.data || {};
       const failedCount = emailErrors.length;
       if (sent > 0 && failedCount === 0) {

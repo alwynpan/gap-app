@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { API_BASE } from '../config.js';
 
 const AuthContext = createContext(null);
@@ -12,20 +12,11 @@ export function AuthProvider({ children }) {
 
   // Fetch server config on mount
   useEffect(() => {
-    axios
+    api
       .get(`${API_BASE}/auth/config`)
       .then((res) => setRegistrationEnabled(res.data.registrationEnabled))
       .catch(() => setRegistrationEnabled(false));
   }, []);
-
-  // Configure axios defaults
-  useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    } else {
-      delete axios.defaults.headers.common['Authorization'];
-    }
-  }, [token]);
 
   // Check if user is logged in on mount
   useEffect(() => {
@@ -36,7 +27,7 @@ export function AuthProvider({ children }) {
       }
 
       try {
-        const response = await axios.get(`${API_BASE}/auth/me`);
+        const response = await api.get(`${API_BASE}/auth/me`);
         setUser(response.data.user);
       } catch (_error) {
         // Token invalid, clear it
@@ -53,7 +44,7 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     try {
-      const response = await axios.post(`${API_BASE}/auth/login`, {
+      const response = await api.post(`${API_BASE}/auth/login`, {
         username,
         password,
       });
@@ -75,7 +66,7 @@ export function AuthProvider({ children }) {
 
   const register = async (username, email, password, { firstName, lastName, studentId } = {}) => {
     try {
-      const response = await axios.post(`${API_BASE}/auth/register`, {
+      const response = await api.post(`${API_BASE}/auth/register`, {
         username,
         email,
         password,
@@ -96,7 +87,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try {
-      await axios.post(`${API_BASE}/auth/logout`);
+      await api.post(`${API_BASE}/auth/logout`);
     } catch (_error) {
       // Ignore errors on logout
     } finally {
@@ -108,7 +99,7 @@ export function AuthProvider({ children }) {
 
   const refreshUser = async () => {
     try {
-      const response = await axios.get(`${API_BASE}/auth/me`);
+      const response = await api.get(`${API_BASE}/auth/me`);
       setUser(response.data.user);
     } catch (_error) {
       // If refresh fails, clear auth state

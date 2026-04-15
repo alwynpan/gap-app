@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
@@ -96,7 +96,7 @@ function Groups() {
 
   const fetchGroups = async () => {
     try {
-      const response = await axios.get(`${API_BASE}/groups`);
+      const response = await api.get(`${API_BASE}/groups`);
       setGroups(response.data.groups || []);
     } catch (_err) {
       setError('Failed to load groups');
@@ -108,7 +108,7 @@ function Groups() {
   const handleExportMappings = async () => {
     setExporting(true);
     try {
-      const response = await axios.get(`${API_BASE}/groups/export-mappings`);
+      const response = await api.get(`${API_BASE}/groups/export-mappings`);
       const { mappings } = response.data;
       const today = new Date().toISOString().slice(0, 10);
       downloadCsv(mappings, ['groupName', 'email'], `group-mappings-${today}.csv`);
@@ -178,7 +178,7 @@ function Groups() {
       if (newGroupMaxMembers !== '') {
         requestBody.maxMembers = parseInt(newGroupMaxMembers, 10);
       }
-      await axios.post(`${API_BASE}/groups`, requestBody);
+      await api.post(`${API_BASE}/groups`, requestBody);
       showSuccess('Group created successfully');
       setNewGroupName('');
       setNewGroupMaxMembers('');
@@ -222,7 +222,7 @@ function Groups() {
 
     setSaving(true);
     try {
-      await axios.put(`${API_BASE}/groups/${editingGroup.id}`, {
+      await api.put(`${API_BASE}/groups/${editingGroup.id}`, {
         name: body.name,
         maxMembers,
       });
@@ -239,7 +239,7 @@ function Groups() {
   const handleToggleEnabled = async (e, groupId, currentEnabled) => {
     e.stopPropagation();
     try {
-      await axios.put(`${API_BASE}/groups/${groupId}`, { enabled: !currentEnabled });
+      await api.put(`${API_BASE}/groups/${groupId}`, { enabled: !currentEnabled });
       showSuccess(`Group ${currentEnabled ? 'disabled' : 'enabled'} successfully`);
       fetchGroups();
     } catch (err) {
@@ -272,7 +272,7 @@ function Groups() {
       return;
     }
     try {
-      await Promise.all(groupIds.map((id) => axios.put(`${API_BASE}/groups/${id}`, { maxMembers })));
+      await Promise.all(groupIds.map((id) => api.put(`${API_BASE}/groups/${id}`, { maxMembers })));
       showSuccess(groupIds.length === 1 ? 'Group limit updated' : `Updated limit for ${groupIds.length} groups`);
       setLimitModal(null);
       fetchGroups();
@@ -317,7 +317,7 @@ function Groups() {
     for (let batchIndex = 0; batchIndex < allGroups.length; batchIndex += BULK_BATCH_SIZE) {
       const batch = allGroups.slice(batchIndex, batchIndex + BULK_BATCH_SIZE);
       try {
-        await axios.post(`${API_BASE}/groups/bulk`, batch);
+        await api.post(`${API_BASE}/groups/bulk`, batch);
         totalCreated += batch.length;
       } catch (err) {
         if (firstError === null) {
@@ -364,12 +364,12 @@ function Groups() {
     setDeleting(true);
     try {
       if (toDelete.length === 1) {
-        await axios.delete(`${API_BASE}/groups/${toDelete[0].id}`);
+        await api.delete(`${API_BASE}/groups/${toDelete[0].id}`);
       } else {
         const ids = toDelete.map((g) => g.id);
         for (let i = 0; i < ids.length; i += BULK_DELETE_BATCH_SIZE) {
           const batch = ids.slice(i, i + BULK_DELETE_BATCH_SIZE);
-          await axios.delete(`${API_BASE}/groups/bulk`, { data: { ids: batch } });
+          await api.delete(`${API_BASE}/groups/bulk`, { data: { ids: batch } });
         }
       }
       showSuccess(toDelete.length === 1 ? 'Group deleted successfully' : `Deleted ${toDelete.length} groups`);
@@ -397,8 +397,8 @@ function Groups() {
     setMembersLoading(true);
     try {
       const [groupRes, usersRes] = await Promise.all([
-        axios.get(`${API_BASE}/groups/${groupId}`),
-        isAssignmentManager ? axios.get(`${API_BASE}/users`) : Promise.resolve({ data: { users: [] } }),
+        api.get(`${API_BASE}/groups/${groupId}`),
+        isAssignmentManager ? api.get(`${API_BASE}/users`) : Promise.resolve({ data: { users: [] } }),
       ]);
       if (expandedGroupRef.current !== groupId) {
         return;
@@ -433,7 +433,7 @@ function Groups() {
   const handleRemoveMember = async (userId) => {
     const groupId = expandedGroup;
     try {
-      await axios.put(`${API_BASE}/users/${userId}/group`, { groupId: null });
+      await api.put(`${API_BASE}/users/${userId}/group`, { groupId: null });
       showSuccess('Member removed successfully');
       if (groupId) {
         fetchGroupMembers(groupId);
@@ -450,7 +450,7 @@ function Groups() {
     }
     const groupId = expandedGroup;
     try {
-      await axios.put(`${API_BASE}/users/${selectedUserId}/group`, { groupId });
+      await api.put(`${API_BASE}/users/${selectedUserId}/group`, { groupId });
       showSuccess('Member added successfully');
       setSelectedUserId('');
       if (groupId) {

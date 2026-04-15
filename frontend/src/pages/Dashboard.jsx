@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '@/utils/api';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { Link } from 'react-router-dom';
@@ -33,7 +33,7 @@ function Dashboard() {
     if (isNormalUser) {
       (async () => {
         try {
-          const res = await axios.get(`${API_BASE}/config/group-join-locked`);
+          const res = await api.get(`${API_BASE}/config/group-join-locked`);
           setGroupJoinLocked(res.data.locked === true);
         } catch (_err) {
           // silently ignore — lock defaults to off
@@ -46,7 +46,7 @@ function Dashboard() {
     setMembersLoading(true);
     setGroupMembers([]);
     try {
-      const response = await axios.get(`${API_BASE}/groups/${groupId}`);
+      const response = await api.get(`${API_BASE}/groups/${groupId}`);
       setGroupMembers(response.data.members || []);
     } catch (_err) {
       // silently ignore — members list is supplementary info
@@ -58,7 +58,7 @@ function Dashboard() {
   const fetchAvailableGroups = async () => {
     setGroupsLoading(true);
     try {
-      const response = await axios.get(`${API_BASE}/groups/enabled`);
+      const response = await api.get(`${API_BASE}/groups/enabled`);
       const groups = response.data.groups || [];
       setAvailableGroups(groups.filter((g) => g.max_members === null || g.member_count < g.max_members));
     } catch (_err) {
@@ -72,7 +72,7 @@ function Dashboard() {
   const handleJoinGroup = async (groupId) => {
     setJoiningGroup(true);
     try {
-      await axios.post(`${API_BASE}/groups/${groupId}/join`);
+      await api.post(`${API_BASE}/groups/${groupId}/join`);
       setGroupSuccess('Successfully joined group');
       await refreshUser();
       setTimeout(() => setGroupSuccess(''), 2000);
@@ -102,7 +102,7 @@ function Dashboard() {
     }
     setLeavingGroup(true);
     try {
-      await axios.post(`${API_BASE}/groups/${user.groupId}/leave`);
+      await api.post(`${API_BASE}/groups/${user.groupId}/leave`);
       setGroupSuccess('Successfully left group');
       await refreshUser();
       setTimeout(() => setGroupSuccess(''), 2000);

@@ -2,11 +2,11 @@
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import ImportGroupMappings from '../../../src/pages/ImportGroupMappings.jsx';
 import { downloadCsv } from '../../../src/utils/csv.js';
 
-jest.mock('axios');
+jest.mock('@/utils/api');
 jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(() => ({
     user: { id: 'u1', username: 'admin', role: 'admin' },
@@ -142,7 +142,7 @@ describe('ImportGroupMappings page', () => {
     });
 
     it('accepts a valid CSV via drag and drop and auto-advances to preview', async () => {
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
           groups: [{ id: 'g1', name: 'Team A' }],
@@ -168,7 +168,7 @@ describe('ImportGroupMappings page', () => {
     });
 
     it('auto-advances to step 2 when a valid CSV with detectable columns is uploaded', async () => {
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
           groups: [{ id: 'g1', name: 'Team Alpha' }],
@@ -196,7 +196,7 @@ describe('ImportGroupMappings page', () => {
     ];
 
     async function goToPreview(csv = validCsv) {
-      axios.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
+      api.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
       renderPage();
       uploadCsv(csv);
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
@@ -215,7 +215,7 @@ describe('ImportGroupMappings page', () => {
 
     it('highlights rows with unknown user as Skip', async () => {
       const csvWithUnknown = 'group name,email\nTeam Alpha,alice@test.com\nTeam Alpha,nobody@ghost.com';
-      axios.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
+      api.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
       renderPage();
       uploadCsv(csvWithUnknown);
       await waitFor(() => expect(screen.getByText(/User not found/i)).toBeInTheDocument());
@@ -223,7 +223,7 @@ describe('ImportGroupMappings page', () => {
 
     it('highlights rows with unknown group as Skip', async () => {
       const csvWithBadGroup = 'group name,email\nGhost Group,alice@test.com';
-      axios.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
+      api.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
       renderPage();
       uploadCsv(csvWithBadGroup);
       await waitFor(() => expect(screen.getByText(/Group not found/i)).toBeInTheDocument());
@@ -231,7 +231,7 @@ describe('ImportGroupMappings page', () => {
 
     it('shows Conflict status for users already in a group', async () => {
       const conflictCsv = 'group name,email\nTeam Alpha,assigned@test.com';
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ id: 'u3', email: 'assigned@test.com', group_id: 'g1' }],
           groups: mockGroups,
@@ -244,7 +244,7 @@ describe('ImportGroupMappings page', () => {
 
     it('marks admin users as Skip with appropriate reason', async () => {
       const csvWithAdmin = 'group name,email\nTeam Alpha,admin@test.com';
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ id: 'a1', email: 'admin@test.com', role_name: 'admin', group_id: null }],
           groups: mockGroups,
@@ -259,7 +259,7 @@ describe('ImportGroupMappings page', () => {
 
     it('marks assignment_manager users as Skip with appropriate reason', async () => {
       const csvWithAM = 'group name,email\nTeam Alpha,am@test.com';
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ id: 'am1', email: 'am@test.com', role_name: 'assignment_manager', group_id: null }],
           groups: mockGroups,
@@ -274,7 +274,7 @@ describe('ImportGroupMappings page', () => {
 
     it('does not count privileged-user rows as importable', async () => {
       const csvMixed = 'group name,email\nTeam Alpha,admin@test.com\nTeam Alpha,alice@test.com';
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [
             { id: 'a1', email: 'admin@test.com', role_name: 'admin', group_id: null },
@@ -292,7 +292,7 @@ describe('ImportGroupMappings page', () => {
 
     it('shows a skip/overwrite dropdown for conflict rows', async () => {
       const conflictCsv = 'group name,email\nTeam Alpha,assigned@test.com';
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ id: 'u3', email: 'assigned@test.com', group_id: 'g1' }],
           groups: mockGroups,
@@ -311,7 +311,7 @@ describe('ImportGroupMappings page', () => {
       ];
 
       async function goToConflictPreview() {
-        axios.get.mockResolvedValue({
+        api.get.mockResolvedValue({
           data: { users: conflictUsers, groups: mockGroups },
         });
         renderPage();
@@ -369,7 +369,7 @@ describe('ImportGroupMappings page', () => {
 
   describe('Step 3: Result', () => {
     async function runImport(importResponse = { imported: 2, skipped: [], errors: [] }) {
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [
             { id: 'u1', email: 'alice@test.com', group_id: null },
@@ -381,7 +381,7 @@ describe('ImportGroupMappings page', () => {
           ],
         },
       });
-      axios.post.mockResolvedValue({ data: importResponse });
+      api.post.mockResolvedValue({ data: importResponse });
 
       renderPage();
       uploadCsv('group name,email\nTeam Alpha,alice@test.com\nTeam Beta,bob@test.com');
@@ -441,7 +441,7 @@ describe('ImportGroupMappings page', () => {
     ];
 
     async function goToImportReady() {
-      axios.get.mockResolvedValue({ data: { users: confirmUsers, groups: confirmGroups } });
+      api.get.mockResolvedValue({ data: { users: confirmUsers, groups: confirmGroups } });
       renderPage();
       uploadCsv(confirmCsv);
       await waitFor(() => expect(screen.getAllByText('Ready').length).toBeGreaterThan(0));
@@ -516,11 +516,11 @@ describe('ImportGroupMappings page', () => {
         fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
       });
       expect(screen.queryByRole('heading', { name: /before you continue/i })).not.toBeInTheDocument();
-      expect(axios.post).not.toHaveBeenCalled();
+      expect(api.post).not.toHaveBeenCalled();
     });
 
     it('confirming after countdown proceeds with import', async () => {
-      axios.post.mockResolvedValue({ data: { imported: 2, skipped: [], errors: [] } });
+      api.post.mockResolvedValue({ data: { imported: 2, skipped: [], errors: [] } });
       await goToImportReady();
       jest.useFakeTimers();
       try {
@@ -544,13 +544,13 @@ describe('ImportGroupMappings page', () => {
 
   describe('Skipped CSV download', () => {
     it('does not include duplicate rows when a skipped row appears in both preview and API response', async () => {
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
           groups: [{ id: 'g1', name: 'Team Alpha' }],
         },
       });
-      axios.post.mockResolvedValue({
+      api.post.mockResolvedValue({
         data: {
           imported: 1,
           skipped: [{ email: 'nobody@test.com', groupName: 'Team Alpha', reason: 'User not found' }],

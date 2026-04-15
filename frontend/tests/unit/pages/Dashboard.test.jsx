@@ -1,11 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import Dashboard from '../../../src/pages/Dashboard.jsx';
 import { useAuth } from '../../../src/context/AuthContext.jsx';
 
-jest.mock('axios');
+jest.mock('@/utils/api');
 jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(),
 }));
@@ -104,7 +104,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({ data: { members: [] } });
+      api.get.mockResolvedValue({ data: { members: [] } });
 
       render(
         <MemoryRouter>
@@ -133,7 +133,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           members: [
             {
@@ -186,7 +186,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           members: [
             { id: 'u1', username: 'jdoe', email: 'jdoe@example.com', first_name: 'John', last_name: 'Doe' },
@@ -226,7 +226,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           members: [
             { id: 'u1', username: 'legacyuser', email: 'legacy@example.com', first_name: null, last_name: null },
@@ -261,7 +261,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({ data: { members: [] } });
+      api.get.mockResolvedValue({ data: { members: [] } });
 
       render(
         <MemoryRouter>
@@ -290,7 +290,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           groups: [
             { id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', max_members: 5, member_count: 2 },
@@ -331,7 +331,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           groups: [{ id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', max_members: 5, member_count: 2 }],
         },
@@ -368,12 +368,12 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           groups: [{ id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', max_members: 5, member_count: 2 }],
         },
       });
-      axios.post.mockResolvedValue({});
+      api.post.mockResolvedValue({});
 
       render(
         <MemoryRouter>
@@ -388,7 +388,7 @@ describe('Dashboard page', () => {
       await user.click(screen.getByRole('button', { name: /join/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(
+        expect(api.post).toHaveBeenCalledWith(
           expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001\/join$/)
         );
         expect(screen.getByText('Successfully joined group')).toBeInTheDocument();
@@ -420,12 +420,12 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           groups: [{ id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', max_members: 5, member_count: 2 }],
         },
       });
-      axios.post.mockRejectedValue({ response: { data: { error: 'Group is full' } } });
+      api.post.mockRejectedValue({ response: { data: { error: 'Group is full' } } });
 
       render(
         <MemoryRouter>
@@ -468,8 +468,8 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({ data: { members: [] } });
-      axios.post.mockResolvedValue({});
+      api.get.mockResolvedValue({ data: { members: [] } });
+      api.post.mockResolvedValue({});
 
       render(
         <MemoryRouter>
@@ -480,7 +480,7 @@ describe('Dashboard page', () => {
       await user.click(screen.getByRole('button', { name: /leave group/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(
+        expect(api.post).toHaveBeenCalledWith(
           expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001\/leave$/)
         );
         expect(screen.getByText('Successfully left group')).toBeInTheDocument();
@@ -512,8 +512,8 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({ data: { members: [] } });
-      axios.post.mockRejectedValue({ response: { data: { error: 'Not a member' } } });
+      api.get.mockResolvedValue({ data: { members: [] } });
+      api.post.mockRejectedValue({ response: { data: { error: 'Not a member' } } });
 
       render(
         <MemoryRouter>
@@ -549,7 +549,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({ data: { groups: [] } });
+      api.get.mockResolvedValue({ data: { groups: [] } });
 
       render(
         <MemoryRouter>
@@ -580,7 +580,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockRejectedValue(new Error('network'));
+      api.get.mockRejectedValue(new Error('network'));
 
       render(
         <MemoryRouter>
@@ -614,7 +614,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockResolvedValue({ data: { groups: [] } });
+      api.get.mockResolvedValue({ data: { groups: [] } });
 
       render(
         <MemoryRouter>
@@ -678,7 +678,7 @@ describe('Dashboard page', () => {
     });
 
     it('shows "I\'m Feeling Lucky" button when user has no group and lock is off', async () => {
-      axios.get.mockImplementation((url) => {
+      api.get.mockImplementation((url) => {
         if (url.includes('group-join-locked')) {
           return Promise.resolve({ data: { locked: false } });
         }
@@ -701,7 +701,7 @@ describe('Dashboard page', () => {
     });
 
     it('assigns to a non-empty group when one exists', async () => {
-      axios.get.mockImplementation((url) => {
+      api.get.mockImplementation((url) => {
         if (url.includes('group-join-locked')) {
           return Promise.resolve({ data: { locked: false } });
         }
@@ -714,7 +714,7 @@ describe('Dashboard page', () => {
           },
         });
       });
-      axios.post.mockResolvedValue({});
+      api.post.mockResolvedValue({});
 
       render(
         <MemoryRouter>
@@ -728,12 +728,12 @@ describe('Dashboard page', () => {
 
       await waitFor(() => {
         // Should join g2 (non-empty), not g1 (empty)
-        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g2\/join$/));
+        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g2\/join$/));
       });
     });
 
     it('falls back to any group when no non-empty groups exist', async () => {
-      axios.get.mockImplementation((url) => {
+      api.get.mockImplementation((url) => {
         if (url.includes('group-join-locked')) {
           return Promise.resolve({ data: { locked: false } });
         }
@@ -743,7 +743,7 @@ describe('Dashboard page', () => {
           },
         });
       });
-      axios.post.mockResolvedValue({});
+      api.post.mockResolvedValue({});
 
       render(
         <MemoryRouter>
@@ -756,12 +756,12 @@ describe('Dashboard page', () => {
       await userEvent.click(screen.getByRole('button', { name: /feeling lucky/i }));
 
       await waitFor(() => {
-        expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g1\/join$/));
+        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g1\/join$/));
       });
     });
 
     it('shows error when no groups are available', async () => {
-      axios.get.mockImplementation((url) => {
+      api.get.mockImplementation((url) => {
         if (url.includes('group-join-locked')) {
           return Promise.resolve({ data: { locked: false } });
         }
@@ -812,7 +812,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockImplementation((url) => {
+      api.get.mockImplementation((url) => {
         if (url.includes('group-join-locked')) {
           return Promise.resolve({ data: { locked: true } });
         }
@@ -842,7 +842,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockImplementation((url) => {
+      api.get.mockImplementation((url) => {
         if (url.includes('group-join-locked')) {
           return Promise.resolve({ data: { locked: true } });
         }
@@ -871,7 +871,7 @@ describe('Dashboard page', () => {
         isAssignmentManager: false,
       });
 
-      axios.get.mockImplementation((url) => {
+      api.get.mockImplementation((url) => {
         if (url.includes('group-join-locked')) {
           return Promise.resolve({ data: { locked: false } });
         }

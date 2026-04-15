@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import { ArrowLeft, ArrowRight, Check, AlertTriangle } from 'lucide-react';
 import Header from '../components/Header.jsx';
 import CsvDropzone from '../components/CsvDropzone.jsx';
@@ -98,10 +98,7 @@ function ImportGroupMappings() {
   const buildPreview = async () => {
     setLoadingPreview(true);
     try {
-      const [usersRes, groupsRes] = await Promise.all([
-        axios.get(`${API_BASE}/users`),
-        axios.get(`${API_BASE}/groups`),
-      ]);
+      const [usersRes, groupsRes] = await Promise.all([api.get(`${API_BASE}/users`), api.get(`${API_BASE}/groups`)]);
       const userEmailSet = new Map((usersRes.data.users || []).map((u) => [u.email.toLowerCase(), u]));
       const groupNameSet = new Map((groupsRes.data.groups || []).map((g) => [g.name.toLowerCase(), g]));
 
@@ -198,7 +195,7 @@ function ImportGroupMappings() {
         action: r.action,
         skipReason: r.skipReason,
       }));
-      const res = await axios.post(`${API_BASE}/groups/import-mappings`, { rows });
+      const res = await api.post(`${API_BASE}/groups/import-mappings`, { rows });
       setImportResult(res.data);
 
       // Auto-download skipped rows CSV

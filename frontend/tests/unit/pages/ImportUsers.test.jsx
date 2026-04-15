@@ -2,10 +2,10 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import ImportUsers from '../../../src/pages/ImportUsers.jsx';
 
-jest.mock('axios');
+jest.mock('@/utils/api');
 jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(() => ({
     user: { id: 'u1', username: 'admin', role: 'admin' },
@@ -227,7 +227,7 @@ describe('ImportUsers page', () => {
     });
 
     it('loads preview and advances to step 3 on success', async () => {
-      axios.get.mockResolvedValue({ data: { users: [] } });
+      api.get.mockResolvedValue({ data: { users: [] } });
       renderPage();
       uploadCsv(validCsv);
       await waitForStep2();
@@ -237,7 +237,7 @@ describe('ImportUsers page', () => {
     });
 
     it('shows error when fetching existing users fails', async () => {
-      axios.get.mockRejectedValue({ response: { data: { error: 'Server error' } } });
+      api.get.mockRejectedValue({ response: { data: { error: 'Server error' } } });
       renderPage();
       uploadCsv(validCsv);
       await waitForStep2();
@@ -252,7 +252,7 @@ describe('ImportUsers page', () => {
     const twoCsv = 'username,email,firstName,lastName\njdoe,jdoe@test.com,John,Doe\njane,jane@test.com,Jane,Smith';
 
     async function goToPreview({ existingUsers = [], csv = twoCsv } = {}) {
-      axios.get.mockResolvedValue({ data: { users: existingUsers } });
+      api.get.mockResolvedValue({ data: { users: existingUsers } });
       renderPage();
       uploadCsv(csv);
       await waitForStep2();
@@ -305,18 +305,18 @@ describe('ImportUsers page', () => {
     });
 
     it('submits import and shows result step', async () => {
-      axios.post.mockResolvedValue({ data: { imported: 2, skipped: 0, errors: [] } });
+      api.post.mockResolvedValue({ data: { imported: 2, skipped: 0, errors: [] } });
       await goToPreview();
       await userEvent.click(screen.getByRole('button', { name: 'Import' }));
       expect(await screen.findByText('Import Complete')).toBeInTheDocument();
     });
 
     it('calls POST /users/import with correct payload', async () => {
-      axios.post.mockResolvedValue({ data: { imported: 2, skipped: 0, errors: [] } });
+      api.post.mockResolvedValue({ data: { imported: 2, skipped: 0, errors: [] } });
       await goToPreview();
       await userEvent.click(screen.getByRole('button', { name: 'Import' }));
       await screen.findByText('Import Complete');
-      expect(axios.post).toHaveBeenCalledWith(
+      expect(api.post).toHaveBeenCalledWith(
         expect.stringContaining('/users/import'),
         expect.objectContaining({
           conflictAction: 'skip',
@@ -327,7 +327,7 @@ describe('ImportUsers page', () => {
     });
 
     it('shows submit error when import API fails', async () => {
-      axios.post.mockRejectedValue({ response: { data: { error: 'Import failed' } } });
+      api.post.mockRejectedValue({ response: { data: { error: 'Import failed' } } });
       await goToPreview();
       await userEvent.click(screen.getByRole('button', { name: 'Import' }));
       expect(await screen.findByText('Import failed')).toBeInTheDocument();
@@ -352,8 +352,8 @@ describe('ImportUsers page', () => {
 
   describe('Step 4 — Result', () => {
     async function goToResult({ imported = 2, skipped = 0, errors = [] } = {}) {
-      axios.get.mockResolvedValue({ data: { users: [] } });
-      axios.post.mockResolvedValue({ data: { imported, skipped, errors } });
+      api.get.mockResolvedValue({ data: { users: [] } });
+      api.post.mockResolvedValue({ data: { imported, skipped, errors } });
       renderPage();
       uploadCsv('username,email,firstName,lastName\njdoe,jdoe@test.com,John,Doe\njane,jane@test.com,Jane,Smith');
       await waitForStep2();
@@ -396,7 +396,7 @@ describe('ImportUsers page', () => {
 
   describe('Full Name column mapping', () => {
     it('splits "First Last" format correctly in preview', async () => {
-      axios.get.mockResolvedValue({ data: { users: [] } });
+      api.get.mockResolvedValue({ data: { users: [] } });
       renderPage();
       // "name" header auto-detects to fullNameFL
       uploadCsv('username,email,name\njdoe,jdoe@test.com,John Doe');
@@ -408,7 +408,7 @@ describe('ImportUsers page', () => {
     });
 
     it('splits "First, Last" comma format correctly for fullNameFL', async () => {
-      axios.get.mockResolvedValue({ data: { users: [] } });
+      api.get.mockResolvedValue({ data: { users: [] } });
       renderPage();
       uploadCsv('username,email,name\njdoe,jdoe@test.com,"John, Doe"');
       await waitForStep2();
@@ -419,7 +419,7 @@ describe('ImportUsers page', () => {
     });
 
     it('splits "Last, First" format correctly when mapped to fullNameLF', async () => {
-      axios.get.mockResolvedValue({ data: { users: [] } });
+      api.get.mockResolvedValue({ data: { users: [] } });
       renderPage();
       // "fullname" auto-detects to fullNameFL; we'll change it to fullNameLF
       uploadCsv('username,email,fullname\njdoe,jdoe@test.com,"Doe, John"');
@@ -537,7 +537,7 @@ describe('ImportUsers page', () => {
 
   describe('Duplicate and conflict detection', () => {
     it('shows "Duplicate in file" badge for intra-CSV duplicate usernames', async () => {
-      axios.get.mockResolvedValue({ data: { users: [] } });
+      api.get.mockResolvedValue({ data: { users: [] } });
       renderPage();
       uploadCsv('username,email,firstName,lastName\njdoe,jdoe@a.com,John,Doe\njdoe,jdoe@b.com,Jane,Doe');
       await waitForStep2();
@@ -547,7 +547,7 @@ describe('ImportUsers page', () => {
     });
 
     it('shows "Duplicate in file" badge for intra-CSV duplicate emails', async () => {
-      axios.get.mockResolvedValue({ data: { users: [] } });
+      api.get.mockResolvedValue({ data: { users: [] } });
       renderPage();
       uploadCsv('username,email,firstName,lastName\njdoe,same@test.com,John,Doe\njane,same@test.com,Jane,Smith');
       await waitForStep2();
@@ -557,7 +557,7 @@ describe('ImportUsers page', () => {
     });
 
     it('shows "Conflict (email/ID taken)" for email conflict with existing user', async () => {
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ username: 'other', email: 'taken@test.com', role_name: 'user' }],
         },
@@ -571,7 +571,7 @@ describe('ImportUsers page', () => {
     });
 
     it('shows "Conflict (email/ID taken)" for student ID conflict with existing user', async () => {
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ username: 'other', email: 'other@test.com', role_name: 'user', student_id: 'S123' }],
         },
@@ -585,12 +585,12 @@ describe('ImportUsers page', () => {
     });
 
     it('does not send conflict rows to the import API', async () => {
-      axios.get.mockResolvedValue({
+      api.get.mockResolvedValue({
         data: {
           users: [{ username: 'other', email: 'taken@test.com', role_name: 'user' }],
         },
       });
-      axios.post.mockResolvedValue({ data: { imported: 0, skipped: 0, errors: [] } });
+      api.post.mockResolvedValue({ data: { imported: 0, skipped: 0, errors: [] } });
       renderPage();
       uploadCsv('username,email,firstName,lastName\nnewuser,taken@test.com,New,User');
       await waitForStep2();

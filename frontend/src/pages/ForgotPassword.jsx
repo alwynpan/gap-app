@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/utils/api';
 import { forgotPasswordSchema, parseBody } from '../utils/schemas.js';
 import { API_BASE } from '../config.js';
 
@@ -23,7 +23,7 @@ function ForgotPassword() {
 
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE}/auth/forgot-password`, { email: body.email });
+      const response = await api.post(`${API_BASE}/auth/forgot-password`, { email: body.email });
       setSuccess(response.data.message || 'If that email is registered, a reset link has been sent.');
     } catch (_err) {
       // Show generic message even on error to avoid leaking information
