@@ -98,4 +98,23 @@ describe('ErrorBoundary', () => {
       expect.objectContaining({ message: 'Test error' })
     );
   });
+
+  it('logs a normalized message when a non-Error value is thrown', () => {
+    jest.spyOn(logger, 'error').mockImplementation(() => {});
+
+    function ThrowingString() {
+      throw 'raw string error';
+    }
+
+    render(
+      <ErrorBoundary>
+        <ThrowingString />
+      </ErrorBoundary>
+    );
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Unhandled error caught by ErrorBoundary',
+      expect.objectContaining({ message: 'raw string error' })
+    );
+  });
 });
