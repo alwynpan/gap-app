@@ -58,6 +58,32 @@ describe('ErrorBoundary', () => {
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 
+  it('resets error state after onReset so children render again on next render', () => {
+    const onReset = jest.fn();
+
+    // 1. Render with a throwing child — boundary enters error state
+    const { rerender } = render(
+      <ErrorBoundary onReset={onReset}>
+        <ThrowingComponent shouldThrow={true} />
+      </ErrorBoundary>
+    );
+    expect(screen.getByRole('heading', { name: /something went wrong/i })).toBeInTheDocument();
+
+    // 2. Swap to a safe child while boundary is still in error state
+    rerender(
+      <ErrorBoundary onReset={onReset}>
+        <ThrowingComponent shouldThrow={false} />
+      </ErrorBoundary>
+    );
+    // Still showing fallback — hasError hasn't been cleared yet
+    expect(screen.getByRole('heading', { name: /something went wrong/i })).toBeInTheDocument();
+
+    // 3. Click reset — clears hasError, safe child renders normally
+    fireEvent.click(screen.getByRole('button', { name: /refresh page/i }));
+    expect(screen.queryByRole('heading', { name: /something went wrong/i })).not.toBeInTheDocument();
+    expect(screen.getByText('Safe content')).toBeInTheDocument();
+  });
+
   it('logs the error via componentDidCatch', () => {
     jest.spyOn(logger, 'error').mockImplementation(() => {});
 
