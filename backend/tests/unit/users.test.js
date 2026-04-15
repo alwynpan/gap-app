@@ -2238,6 +2238,12 @@ describe('Users Routes', () => {
       body,
     });
 
+    beforeEach(() => {
+      User.findByUsernames.mockResolvedValue([]);
+      User.findByEmails.mockResolvedValue([]);
+      User.findByStudentIds.mockResolvedValue([]);
+    });
+
     it('rejects unauthenticated request', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
@@ -2285,9 +2291,7 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue(null);
+      // Empty batch results — no existing user with this username/email/studentId
       User.create.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000002',
         username: 'newuser',
@@ -2310,13 +2314,38 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ imported: 1, skipped: 0, errors: [] });
     });
 
+    it('performs exactly 3 batch DB queries for a valid import', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.create
+        .mockResolvedValueOnce({ id: 'u1', username: 'user1', email: 'u1@test.com' })
+        .mockResolvedValueOnce({ id: 'u2', username: 'user2', email: 'u2@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [
+            { username: 'user1', email: 'u1@test.com', firstName: 'A', lastName: 'B' },
+            { username: 'user2', email: 'u2@test.com', firstName: 'C', lastName: 'D' },
+          ],
+        }),
+        mockReply
+      );
+
+      expect(User.findByUsernames).toHaveBeenCalledTimes(1);
+      expect(User.findByEmails).toHaveBeenCalledTimes(1);
+      expect(User.findByStudentIds).toHaveBeenCalledTimes(1);
+      expect(User.create).toHaveBeenCalledTimes(2);
+      expect(mockReply.send).toHaveBeenCalledWith({ imported: 2, skipped: 0, errors: [] });
+    });
+
     it('sends setup email when sendSetupEmail is true', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue(null);
       const newUser = { id: 'u2', username: 'newuser', email: 'new@test.com' };
       User.create.mockResolvedValue(newUser);
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
@@ -2343,9 +2372,6 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue(null);
       User.create.mockResolvedValue({ id: 'u2', username: 'newuser', email: 'new@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2365,11 +2391,15 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000002',
-        username: 'existing',
-        role_name: 'user',
-      });
+      User.findByUsernames.mockResolvedValue([
+        {
+          id: '00000000-0000-4000-8000-000000000002',
+          username: 'existing',
+          email: 'existing@test.com',
+          student_id: null,
+          role_name: 'user',
+        },
+      ]);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2390,10 +2420,15 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      const existingUser = { id: '00000000-0000-4000-8000-000000000002', username: 'existing', role_name: 'user' };
-      User.findByUsername.mockResolvedValue(existingUser);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue(null);
+      const existingUser = {
+        id: '00000000-0000-4000-8000-000000000002',
+        username: 'existing',
+        email: 'old@test.com',
+        student_id: null,
+        role_name: 'user',
+      };
+      User.findByUsernames.mockResolvedValue([existingUser]);
+      // No email/studentId conflicts
       User.update.mockResolvedValue({ ...existingUser, email: 'new@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2418,9 +2453,14 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      const existingUser = { id: '00000000-0000-4000-8000-000000000002', username: 'existing', role_name: 'user' };
-      User.findByUsername.mockResolvedValue(existingUser);
-      User.findByEmail.mockResolvedValue(null);
+      const existingUser = {
+        id: '00000000-0000-4000-8000-000000000002',
+        username: 'existing',
+        email: 'existing@test.com',
+        student_id: null,
+        role_name: 'user',
+      };
+      User.findByUsernames.mockResolvedValue([existingUser]);
       User.update.mockResolvedValue({ ...existingUser, email: 'new@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2445,10 +2485,14 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      const existingUser = { id: '00000000-0000-4000-8000-000000000002', username: 'existing', role_name: 'user' };
-      User.findByUsername.mockResolvedValue(existingUser);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue(null);
+      const existingUser = {
+        id: '00000000-0000-4000-8000-000000000002',
+        username: 'existing',
+        email: 'existing@test.com',
+        student_id: null,
+        role_name: 'user',
+      };
+      User.findByUsernames.mockResolvedValue([existingUser]);
       User.update.mockResolvedValue({ ...existingUser, email: 'new@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2474,7 +2518,15 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue({ id: 'u2', username: 'admin', role_name: 'admin' });
+      User.findByUsernames.mockResolvedValue([
+        {
+          id: 'u2',
+          username: 'admin',
+          email: 'admin@test.com',
+          student_id: null,
+          role_name: 'admin',
+        },
+      ]);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2549,9 +2601,6 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue(null);
       User.create.mockResolvedValue({ id: 'u1', username: 'fnonly', email: 'fn@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2572,9 +2621,6 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue(null);
       User.create.mockResolvedValue({ id: 'u1', username: 'lnonly', email: 'ln@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2591,13 +2637,104 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ imported: 1, skipped: 0, errors: [] });
     });
 
+    it('catches within-batch duplicate email via map-sync after create', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      // Batch lookups return empty — neither user exists yet
+      User.create.mockResolvedValueOnce({ id: 'u1', username: 'alice', email: 'same@test.com', student_id: null });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [
+            { username: 'alice', email: 'same@test.com', firstName: 'Alice', lastName: 'A' },
+            { username: 'bob', email: 'same@test.com', firstName: 'Bob', lastName: 'B' },
+          ],
+        }),
+        mockReply
+      );
+
+      // First row created, second caught by the synced emailMap — not by a DB constraint
+      expect(User.create).toHaveBeenCalledTimes(1);
+      expect(mockReply.send).toHaveBeenCalledWith({
+        imported: 1,
+        skipped: 0,
+        errors: [{ row: 2, identifier: 'bob', reason: 'Email already in use by another user' }],
+      });
+    });
+
+    it('catches within-batch duplicate studentId via map-sync after create', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.create.mockResolvedValueOnce({ id: 'u1', username: 'alice', email: 'a@test.com', student_id: 'S100' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [
+            { username: 'alice', email: 'a@test.com', firstName: 'Alice', lastName: 'A', studentId: 'S100' },
+            { username: 'bob', email: 'b@test.com', firstName: 'Bob', lastName: 'B', studentId: 'S100' },
+          ],
+        }),
+        mockReply
+      );
+
+      expect(User.create).toHaveBeenCalledTimes(1);
+      expect(mockReply.send).toHaveBeenCalledWith({
+        imported: 1,
+        skipped: 0,
+        errors: [{ row: 2, identifier: 'bob', reason: 'Student ID already in use by another user' }],
+      });
+    });
+
+    it('detects email conflict after overwrite changes an existing user email', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      const existingUser = {
+        id: 'u2',
+        username: 'existing',
+        email: 'old@test.com',
+        student_id: null,
+        role_name: 'user',
+      };
+      User.findByUsernames.mockResolvedValue([existingUser]);
+      User.update.mockResolvedValue({ ...existingUser, email: 'new@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      // Row 1 overwrites 'existing' to use 'new@test.com'; row 2 tries to create a user with the same email
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [
+            { username: 'existing', email: 'new@test.com', firstName: 'Ex', lastName: 'User' },
+            { username: 'newcomer', email: 'new@test.com', firstName: 'New', lastName: 'User' },
+          ],
+          conflictAction: 'overwrite',
+        }),
+        mockReply
+      );
+
+      expect(User.update).toHaveBeenCalledTimes(1);
+      expect(User.create).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({
+        imported: 1,
+        skipped: 0,
+        errors: [{ row: 2, identifier: 'newcomer', reason: 'Email already in use by another user' }],
+      });
+    });
+
     it('records error for row-level database failures', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue(null);
       User.create.mockRejectedValue(new Error('DB constraint violation'));
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2621,12 +2758,16 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername
-        .mockResolvedValueOnce(null) // new
-        .mockResolvedValueOnce({ id: 'u2', username: 'existing', role_name: 'user' }) // skip
-        .mockResolvedValueOnce(null); // missing fields row — won't reach findByUsername
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue(null);
+      // Batch returns 'existing' user; 'newuser' and invalid row are not in DB
+      User.findByUsernames.mockResolvedValue([
+        {
+          id: 'u2',
+          username: 'existing',
+          email: 'ex@test.com',
+          student_id: null,
+          role_name: 'user',
+        },
+      ]);
       User.create.mockResolvedValue({ id: 'u3', username: 'newuser', email: 'new@test.com' });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2667,12 +2808,29 @@ describe('Users Routes', () => {
       expect(mockReply.code).toHaveBeenCalledWith(500);
     });
 
+    it('returns 500 when batch lookup fails', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.findByUsernames.mockRejectedValue(new Error('DB down'));
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({ users: [{ username: 'u', email: 'e@e.com', firstName: 'F', lastName: 'L' }] }),
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(500);
+    });
+
     it('errors when new user email conflicts with existing user', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue({ id: 'other', username: 'other', email: 'taken@test.com' });
+      // 'newuser' not in usernameMap, but 'taken@test.com' is in emailMap (owned by 'other')
+      User.findByEmails.mockResolvedValue([{ id: 'other', email: 'taken@test.com' }]);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2696,9 +2854,7 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue({ id: 'other', username: 'other', student_id: 'S123' });
+      User.findByStudentIds.mockResolvedValue([{ id: 'other', student_id: 'S123' }]);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2724,9 +2880,16 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      const existingUser = { id: 'u2', username: 'existing', role_name: 'user' };
-      User.findByUsername.mockResolvedValue(existingUser);
-      User.findByEmail.mockResolvedValue({ id: 'u3', username: 'other', email: 'taken@test.com' });
+      const existingUser = {
+        id: 'u2',
+        username: 'existing',
+        email: 'old@test.com',
+        student_id: null,
+        role_name: 'user',
+      };
+      User.findByUsernames.mockResolvedValue([existingUser]);
+      // A different user (u3) owns 'taken@test.com'
+      User.findByEmails.mockResolvedValue([{ id: 'u3', email: 'taken@test.com' }]);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2751,11 +2914,17 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      const existingUser = { id: 'u2', username: 'existing', role_name: 'user' };
-      User.findByUsername.mockResolvedValue(existingUser);
-      User.findByEmail.mockResolvedValue({ id: 'u2', username: 'existing', email: 'same@test.com' });
-      User.findByStudentId.mockResolvedValue(null);
-      User.update.mockResolvedValue({ ...existingUser, email: 'same@test.com' });
+      const existingUser = {
+        id: 'u2',
+        username: 'existing',
+        email: 'same@test.com',
+        student_id: null,
+        role_name: 'user',
+      };
+      User.findByUsernames.mockResolvedValue([existingUser]);
+      // The same user owns 'same@test.com'
+      User.findByEmails.mockResolvedValue([{ id: 'u2', email: 'same@test.com' }]);
+      User.update.mockResolvedValue({ ...existingUser });
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -2776,10 +2945,16 @@ describe('Users Routes', () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
-      const existingUser = { id: 'u2', username: 'existing', role_name: 'user' };
-      User.findByUsername.mockResolvedValue(existingUser);
-      User.findByEmail.mockResolvedValue(null);
-      User.findByStudentId.mockResolvedValue({ id: 'u3', username: 'other', student_id: 'S123' });
+      const existingUser = {
+        id: 'u2',
+        username: 'existing',
+        email: 'ex@test.com',
+        student_id: null,
+        role_name: 'user',
+      };
+      User.findByUsernames.mockResolvedValue([existingUser]);
+      // A different user (u3) owns student ID 'S123'
+      User.findByStudentIds.mockResolvedValue([{ id: 'u3', student_id: 'S123' }]);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };

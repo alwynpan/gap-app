@@ -586,25 +586,51 @@ async function usersRoutes(fastify, _options) {
         let imported = 0;
         let skipped = 0;
         const errors = [];
-        let rowNum = 0;
 
-        for (const rawRow of usersToImport) {
-          rowNum++;
-
+        // First pass: parse all rows and collect unique keys for batch lookup
+        const parsedRows = [];
+        for (let rowNum = 1; rowNum <= usersToImport.length; rowNum++) {
+          const rawRow = usersToImport[rowNum - 1];
           const parseResult = importUserRowSchema.safeParse(rawRow);
           if (!parseResult.success) {
             const rawUsername = typeof rawRow.username === 'string' ? rawRow.username.slice(0, 100) : '';
             const rawEmail = typeof rawRow.email === 'string' ? rawRow.email.slice(0, 255) : '';
             const rowLabel = sanitize(rawUsername || rawEmail) || `row ${rowNum}`;
             errors.push({ row: rowNum, identifier: rowLabel, reason: 'Missing or invalid required fields' });
+            parsedRows.push(null);
             continue;
           }
+          parsedRows.push({ rowNum, ...parseResult.data });
+        }
 
-          const { username, email, firstName, lastName, studentId } = parseResult.data;
+        // Batch lookups — 3 queries regardless of import size
+        const validParsedRows = parsedRows.filter(Boolean);
+        const allUsernames = [...new Set(validParsedRows.map((r) => r.username.toLowerCase()))];
+        const allEmails = [...new Set(validParsedRows.map((r) => r.email))];
+        const allStudentIds = [...new Set(validParsedRows.filter((r) => r.studentId).map((r) => r.studentId))];
+
+        const [usernameRows, emailRows, studentIdRows] = await Promise.all([
+          User.findByUsernames(allUsernames),
+          User.findByEmails(allEmails),
+          User.findByStudentIds(allStudentIds),
+        ]);
+
+        const usernameMap = new Map(usernameRows.map((u) => [u.username.toLowerCase(), u]));
+        const emailMap = new Map(emailRows.map((u) => [u.email, u]));
+        const studentIdMap = new Map(studentIdRows.map((u) => [u.student_id, u]));
+
+        // Second pass: process rows using in-memory maps; update maps after each write
+        // for within-batch duplicate detection
+        for (const parsed of parsedRows) {
+          if (!parsed) {
+            continue; // validation error already recorded in first pass
+          }
+
+          const { rowNum, username, email, firstName, lastName, studentId } = parsed;
           const rowLabel = username || email || `row ${rowNum}`;
 
           try {
-            const existing = await User.findByUsername(username);
+            const existing = usernameMap.get(username.toLowerCase());
 
             if (existing) {
               if (conflictAction === 'skip') {
@@ -621,7 +647,7 @@ async function usersRoutes(fastify, _options) {
                 continue;
               }
               // Check if email would conflict with a different user
-              const emailOwner = await User.findByEmail(email);
+              const emailOwner = emailMap.get(email);
               if (emailOwner && emailOwner.id !== existing.id) {
                 errors.push({
                   row: rowNum,
@@ -632,7 +658,7 @@ async function usersRoutes(fastify, _options) {
               }
               // Check if student ID would conflict with a different user
               if (studentId) {
-                const sidOwner = await User.findByStudentId(studentId);
+                const sidOwner = studentIdMap.get(studentId);
                 if (sidOwner && sidOwner.id !== existing.id) {
                   errors.push({
                     row: rowNum,
@@ -643,12 +669,33 @@ async function usersRoutes(fastify, _options) {
                 }
               }
               await User.update(existing.id, { email, firstName, lastName, studentId: studentId || null });
+              // Keep maps in sync so subsequent rows in the same batch see current state
+              const updatedEntry = {
+                ...existing,
+                email,
+                first_name: firstName,
+                last_name: lastName,
+                student_id: studentId || null,
+              };
+              usernameMap.set(username.toLowerCase(), updatedEntry);
+              if (existing.email !== email) {
+                emailMap.delete(existing.email);
+                emailMap.set(email, updatedEntry);
+              }
+              if (existing.student_id !== (studentId || null)) {
+                if (existing.student_id) {
+                  studentIdMap.delete(existing.student_id);
+                }
+                if (studentId) {
+                  studentIdMap.set(studentId, updatedEntry);
+                }
+              }
               imported++;
               continue;
             }
 
-            // New user — check email and student ID uniqueness
-            const emailOwner = await User.findByEmail(email);
+            // New user — check email and student ID uniqueness using maps
+            const emailOwner = emailMap.get(email);
             if (emailOwner) {
               errors.push({
                 row: rowNum,
@@ -658,7 +705,7 @@ async function usersRoutes(fastify, _options) {
               continue;
             }
             if (studentId) {
-              const sidOwner = await User.findByStudentId(studentId);
+              const sidOwner = studentIdMap.get(studentId);
               if (sidOwner) {
                 errors.push({
                   row: rowNum,
@@ -678,6 +725,14 @@ async function usersRoutes(fastify, _options) {
               studentId: studentId || null,
               roleId: roleRecord.id,
             });
+
+            // Keep maps in sync for within-batch duplicate detection
+            const newEntry = { ...newUser, role_name: 'user' };
+            usernameMap.set(username.toLowerCase(), newEntry);
+            emailMap.set(email, newEntry);
+            if (studentId) {
+              studentIdMap.set(studentId, newEntry);
+            }
 
             if (sendSetupEmail) {
               try {

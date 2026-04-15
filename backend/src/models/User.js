@@ -119,6 +119,53 @@ class User {
     return result.rows[0] || null;
   }
 
+  static async findByEmails(emails) {
+    if (!emails || emails.length === 0) {
+      return [];
+    }
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
+              u.group_id, u.enabled, u.status, u.created_at, u.updated_at,
+              u.role_id, r.name as role_name
+       FROM users u
+       LEFT JOIN roles r ON u.role_id = r.id
+       WHERE u.email = ANY($1)`,
+      [emails]
+    );
+    return result.rows;
+  }
+
+  static async findByUsernames(usernames) {
+    if (!usernames || usernames.length === 0) {
+      return [];
+    }
+    const lower = usernames.map((u) => u.toLowerCase());
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.email, u.password_hash, u.first_name, u.last_name,
+              u.student_id, u.enabled, u.status,
+              u.group_id, g.name as group_name,
+              u.role_id, r.name as role_name
+       FROM users u
+       LEFT JOIN groups g ON u.group_id = g.id
+       LEFT JOIN roles r ON u.role_id = r.id
+       WHERE LOWER(u.username) = ANY($1)`,
+      [lower]
+    );
+    return result.rows;
+  }
+
+  static async findByStudentIds(studentIds) {
+    if (!studentIds || studentIds.length === 0) {
+      return [];
+    }
+    const result = await pool.query(
+      `SELECT id, username, email, first_name, last_name, student_id, group_id, enabled, status, created_at, updated_at, role_id
+       FROM users WHERE student_id = ANY($1)`,
+      [studentIds]
+    );
+    return result.rows;
+  }
+
   static async create(userData) {
     const { username, email, password, firstName, lastName, studentId, groupId, roleId } = userData;
 

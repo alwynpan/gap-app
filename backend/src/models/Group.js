@@ -173,6 +173,15 @@ class Group {
     return result.rows[0] || null;
   }
 
+  static async findByNames(names) {
+    if (!names || names.length === 0) {
+      return [];
+    }
+    const lower = names.map((n) => n.toLowerCase());
+    const result = await pool.query('SELECT * FROM groups WHERE LOWER(name) = ANY($1)', [lower]);
+    return result.rows;
+  }
+
   static async getExportMappings() {
     const result = await pool.query(
       `SELECT u.email, g.name AS group_name

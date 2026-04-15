@@ -144,6 +144,123 @@ describe('User Model', () => {
     });
   });
 
+  describe('findByEmails', () => {
+    it('returns users matching the given emails', async () => {
+      const mockUsers = [
+        { id: 'u1', email: 'a@test.com', role_name: 'user' },
+        { id: 'u2', email: 'b@test.com', role_name: 'user' },
+      ];
+      pool.query.mockResolvedValue({ rows: mockUsers });
+
+      const result = await User.findByEmails(['a@test.com', 'b@test.com']);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.email = ANY($1)'), [
+        ['a@test.com', 'b@test.com'],
+      ]);
+      expect(result).toEqual(mockUsers);
+    });
+
+    it('returns empty array without querying when emails is empty', async () => {
+      const result = await User.findByEmails([]);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array without querying when emails is undefined', async () => {
+      const result = await User.findByEmails(undefined);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array when no emails match', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await User.findByEmails(['nobody@test.com']);
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('findByUsernames', () => {
+    it('returns users matching the given usernames (case-insensitive)', async () => {
+      const mockUsers = [
+        { id: 'u1', username: 'alice', email: 'a@test.com', role_name: 'user' },
+        { id: 'u2', username: 'bob', email: 'b@test.com', role_name: 'admin' },
+      ];
+      pool.query.mockResolvedValue({ rows: mockUsers });
+
+      const result = await User.findByUsernames(['Alice', 'Bob']);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE LOWER(u.username) = ANY($1)'), [
+        ['alice', 'bob'],
+      ]);
+      expect(result).toEqual(mockUsers);
+    });
+
+    it('lowercases all usernames before querying', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findByUsernames(['UPPER', 'MiXeD']);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.any(String), [['upper', 'mixed']]);
+    });
+
+    it('returns empty array without querying when usernames is empty', async () => {
+      const result = await User.findByUsernames([]);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array without querying when usernames is undefined', async () => {
+      const result = await User.findByUsernames(undefined);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('findByStudentIds', () => {
+    it('returns users matching the given student IDs', async () => {
+      const mockUsers = [
+        { id: 'u1', username: 'alice', student_id: 'S001' },
+        { id: 'u2', username: 'bob', student_id: 'S002' },
+      ];
+      pool.query.mockResolvedValue({ rows: mockUsers });
+
+      const result = await User.findByStudentIds(['S001', 'S002']);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE student_id = ANY($1)'), [
+        ['S001', 'S002'],
+      ]);
+      expect(result).toEqual(mockUsers);
+    });
+
+    it('returns empty array without querying when studentIds is empty', async () => {
+      const result = await User.findByStudentIds([]);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array without querying when studentIds is undefined', async () => {
+      const result = await User.findByStudentIds(undefined);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array when no student IDs match', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await User.findByStudentIds(['S999']);
+
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('findByEmail', () => {
     it('returns user by email', async () => {
       const mockUser = {
