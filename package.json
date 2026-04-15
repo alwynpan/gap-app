@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "G.A.P. Portal - Full Stack Application",
   "private": true,
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "install:all": "pnpm install",
     "lint:backend": "pnpm --filter gap-backend lint",

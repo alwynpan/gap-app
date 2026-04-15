@@ -1,7 +1,7 @@
 # Build stage
 FROM node:24-slim AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ ENV GIT_HASH=${GIT_HASH}
 
 # Build application
 WORKDIR /app/frontend
-RUN npx vite build
+RUN pnpm exec vite build
 
 # Production stage
 FROM cgr.dev/chainguard/nginx:latest
