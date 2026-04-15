@@ -11,4 +11,3 @@ Dockerfile.dev
 .dockerignore
 eslint.config.js
 jest.config.cjs
-vite.config.js
