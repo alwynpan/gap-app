@@ -10,6 +10,7 @@
     "migrate:up": "node src/db/migrate.js up",
     "migrate:reset": "node src/db/migrate.js reset",
     "test": "jest --coverage",
+    "test:quiet": "jest --coverage --silent --no-verbose",
     "test:integration": "jest --config jest.integration.config.js --forceExit",
     "test:integration:quiet": "jest --config jest.integration.config.js --forceExit --silent --no-verbose",
     "test:integration:coverage": "jest --config jest.integration.config.js --coverage --forceExit",
@@ -36,15 +37,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
     "@testcontainers/postgresql": "^11.13.0",
-    "eslint": "^9.39.4",
-    "eslint-config-prettier": "^10.1.8",
     "eslint-formatter-checkstyle": "^9.0.1",
-    "eslint-plugin-security": "^4.0.0",
-    "husky": "^9.1.7",
     "jest": "^30.3.0",
-    "nodemon": "^3.1.14",
-    "prettier": "^3.8.1"
+    "nodemon": "^3.1.14"
   }
 }

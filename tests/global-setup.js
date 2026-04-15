@@ -145,7 +145,7 @@ module.exports = async function globalSetup() {
   // 4. Build frontend with VITE_API_URL pointing to backend
   console.log('[e2e] Building frontend...');
   try {
-    execSync('npm run build', {
+    execSync('pnpm run build', {
       cwd: FRONTEND_DIR,
       env: {
         ...process.env,
@@ -160,13 +160,14 @@ module.exports = async function globalSetup() {
   }
   console.log('[e2e] Frontend build complete.');
 
-  // 5. Start vite preview
+  // 5. Start vite preview (use shell: true so the .bin/vite shell wrapper is executed properly)
   const previewProc = spawn(
-    'node',
-    ['node_modules/.bin/vite', 'preview', '--port', String(FRONTEND_PORT), '--strictPort'],
+    path.join('node_modules', '.bin', 'vite'),
+    ['preview', '--port', String(FRONTEND_PORT), '--strictPort'],
     {
       cwd: FRONTEND_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: true,
     }
   );
 
