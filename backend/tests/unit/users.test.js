@@ -2126,6 +2126,7 @@ describe('Users Routes', () => {
       const putCall = mockFastify.put.mock.calls.find(([path]) => path === '/users/:id/password');
       expect(putCall).toBeDefined();
       const routeConfig = putCall[1];
+      expect(routeConfig.config).toBeDefined();
       expect(routeConfig.config.rateLimit).toBeDefined();
       expect(routeConfig.config.rateLimit.max).toBeGreaterThan(0);
       expect(routeConfig.config.rateLimit.timeWindow).toBeDefined();
