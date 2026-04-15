@@ -46,16 +46,6 @@ async function buildServer({ logger: disableLogger } = {}) {
   await fastify.register(authPlugin);
   await fastify.register(rbacPlugin);
 
-  // JWT decorator for token verification
-  fastify.decorate('authenticate', async (request, reply) => {
-    try {
-      await request.jwtVerify();
-    } catch (err) {
-      reply.code(401).send({ error: 'Unauthorized', message: err.message });
-      throw err;
-    }
-  });
-
   // Access logging — record start time on every request
   fastify.addHook('onRequest', async (request) => {
     request._startTime = Date.now();
