@@ -18,8 +18,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: backend/Dockerfile.dev
     env_file:
       - .env
     container_name: gap-backend
@@ -50,14 +50,14 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ./backend:/app
-      - /app/node_modules
-    command: sh -c "npm run migrate && npm run dev"
+      - ./backend:/app/backend
+      - /app/backend/node_modules
+    command: sh -c "pnpm --filter gap-backend run migrate && pnpm --filter gap-backend run dev"
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: frontend/Dockerfile.dev
     container_name: gap-frontend
     ports:
       - "3000:3000"
@@ -66,8 +66,8 @@ services:
     environment:
       VITE_API_URL: http://localhost:3001/api
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
       - ./.git:/app/.git:ro
 
 volumes:

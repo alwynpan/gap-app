@@ -1,2 +1,2 @@
 # Run lint-staged for staged files
-npx lint-staged
+pnpm exec lint-staged
