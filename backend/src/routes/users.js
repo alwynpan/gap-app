@@ -14,11 +14,14 @@ const {
   ROLE_VALUES,
 } = require('../utils/schemas');
 const { logger } = require('../utils/logger');
+const config = require('../config/index');
 
 const _parsed = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
 const MAX_IMPORT_SIZE = Number.isNaN(_parsed) ? 2000 : _parsed;
 
 async function usersRoutes(fastify, _options) {
+  const isDev = config.app.nodeEnv === 'development';
+
   // Get all users (admin/assignment_manager only) — supports ?role=, ?status=, ?groupId= filters
   fastify.get(
     '/users',
@@ -406,9 +409,16 @@ async function usersRoutes(fastify, _options) {
   );
 
   // Change password (only the current logged-in user can change their own password)
+  // Rate-limited to prevent brute-force of the current-password check (fixes code scanning alert #10)
   fastify.put(
     '/users/:id/password',
     {
+      config: {
+        rateLimit: {
+          max: isDev ? 500 : 10,
+          timeWindow: '15 minutes',
+        },
+      },
       preHandler: async (request, reply) => {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });

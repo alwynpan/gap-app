@@ -2118,6 +2118,18 @@ describe('Users Routes', () => {
       );
       expect(mockReply.code).toHaveBeenCalledWith(500);
     });
+
+    it('registers with a per-route rate limit to prevent brute-force (code scanning alert #10)', () => {
+      const mockFastify = createMockFastify();
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const putCall = mockFastify.put.mock.calls.find(([path]) => path === '/users/:id/password');
+      expect(putCall).toBeDefined();
+      const routeConfig = putCall[1];
+      expect(routeConfig.config.rateLimit).toBeDefined();
+      expect(routeConfig.config.rateLimit.max).toBeGreaterThan(0);
+      expect(routeConfig.config.rateLimit.timeWindow).toBeDefined();
+    });
   });
 
   describe('DELETE /users/:id - error handling', () => {
