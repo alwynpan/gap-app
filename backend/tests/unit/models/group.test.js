@@ -378,6 +378,53 @@ describe('Group Model', () => {
     });
   });
 
+  describe('findByNames', () => {
+    it('returns groups matching the given names (case-insensitive)', async () => {
+      const mockGroups = [
+        { id: '10000000-0000-4000-8000-000000000001', name: 'Team Alpha', enabled: true, max_members: null },
+        { id: '10000000-0000-4000-8000-000000000002', name: 'Team Beta', enabled: true, max_members: 5 },
+      ];
+      pool.query.mockResolvedValue({ rows: mockGroups });
+
+      const result = await Group.findByNames(['Team Alpha', 'Team Beta']);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE LOWER(name) = ANY($1)'), [
+        ['team alpha', 'team beta'],
+      ]);
+      expect(result).toEqual(mockGroups);
+    });
+
+    it('lowercases all names before querying', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await Group.findByNames(['UPPER GROUP', 'MiXeD Group']);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.any(String), [['upper group', 'mixed group']]);
+    });
+
+    it('returns empty array without querying when names is empty', async () => {
+      const result = await Group.findByNames([]);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array without querying when names is undefined', async () => {
+      const result = await Group.findByNames(undefined);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array when no names match', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await Group.findByNames(['nonexistent group']);
+
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('findByName', () => {
     it('returns group when name matches (case-insensitive)', async () => {
       const mockGroup = {

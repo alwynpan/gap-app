@@ -504,19 +504,24 @@ async function groupsRoutes(fastify, _options) {
         const skipped = [];
         const errors = [];
 
+        // First pass: categorise rows without touching the DB
+        const skipRows = [];
+        const validationErrorRows = [];
+        const validRows = [];
+
         for (const rawRow of rows) {
           if (rawRow.action === 'skip') {
             const email = typeof rawRow.email === 'string' ? sanitize(rawRow.email).slice(0, 255) : '?';
             const groupName = typeof rawRow.groupName === 'string' ? sanitize(rawRow.groupName).slice(0, 100) : '?';
             const rawReason = typeof rawRow.skipReason === 'string' ? rawRow.skipReason : '';
             const reason = sanitize(rawReason).slice(0, 500) || 'Skipped';
-            skipped.push({ email, groupName, reason });
+            skipRows.push({ email, groupName, reason });
             continue;
           }
 
           const parseResult = importGroupMappingRowSchema.safeParse(rawRow);
           if (!parseResult.success) {
-            errors.push({
+            validationErrorRows.push({
               email: typeof rawRow.email === 'string' ? sanitize(rawRow.email).slice(0, 255) : '?',
               groupName: typeof rawRow.groupName === 'string' ? sanitize(rawRow.groupName).slice(0, 100) : '?',
               error: parseResult.error.issues[0]?.message || 'Validation failed',
@@ -524,10 +529,29 @@ async function groupsRoutes(fastify, _options) {
             continue;
           }
 
-          const { email, groupName } = parseResult.data;
+          validRows.push(parseResult.data);
+        }
 
+        // Batch lookups — 2 queries regardless of import size
+        const uniqueEmails = [...new Set(validRows.map((r) => r.email))];
+        const uniqueGroupNames = [...new Set(validRows.map((r) => r.groupName))];
+
+        const [usersArr, groupsArr] = await Promise.all([
+          User.findByEmails(uniqueEmails),
+          Group.findByNames(uniqueGroupNames),
+        ]);
+
+        const usersByEmail = new Map(usersArr.map((u) => [u.email, u]));
+        const groupsByName = new Map(groupsArr.map((g) => [g.name.toLowerCase(), g]));
+
+        // Accumulate pre-categorised results
+        skipped.push(...skipRows);
+        errors.push(...validationErrorRows);
+
+        // Second pass: process valid rows using in-memory maps
+        for (const { email, groupName } of validRows) {
           try {
-            const user = await User.findByEmail(email);
+            const user = usersByEmail.get(email);
             if (!user) {
               skipped.push({ email, groupName, reason: 'User not found' });
               continue;
@@ -542,7 +566,7 @@ async function groupsRoutes(fastify, _options) {
               continue;
             }
 
-            const group = await Group.findByName(groupName);
+            const group = groupsByName.get(groupName.toLowerCase());
             if (!group) {
               skipped.push({ email, groupName, reason: 'Group not found' });
               continue;

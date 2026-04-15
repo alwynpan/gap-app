@@ -1151,6 +1151,11 @@ describe('Groups Routes', () => {
   });
 
   describe('POST /groups/import-mappings', () => {
+    beforeEach(() => {
+      User.findByEmails.mockResolvedValue([]);
+      Group.findByNames.mockResolvedValue([]);
+    });
+
     it('rejects unauthenticated request', () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
@@ -1193,8 +1198,10 @@ describe('Groups Routes', () => {
 
     it('imports a valid row successfully', async () => {
       const { handlers } = setupRoute();
-      User.findByEmail.mockResolvedValue({ id: '00000000-0000-4000-8000-000000000010' });
-      Group.findByName.mockResolvedValue({ id: '10000000-0000-4000-8000-000000000001' });
+      User.findByEmails.mockResolvedValue([
+        { id: '00000000-0000-4000-8000-000000000010', email: 'alice@test.com', role_name: 'user' },
+      ]);
+      Group.findByNames.mockResolvedValue([{ id: '10000000-0000-4000-8000-000000000001', name: 'Team A' }]);
       Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
@@ -1206,6 +1213,33 @@ describe('Groups Routes', () => {
       );
       expect(Group.assignUserToGroup).toHaveBeenCalled();
       expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ imported: 1, skipped: [], errors: [] }));
+    });
+
+    it('performs exactly 2 batch DB queries for a valid import', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmails.mockResolvedValue([
+        { id: 'u1', email: 'a@test.com', role_name: 'user' },
+        { id: 'u2', email: 'b@test.com', role_name: 'user' },
+      ]);
+      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
+      Group.assignUserToGroup.mockResolvedValue();
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: {
+            rows: [
+              { email: 'a@test.com', groupName: 'Team A', action: 'import' },
+              { email: 'b@test.com', groupName: 'Team A', action: 'import' },
+            ],
+          },
+        },
+        reply
+      );
+      expect(User.findByEmails).toHaveBeenCalledTimes(1);
+      expect(Group.findByNames).toHaveBeenCalledTimes(1);
+      expect(Group.assignUserToGroup).toHaveBeenCalledTimes(2);
+      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ imported: 2 }));
     });
 
     it('skips a row when action is skip', async () => {
@@ -1228,7 +1262,8 @@ describe('Groups Routes', () => {
 
     it('skips row when user not found', async () => {
       const { handlers } = setupRoute();
-      User.findByEmail.mockResolvedValue(null);
+      User.findByEmails.mockResolvedValue([]); // email not in DB
+      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
         {
@@ -1243,8 +1278,8 @@ describe('Groups Routes', () => {
 
     it('skips row when group not found', async () => {
       const { handlers } = setupRoute();
-      User.findByEmail.mockResolvedValue({ id: 'u1' });
-      Group.findByName.mockResolvedValue(null);
+      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
+      Group.findByNames.mockResolvedValue([]); // group not in DB
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
         {
@@ -1259,8 +1294,8 @@ describe('Groups Routes', () => {
 
     it('records error when group is full', async () => {
       const { handlers } = setupRoute();
-      User.findByEmail.mockResolvedValue({ id: 'u1' });
-      Group.findByName.mockResolvedValue({ id: 'g1' });
+      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
+      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
       const fullErr = new Error('Group is full');
       fullErr.statusCode = 409;
       Group.assignUserToGroup.mockRejectedValue(fullErr);
@@ -1276,9 +1311,11 @@ describe('Groups Routes', () => {
       expect(result.errors[0].error).toBe('Group is full');
     });
 
-    it('records per-row DB error in errors array', async () => {
+    it('records per-row error when assignUserToGroup throws an unexpected error', async () => {
       const { handlers } = setupRoute();
-      User.findByEmail.mockRejectedValue(new Error('DB down'));
+      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
+      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
+      Group.assignUserToGroup.mockRejectedValue(new Error('DB connection lost'));
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
         {
@@ -1291,9 +1328,25 @@ describe('Groups Routes', () => {
       expect(result.errors[0].error).toBe('Failed to process row');
     });
 
+    it('returns 500 when batch lookup fails', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmails.mockRejectedValue(new Error('DB down'));
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to import mappings' });
+    });
+
     it('skips row when target user is an admin', async () => {
       const { handlers } = setupRoute();
-      User.findByEmail.mockResolvedValue({ id: 'admin1', role_name: 'admin' });
+      User.findByEmails.mockResolvedValue([{ id: 'admin1', email: 'admin@test.com', role_name: 'admin' }]);
+      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
         {
@@ -1309,7 +1362,8 @@ describe('Groups Routes', () => {
 
     it('skips row when target user is an assignment_manager', async () => {
       const { handlers } = setupRoute();
-      User.findByEmail.mockResolvedValue({ id: 'am1', role_name: 'assignment_manager' });
+      User.findByEmails.mockResolvedValue([{ id: 'am1', email: 'am@test.com', role_name: 'assignment_manager' }]);
+      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
         {
@@ -1325,8 +1379,8 @@ describe('Groups Routes', () => {
 
     it('imports successfully when target user is a normal user', async () => {
       const { handlers } = setupRoute();
-      User.findByEmail.mockResolvedValue({ id: 'u2', role_name: 'user' });
-      Group.findByName.mockResolvedValue({ id: 'g1' });
+      User.findByEmails.mockResolvedValue([{ id: 'u2', email: 'normaluser@test.com', role_name: 'user' }]);
+      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
       Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
       await handlers['/groups/import-mappings_post'](
