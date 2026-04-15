@@ -20,8 +20,8 @@ class ErrorBoundary extends Component {
   }
 
   handleReload() {
-    if (this.props.onReset) {
-      this.props.onReset();
+    if (typeof this.props.onReset === 'function') {
+      this.setState({ hasError: false }, () => this.props.onReset());
     } else {
       window.location.reload();
     }
