@@ -63,9 +63,9 @@ describe('AuthContext', () => {
 
   it('hydrates user from token via /auth/me', async () => {
     localStorage.setItem('token', 'existing-token');
-    api.get.mockResolvedValue({
-      data: { user: { username: 'alice', role: 'assignment_manager' } },
-    });
+    api.get
+      .mockResolvedValueOnce({ data: { registrationEnabled: false } }) // /auth/config on mount
+      .mockResolvedValueOnce({ data: { user: { username: 'alice', role: 'assignment_manager' } } }); // /auth/me on mount
 
     render(
       <AuthProvider>
@@ -101,9 +101,10 @@ describe('AuthContext', () => {
   });
 
   it('login stores token and authenticates user on success', async () => {
-    api.get.mockResolvedValue({
-      data: { user: { username: 'demo', role: 'normal_user' } },
-    });
+    // /auth/config on mount (no token yet), then /auth/me after token is set by login
+    api.get
+      .mockResolvedValueOnce({ data: { registrationEnabled: false } }) // /auth/config on mount
+      .mockResolvedValueOnce({ data: { user: { username: 'demo', role: 'normal_user' } } }); // /auth/me after login sets token
 
     api.post.mockResolvedValue({
       data: { token: 'jwt-token', user: { username: 'demo', role: 'normal_user' } },
@@ -251,7 +252,9 @@ describe('AuthContext', () => {
 
   it('logout clears local state and storage', async () => {
     localStorage.setItem('token', 'existing-token');
-    api.get.mockResolvedValue({ data: { user: { username: 'root', role: 'admin' } } });
+    api.get
+      .mockResolvedValueOnce({ data: { registrationEnabled: false } }) // /auth/config on mount
+      .mockResolvedValueOnce({ data: { user: { username: 'root', role: 'admin' } } }); // /auth/me on mount
     api.post.mockRejectedValue(new Error('network error'));
 
     render(
