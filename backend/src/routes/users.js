@@ -751,6 +751,7 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
+        errors.sort((a, b) => a.row - b.row);
         return reply.send({ imported, skipped, errors });
       } catch (error) {
         logger.error('Import error', { err: error.message, code: error.code });
