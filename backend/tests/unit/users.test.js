@@ -2724,6 +2724,35 @@ describe('Users Routes', () => {
       });
     });
 
+    it('returns errors sorted by row number when validation and processing errors are interleaved', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      // Row 1: valid schema, but User.create throws a duplicate-entry DB error → error row 1 (second pass)
+      // Row 2: fails Zod validation → error row 2 (first pass)
+      // Without the sort, errors would be [row 2, row 1]; with sort they should be [row 1, row 2]
+      const dbError = Object.assign(new Error('unique violation'), { code: '23505' });
+      User.create.mockRejectedValueOnce(dbError);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [
+            { username: 'alice', email: 'a@test.com', firstName: 'Alice', lastName: 'A' }, // row 1: valid but DB error
+            { username: '', email: 'not-an-email', firstName: '', lastName: '' }, // row 2: schema error
+          ],
+        }),
+        mockReply
+      );
+
+      const result = mockReply.send.mock.calls[0][0];
+      expect(result.errors).toHaveLength(2);
+      expect(result.errors[0].row).toBe(1);
+      expect(result.errors[1].row).toBe(2);
+    });
+
     it('detects email conflict after overwrite changes an existing user email', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);

@@ -504,24 +504,22 @@ async function groupsRoutes(fastify, _options) {
         const skipped = [];
         const errors = [];
 
-        // First pass: categorise rows without touching the DB
-        const skipRows = [];
-        const validationErrorRows = [];
-        const validRows = [];
-
+        // First pass: parse all rows while preserving input order for deterministic output
+        const parsedRows = [];
         for (const rawRow of rows) {
           if (rawRow.action === 'skip') {
             const email = typeof rawRow.email === 'string' ? sanitize(rawRow.email).slice(0, 255) : '?';
             const groupName = typeof rawRow.groupName === 'string' ? sanitize(rawRow.groupName).slice(0, 100) : '?';
             const rawReason = typeof rawRow.skipReason === 'string' ? rawRow.skipReason : '';
             const reason = sanitize(rawReason).slice(0, 500) || 'Skipped';
-            skipRows.push({ email, groupName, reason });
+            parsedRows.push({ type: 'skip', email, groupName, reason });
             continue;
           }
 
           const parseResult = importGroupMappingRowSchema.safeParse(rawRow);
           if (!parseResult.success) {
-            validationErrorRows.push({
+            parsedRows.push({
+              type: 'invalid',
               email: typeof rawRow.email === 'string' ? sanitize(rawRow.email).slice(0, 255) : '?',
               groupName: typeof rawRow.groupName === 'string' ? sanitize(rawRow.groupName).slice(0, 100) : '?',
               error: parseResult.error.issues[0]?.message || 'Validation failed',
@@ -529,10 +527,11 @@ async function groupsRoutes(fastify, _options) {
             continue;
           }
 
-          validRows.push(parseResult.data);
+          parsedRows.push({ type: 'valid', ...parseResult.data });
         }
 
         // Batch lookups — 2 queries regardless of import size
+        const validRows = parsedRows.filter((r) => r.type === 'valid');
         const uniqueEmails = [...new Set(validRows.map((r) => r.email))];
         const uniqueGroupNames = [...new Set(validRows.map((r) => r.groupName))];
 
@@ -554,12 +553,18 @@ async function groupsRoutes(fastify, _options) {
           groupsByName.set(normalizedName, group);
         }
 
-        // Accumulate pre-categorised results
-        skipped.push(...skipRows);
-        errors.push(...validationErrorRows);
+        // Second pass: emit results in original row order
+        for (const parsed of parsedRows) {
+          if (parsed.type === 'skip') {
+            skipped.push({ email: parsed.email, groupName: parsed.groupName, reason: parsed.reason });
+            continue;
+          }
+          if (parsed.type === 'invalid') {
+            errors.push({ email: parsed.email, groupName: parsed.groupName, error: parsed.error });
+            continue;
+          }
 
-        // Second pass: process valid rows using in-memory maps
-        for (const { email, groupName } of validRows) {
+          const { email, groupName } = parsed;
           try {
             const user = usersByEmail.get(email);
             if (!user) {

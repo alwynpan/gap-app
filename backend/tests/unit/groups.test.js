@@ -1436,6 +1436,34 @@ describe('Groups Routes', () => {
       expect(reply.code).not.toHaveBeenCalledWith(409);
       expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ imported: 1 }));
     });
+
+    it('preserves input row order across skip, validation error, and import rows', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
+      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
+      Group.assignUserToGroup.mockResolvedValue();
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: {
+            rows: [
+              { email: 'alice@test.com', groupName: 'Team A', action: 'import' },
+              { email: 'bad@test.com', groupName: 'Team A', action: 'skip', skipReason: 'Manual skip' },
+              { email: '', groupName: '', action: 'import' }, // validation error
+            ],
+          },
+        },
+        reply
+      );
+      const result = reply.send.mock.calls[0][0];
+      // imported row comes first in original order
+      expect(result.imported).toBe(1);
+      // skip row (row 2) appears in skipped
+      expect(result.skipped[0].reason).toBe('Manual skip');
+      // validation error (row 3) appears in errors
+      expect(result.errors).toHaveLength(1);
+    });
   });
 
   describe('GET /groups/export-mappings', () => {
