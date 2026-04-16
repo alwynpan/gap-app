@@ -727,7 +727,7 @@ async function usersRoutes(fastify, _options) {
             });
 
             // Keep maps in sync for within-batch duplicate detection
-            const newEntry = { ...newUser, role_name: 'user' };
+            const newEntry = { ...newUser, role_name: roleRecord.name };
             usernameMap.set(username.toLowerCase(), newEntry);
             emailMap.set(email, newEntry);
             if (studentId) {

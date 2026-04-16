@@ -542,7 +542,17 @@ async function groupsRoutes(fastify, _options) {
         ]);
 
         const usersByEmail = new Map(usersArr.map((u) => [u.email, u]));
-        const groupsByName = new Map(groupsArr.map((g) => [g.name.toLowerCase(), g]));
+        const groupsByName = new Map();
+        for (const group of groupsArr) {
+          const normalizedName = group.name.toLowerCase();
+          const existing = groupsByName.get(normalizedName);
+          if (existing && existing.id !== group.id) {
+            return reply.code(409).send({
+              error: `Ambiguous group name: "${group.name}" matches multiple groups that differ only by case`,
+            });
+          }
+          groupsByName.set(normalizedName, group);
+        }
 
         // Accumulate pre-categorised results
         skipped.push(...skipRows);

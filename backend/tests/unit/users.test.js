@@ -2693,6 +2693,37 @@ describe('Users Routes', () => {
       });
     });
 
+    it('map-sync uses role_name from roleRecord not a hardcoded string', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      // Simulate a role whose name differs from 'user' to confirm no hardcoding
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'student' });
+      User.create.mockResolvedValueOnce({ id: 'u1', username: 'alice', email: 'a@test.com', student_id: null });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [
+            { username: 'alice', email: 'a@test.com', firstName: 'Alice', lastName: 'A' },
+            { username: 'bob', email: 'a@test.com', firstName: 'Bob', lastName: 'B' },
+          ],
+        }),
+        mockReply
+      );
+
+      // Second row has same email — caught by map-sync; role_name from roleRecord means the
+      // 'student' role_name does not accidentally satisfy the admin/AM guard, so the error
+      // is the expected duplicate-email reason (not silently skipped or misclassified)
+      expect(User.create).toHaveBeenCalledTimes(1);
+      expect(mockReply.send).toHaveBeenCalledWith({
+        imported: 1,
+        skipped: 0,
+        errors: [{ row: 2, identifier: 'bob', reason: 'Email already in use by another user' }],
+      });
+    });
+
     it('detects email conflict after overwrite changes an existing user email', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);

@@ -1394,6 +1394,48 @@ describe('Groups Routes', () => {
       const result = reply.send.mock.calls[0][0];
       expect(result.imported).toBe(1);
     });
+
+    it('returns 409 when two groups share the same name differing only by case', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
+      Group.findByNames.mockResolvedValue([
+        { id: 'g1', name: 'Team A' },
+        { id: 'g2', name: 'team a' },
+      ]);
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(409);
+      expect(reply.send).toHaveBeenCalledWith(
+        expect.objectContaining({ error: expect.stringContaining('Ambiguous group name') })
+      );
+      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
+    });
+
+    it('does not flag collision when two group rows share the same id (deduplication)', async () => {
+      const { handlers } = setupRoute();
+      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
+      Group.findByNames.mockResolvedValue([
+        { id: 'g1', name: 'Team A' },
+        { id: 'g1', name: 'Team A' },
+      ]);
+      Group.assignUserToGroup.mockResolvedValue();
+      const reply = mockReply();
+      await handlers['/groups/import-mappings_post'](
+        {
+          user: { id: 'u1', role: 'admin' },
+          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
+        },
+        reply
+      );
+      expect(reply.code).not.toHaveBeenCalledWith(409);
+      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ imported: 1 }));
+    });
   });
 
   describe('GET /groups/export-mappings', () => {
