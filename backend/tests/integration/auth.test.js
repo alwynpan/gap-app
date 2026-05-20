@@ -315,4 +315,65 @@ describe('POST /api/auth/set-password', () => {
     expect(loginBody.token).toBeDefined();
     expect(loginBody.user.username).toBe('e2euser');
   });
+
+  it('rejects a token that has already been used', async () => {
+    const db = getPool();
+    const PasswordResetToken = require('../../src/models/PasswordResetToken');
+
+    // Create a user and a setup token
+    await createUser({ username: 'reuse_user', email: 'reuse@test.com', password: 'OldPass123!' });
+    const { rows } = await db.query("SELECT id FROM users WHERE username = 'reuse_user'");
+    const tokenRow = await PasswordResetToken.create(rows[0].id, 'setup');
+
+    // First use — should succeed
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/auth/set-password',
+      payload: { token: tokenRow.token, password: 'NewPass123!' },
+    });
+    expect(first.statusCode).toBe(200);
+
+    // Second use — same token should be rejected
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/auth/set-password',
+      payload: { token: tokenRow.token, password: 'AnotherPass1!' },
+    });
+    expect(second.statusCode).toBe(400);
+    expect(JSON.parse(second.body).error).toMatch(/invalid|expired/i);
+  });
+
+  it('resets password for an active user with a reset-type token', async () => {
+    const db = getPool();
+    const PasswordResetToken = require('../../src/models/PasswordResetToken');
+
+    // Create an already-active user
+    await createUser({ username: 'reset_user', email: 'reset@test.com', password: 'OldPass123!' });
+    const { rows } = await db.query("SELECT id FROM users WHERE username = 'reset_user'");
+    const tokenRow = await PasswordResetToken.create(rows[0].id, 'reset');
+
+    // Set password using a reset-type token
+    const setRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/set-password',
+      payload: { token: tokenRow.token, password: 'ResetPass123!' },
+    });
+    expect(setRes.statusCode).toBe(200);
+
+    // Verify login with new password works
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'reset_user', password: 'ResetPass123!' },
+    });
+    expect(loginRes.statusCode).toBe(200);
+
+    // Verify old password no longer works
+    const oldLogin = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'reset_user', password: 'OldPass123!' },
+    });
+    expect(oldLogin.statusCode).toBe(401);
+  });
 });

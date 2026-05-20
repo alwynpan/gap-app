@@ -60,6 +60,18 @@ test.describe('Authentication', () => {
     });
   });
 
+  test.describe('Disabled account', () => {
+    test('disabled user cannot log in', async ({ page }) => {
+      await createUser({ username: 'disableduser', email: 'disabled@test.com', enabled: false });
+      await page.goto('/login');
+      await page.fill('#username', 'disableduser');
+      await page.fill('#password', 'TestPass123!');
+      await page.click('button[type="submit"]');
+      await expect(page.locator('.bg-red-50')).toBeVisible();
+      await expect(page).toHaveURL(/\/login/);
+    });
+  });
+
   test.describe('Unauthenticated access', () => {
     test('redirects /dashboard to /login', async ({ page }) => {
       await page.goto('/dashboard');

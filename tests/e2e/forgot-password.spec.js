@@ -91,4 +91,16 @@ test.describe('Set Password', () => {
     await page.getByRole('button', { name: 'Set Password' }).click();
     await expect(page.getByText(/invalid or expired token|failed to set password/i)).toBeVisible({ timeout: 10000 });
   });
+
+  test('shows error for expired token', async ({ page }) => {
+    const user = await createUser({ username: 'expireduser', email: 'expired@test.com' });
+    const token = await createPasswordResetToken(user.email, {
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    await page.goto(`/set-password?token=${token}`);
+    await page.getByPlaceholder('At least 6 characters').fill('NewPass123!');
+    await page.getByPlaceholder('Repeat your password').fill('NewPass123!');
+    await page.getByRole('button', { name: 'Set Password' }).click();
+    await expect(page.getByText(/invalid or expired token|failed to set password/i)).toBeVisible({ timeout: 10000 });
+  });
 });
