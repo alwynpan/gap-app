@@ -127,6 +127,7 @@ module.exports = async function globalSetup() {
     process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
     process.env.CORS_ORIGIN = `http://localhost:${FRONTEND_PORT}`;
     process.env.APP_URL = `http://localhost:${FRONTEND_PORT}`;
+    process.env.REGISTRATION_ENABLED = 'true';
 
     const { createSQL } = require(path.join(BACKEND_DIR, 'src', 'db', 'schema'));
     await client.query(createSQL);

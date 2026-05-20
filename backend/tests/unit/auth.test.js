@@ -862,6 +862,27 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
     });
 
+    it('calls markUsed before updatePassword to prevent token replay', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      PasswordResetToken.findByToken.mockResolvedValue({
+        id: 't1',
+        user_id: '00000000-0000-4000-8000-000000000001',
+        token_type: 'reset',
+        used: false,
+        expires_at: new Date(Date.now() + 3600000),
+      });
+      User.updatePassword.mockResolvedValue();
+      PasswordResetToken.markUsed.mockResolvedValue();
+
+      await capturedHandlers['/auth/set-password']({ body: { token: 'validtoken', password: 'newpass1' } }, mockReply);
+
+      const markUsedOrder = PasswordResetToken.markUsed.mock.invocationCallOrder[0];
+      const updatePasswordOrder = User.updatePassword.mock.invocationCallOrder[0];
+      expect(markUsedOrder).toBeLessThan(updatePasswordOrder);
+    });
+
     it('activates user when token type is setup', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
