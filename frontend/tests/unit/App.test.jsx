@@ -63,7 +63,7 @@ describe('App', () => {
       loading: false,
       isAdmin: false,
       isAssignmentManager: false,
-      user: { username: 'member', role: 'normal_user' },
+      user: { username: 'member', role: 'user' },
     });
 
     window.history.pushState({}, '', '/dashboard');
@@ -108,7 +108,7 @@ describe('App', () => {
       loading: false,
       isAdmin: false,
       isAssignmentManager: false,
-      user: { username: 'member', role: 'normal_user' },
+      user: { username: 'member', role: 'user' },
     });
 
     window.history.pushState({}, '', '/login');
@@ -124,7 +124,7 @@ describe('App', () => {
       loading: false,
       isAdmin: false,
       isAssignmentManager: false,
-      user: { username: 'member', role: 'normal_user' },
+      user: { username: 'member', role: 'user' },
       registrationEnabled: true,
     });
 
