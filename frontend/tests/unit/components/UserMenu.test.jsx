@@ -77,6 +77,20 @@ describe('UserMenu', () => {
       expect(screen.queryByRole('button', { name: /edit profile/i })).not.toBeInTheDocument();
     });
 
+    it('closes dropdown when trigger button is clicked a second time', async () => {
+      const user = setup();
+      renderMenu();
+      const trigger = screen.getByRole('button', { name: /testuser/i });
+
+      // Open
+      await user.click(trigger);
+      expect(screen.getByRole('button', { name: /edit profile/i })).toBeInTheDocument();
+
+      // Close by clicking trigger again
+      await user.click(trigger);
+      expect(screen.queryByRole('button', { name: /edit profile/i })).not.toBeInTheDocument();
+    });
+
     it('calls logout when Logout is clicked', async () => {
       const user = setup();
       renderMenu();
@@ -116,6 +130,14 @@ describe('UserMenu', () => {
 
     it('hides Student ID field for admin role', async () => {
       const user = setup({ user: { ...baseUser, role: 'admin' } });
+      renderMenu();
+      await user.click(screen.getByRole('button', { name: /testuser/i }));
+      await user.click(screen.getByRole('button', { name: /edit profile/i }));
+      expect(screen.queryByLabelText(/student id/i)).not.toBeInTheDocument();
+    });
+
+    it('hides Student ID field for assignment_manager role', async () => {
+      const user = setup({ user: { ...baseUser, role: 'assignment_manager' } });
       renderMenu();
       await user.click(screen.getByRole('button', { name: /testuser/i }));
       await user.click(screen.getByRole('button', { name: /edit profile/i }));

@@ -101,4 +101,37 @@ describe('App', () => {
 
     expect(screen.getByText('Groups Page')).toBeInTheDocument();
   });
+
+  it('redirects authenticated user from /login to /dashboard', () => {
+    useAuth.mockReturnValue({
+      isAuthenticated: true,
+      loading: false,
+      isAdmin: false,
+      isAssignmentManager: false,
+      user: { username: 'member', role: 'normal_user' },
+    });
+
+    window.history.pushState({}, '', '/login');
+    render(<App />);
+
+    expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
+    expect(screen.queryByText('Login Page')).not.toBeInTheDocument();
+  });
+
+  it('redirects authenticated user from /register to /dashboard when registration enabled', () => {
+    useAuth.mockReturnValue({
+      isAuthenticated: true,
+      loading: false,
+      isAdmin: false,
+      isAssignmentManager: false,
+      user: { username: 'member', role: 'normal_user' },
+      registrationEnabled: true,
+    });
+
+    window.history.pushState({}, '', '/register');
+    render(<App />);
+
+    expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
+    expect(screen.queryByText('Register Page')).not.toBeInTheDocument();
+  });
 });

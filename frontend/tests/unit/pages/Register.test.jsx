@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Register from '../../../src/pages/Register.jsx';
@@ -215,5 +215,93 @@ describe('Register page', () => {
     await waitFor(() => {
       expect(screen.getByText('Registration failed. Please try again.')).toBeInTheDocument();
     });
+  });
+
+  it('shows validation error when username is blank and does not call register', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>
+    );
+
+    // Type whitespace-only username (DOMPurify trims to empty, triggering schema error)
+    await user.type(screen.getByLabelText(/username/i), '   ');
+    await user.type(screen.getByLabelText(/email/i), 'test@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'Test');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
+    await user.click(screen.getByRole('button', { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Username is required')).toBeInTheDocument();
+    });
+    expect(mockRegister).not.toHaveBeenCalled();
+  });
+
+  it('shows validation error when email format is invalid', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>
+    );
+
+    await user.type(screen.getByLabelText(/username/i), 'validuser');
+    await user.type(screen.getByLabelText(/email/i), 'not-an-email');
+    await user.type(screen.getByLabelText(/first name/i), 'Test');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
+    // Use fireEvent.submit to bypass HTML5 type="email" native validation
+    fireEvent.submit(screen.getByRole('button', { name: /create account/i }).closest('form'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Invalid email format')).toBeInTheDocument();
+    });
+    expect(mockRegister).not.toHaveBeenCalled();
+  });
+
+  it('shows validation error when first name is missing', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>
+    );
+
+    await user.type(screen.getByLabelText(/username/i), 'validuser');
+    await user.type(screen.getByLabelText(/email/i), 'test@example.com');
+    // Type whitespace-only first name (DOMPurify trims to empty)
+    await user.type(screen.getByLabelText(/first name/i), '   ');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
+    await user.click(screen.getByRole('button', { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('First name is required')).toBeInTheDocument();
+    });
+    expect(mockRegister).not.toHaveBeenCalled();
+  });
+
+  it('shows validation error when last name is missing', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>
+    );
+
+    await user.type(screen.getByLabelText(/username/i), 'validuser');
+    await user.type(screen.getByLabelText(/email/i), 'test@example.com');
+    await user.type(screen.getByLabelText(/first name/i), 'Test');
+    // Type whitespace-only last name (DOMPurify trims to empty)
+    await user.type(screen.getByLabelText(/last name/i), '   ');
+    await user.click(screen.getByRole('button', { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Last name is required')).toBeInTheDocument();
+    });
+    expect(mockRegister).not.toHaveBeenCalled();
   });
 });

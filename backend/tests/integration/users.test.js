@@ -805,3 +805,193 @@ describe('POST /api/users/import', () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+// POST /api/users/send-setup-emails
+// ---------------------------------------------------------------------------
+describe('POST /api/users/send-setup-emails', () => {
+  it('admin can send setup emails to all pending users', async () => {
+    // Create pending users via the API (no password = pending)
+    await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'pending1',
+        email: 'pending1@test.com',
+        firstName: 'P',
+        lastName: 'One',
+        sendSetupEmail: false,
+      },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'pending2',
+        email: 'pending2@test.com',
+        firstName: 'P',
+        lastName: 'Two',
+        sendSetupEmail: false,
+      },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.sent).toBeGreaterThanOrEqual(2);
+  });
+
+  it('admin can send to specific userIds list', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'specific1',
+        email: 'specific1@test.com',
+        firstName: 'S',
+        lastName: 'One',
+        sendSetupEmail: false,
+      },
+    });
+    const userId = JSON.parse(createRes.body).user.id;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { userIds: [userId] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.sent).toBe(1);
+  });
+
+  it('returns 401 without token', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      payload: {},
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns 403 for regular user', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns 400 when exceeding 500 userIds', async () => {
+    const fakeIds = Array.from({ length: 501 }, (_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { userIds: fakeIds },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/500/);
+  });
+
+  it('returns 400 for invalid UUID in userIds', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { userIds: ['not-a-uuid'] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/invalid/i);
+  });
+
+  it('silently skips non-pending users in userIds', async () => {
+    // user1 is active (created with password via createUser helper), not pending
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const user1 = JSON.parse(listRes.body).users.find((u) => u.username === 'user1');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { userIds: [user1.id] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    // user1 is active, not pending — should be filtered out
+    expect(body.sent).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/users/:id/group — AM RBAC
+// ---------------------------------------------------------------------------
+describe('PUT /api/users/:id/group — AM RBAC', () => {
+  it('assignment_manager can assign a user to a group', async () => {
+    const u = await createUser({ username: 'amtarget', email: 'amtarget@test.com' });
+    const g = await createGroup({ name: 'AMAssignGroup' });
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${u.id}/group`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { groupId: g.id },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).user.groupId).toBe(g.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/users/:id — AM role escalation prevention
+// ---------------------------------------------------------------------------
+describe('PUT /api/users/:id — AM role escalation', () => {
+  it('assignment_manager cannot change a user role', async () => {
+    const u = await createUser({ username: 'norolechange', email: 'norolechange@test.com' });
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { email: u.email, firstName: 'No', lastName: 'Change', role: 'admin' },
+    });
+    // AM cannot escalate role — the role field should be ignored (not applied)
+    expect(res.statusCode).toBe(200);
+
+    // Verify via a fresh GET that the role was NOT changed
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(JSON.parse(getRes.body).user.role_name).toBe('user');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RBAC: AM on admin-only endpoints (users)
+// ---------------------------------------------------------------------------
+describe('RBAC: AM on admin-only user endpoints', () => {
+  it('DELETE /api/users/:id with AM token returns 403', async () => {
+    const u = await createUser({ username: 'amdeletetarget', email: 'amdel@test.com' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});

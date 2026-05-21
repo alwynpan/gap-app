@@ -70,6 +70,32 @@ test.describe('Users — Enable/Disable via Edit Modal', () => {
   });
 });
 
+test.describe('Users — Role Change via Edit Modal', () => {
+  test.beforeEach(async () => {
+    await cleanDatabase();
+  });
+
+  test('admin can change user role to assignment manager', async ({ page }) => {
+    await createUser({ username: 'roleuser', email: 'roleuser@test.com', role: 'user' });
+    await loginAsAdmin(page);
+    await page.goto('/users');
+
+    const row = page.locator('table tbody tr').filter({ hasText: 'roleuser' });
+    await row.locator('button[aria-label="Edit User Profile"]').click();
+    await expect(page.getByRole('heading', { name: 'Edit User' })).toBeVisible();
+
+    // Change role dropdown to assignment_manager (scoped to the edit modal form)
+    const roleSelect = page.locator('form').getByRole('combobox');
+    await roleSelect.selectOption('assignment_manager');
+
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('User updated successfully')).toBeVisible({ timeout: 5000 });
+
+    // The role badge in the table should display "Assignment Manager"
+    await expect(row.getByText('Assignment Manager')).toBeVisible({ timeout: 10000 });
+  });
+});
+
 test.describe('Delete User — constraints', () => {
   test.beforeEach(async () => {
     await cleanDatabase();

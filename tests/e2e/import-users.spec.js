@@ -67,6 +67,38 @@ test.describe('Import Users', () => {
     }
   });
 
+  test('overwrite conflict action imports existing user successfully', async ({ page }) => {
+    await createUser({ username: 'existuser', email: 'existuser@test.com', firstName: 'Old', lastName: 'Name' });
+
+    const csvContent = 'username,email,firstName,lastName\nexistuser,existuser@test.com,New,Updated\n';
+    const tmpPath = path.join(os.tmpdir(), `import-overwrite-${Date.now()}.csv`);
+
+    try {
+      fs.writeFileSync(tmpPath, csvContent, 'utf8');
+      await loginAsAdmin(page);
+      await page.goto('/users/import');
+
+      await page.locator('input[aria-label="Upload CSV file"]').setInputFiles(tmpPath);
+
+      // Step 2: Map Columns
+      await expect(page.getByRole('button', { name: /preview import/i })).toBeVisible({ timeout: 10000 });
+      await page.getByRole('button', { name: /preview import/i }).click();
+
+      // Step 3: Preview — default conflict action is "skip", change to "overwrite"
+      await expect(page.getByText('Existing – skip')).toBeVisible({ timeout: 10000 });
+      await page.locator('input[type="radio"][value="overwrite"]').check();
+      await expect(page.getByText('Existing – overwrite')).toBeVisible({ timeout: 10000 });
+
+      await page.getByRole('button', { name: /^import$/i }).click();
+
+      // Step 4: Result
+      await expect(page.getByText('Import Complete')).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(/1 imported/)).toBeVisible();
+    } finally {
+      fs.rmSync(tmpPath, { force: true });
+    }
+  });
+
   test('preview shows invalid for rows with missing required fields', async ({ page }) => {
     // Row has username but no email — email is a required field
     const csvContent = 'username,email,firstName,lastName\nnoemail,,Missing,Email\n';

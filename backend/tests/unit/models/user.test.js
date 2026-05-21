@@ -635,6 +635,24 @@ describe('User Model', () => {
     });
   });
 
+  describe('activate', () => {
+    it('sets user status to active', async () => {
+      pool.query.mockResolvedValue({});
+
+      await User.activate('u0000000-0000-0000-0000-000000000001');
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining("status = 'active'"), [
+        'u0000000-0000-0000-0000-000000000001',
+      ]);
+    });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(User.activate('u0000000-0000-0000-0000-000000000001')).rejects.toThrow('connection refused');
+    });
+  });
+
   describe('bulkDelete', () => {
     it('executes DELETE … WHERE id = ANY and returns row count', async () => {
       pool.query.mockResolvedValue({ rowCount: 2 });
