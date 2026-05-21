@@ -812,7 +812,7 @@ describe('POST /api/users/import', () => {
 describe('POST /api/users/send-setup-emails', () => {
   it('admin can send setup emails to all pending users', async () => {
     // Create pending users via the API (no password = pending)
-    await app.inject({
+    const res1 = await app.inject({
       method: 'POST',
       url: '/api/users',
       headers: { authorization: `Bearer ${adminToken}` },
@@ -824,7 +824,8 @@ describe('POST /api/users/send-setup-emails', () => {
         sendSetupEmail: false,
       },
     });
-    await app.inject({
+    expect(res1.statusCode).toBe(201);
+    const res2 = await app.inject({
       method: 'POST',
       url: '/api/users',
       headers: { authorization: `Bearer ${adminToken}` },
@@ -836,6 +837,7 @@ describe('POST /api/users/send-setup-emails', () => {
         sendSetupEmail: false,
       },
     });
+    expect(res2.statusCode).toBe(201);
 
     const res = await app.inject({
       method: 'POST',
