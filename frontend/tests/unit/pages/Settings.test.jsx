@@ -156,6 +156,36 @@ describe('Settings page', () => {
     });
   });
 
+  it('auto-dismisses success message after timeout', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+    api.get.mockResolvedValue({
+      data: { config: [{ key: 'group_join_locked', value: 'false' }] },
+    });
+    api.put.mockResolvedValue({});
+
+    render(
+      <MemoryRouter>
+        <Settings />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => screen.getByRole('button', { name: /enable group join lock/i }));
+
+    await user.click(screen.getByRole('button', { name: /enable group join lock/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Settings updated successfully')).toBeInTheDocument();
+    });
+
+    jest.advanceTimersByTime(2000);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Settings updated successfully')).not.toBeInTheDocument();
+    });
+  });
+
   it('shows error message when update fails', async () => {
     api.get.mockResolvedValue({
       data: { config: [{ key: 'group_join_locked', value: 'false' }] },

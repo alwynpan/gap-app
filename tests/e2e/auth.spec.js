@@ -87,5 +87,15 @@ test.describe('Authentication', () => {
       await page.goto('/groups');
       await expect(page).toHaveURL(/\/login/);
     });
+
+    test('redirects /settings to /login', async ({ page }) => {
+      await page.goto('/settings');
+      await expect(page).toHaveURL(/\/login/);
+    });
+
+    test('redirects /users/import to /login', async ({ page }) => {
+      await page.goto('/users/import');
+      await expect(page).toHaveURL(/\/login/);
+    });
   });
 });

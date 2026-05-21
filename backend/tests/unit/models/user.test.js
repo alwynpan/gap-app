@@ -86,6 +86,12 @@ describe('User Model', () => {
       expect(pool.query).not.toHaveBeenCalled();
       expect(result).toEqual([]);
     });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(User.findByIds(['u0000000-0000-0000-0000-000000000001'])).rejects.toThrow('connection refused');
+    });
   });
 
   describe('findById', () => {
@@ -361,6 +367,22 @@ describe('User Model', () => {
       expect(result).toEqual(mockCreatedUser);
     });
 
+    it('propagates DB error from pool.query', async () => {
+      const userData = {
+        username: 'newuser',
+        email: 'new@test.com',
+        password: 'password123',
+        studentId: null,
+        groupId: null,
+        roleId: 'r0000000-0000-0000-0000-000000000003',
+      };
+
+      bcrypt.hash.mockResolvedValue('hashedPassword123');
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(User.create(userData)).rejects.toThrow('connection refused');
+    });
+
     it('creates user with custom roleId', async () => {
       const userData = {
         username: 'adminuser',
@@ -542,6 +564,15 @@ describe('User Model', () => {
       const result = await User.updatePassword('u0000000-0000-0000-0000-000000000999', 'newpassword');
 
       expect(result).toBeUndefined();
+    });
+
+    it('propagates bcrypt.hash error', async () => {
+      bcrypt.hash.mockRejectedValue(new Error('hash failure'));
+
+      await expect(User.updatePassword('u0000000-0000-0000-0000-000000000001', 'newpassword')).rejects.toThrow(
+        'hash failure'
+      );
+      expect(pool.query).not.toHaveBeenCalled();
     });
   });
 

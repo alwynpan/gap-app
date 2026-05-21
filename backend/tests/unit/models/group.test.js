@@ -471,6 +471,12 @@ describe('Group Model', () => {
 
       expect(result).toEqual([]);
     });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(Group.getExportMappings()).rejects.toThrow('connection refused');
+    });
   });
 
   describe('assignUserToGroup', () => {
@@ -680,6 +686,19 @@ describe('Group Model', () => {
       const result = await Group.bulkCreate(input);
 
       expect(result).toEqual([row]);
+    });
+
+    it('returns empty array and commits when input is empty', async () => {
+      mockClient.query
+        .mockResolvedValueOnce() // BEGIN
+        .mockResolvedValueOnce(); // COMMIT
+
+      const result = await Group.bulkCreate([]);
+
+      expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+      expect(mockClient.query).toHaveBeenNthCalledWith(2, 'COMMIT');
+      expect(mockClient.release).toHaveBeenCalled();
+      expect(result).toEqual([]);
     });
 
     it('releases client even when ROLLBACK itself throws', async () => {

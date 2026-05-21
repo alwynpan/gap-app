@@ -160,6 +160,15 @@ describe('Groups Routes', () => {
       });
     });
 
+    it('returns 400 for invalid UUID in path param', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/:id_get']({ params: { id: 'not-a-uuid' } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Invalid ID format' });
+      expect(Group.findById).not.toHaveBeenCalled();
+    });
+
     it('returns 404 when group not found', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue(null);
@@ -332,6 +341,23 @@ describe('Groups Routes', () => {
       );
       expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
+    });
+
+    it('returns 500 when Group.findByName rejects with DB error', async () => {
+      const { handlers } = setupRoute();
+      Group.findByName.mockRejectedValue(new Error('connection refused'));
+      const { logger: mockLogger } = require('../../src/utils/logger');
+      const reply = mockReply();
+      await handlers['/groups_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: { name: 'New Group' },
+        },
+        reply
+      );
+      expect(mockLogger.error).toHaveBeenCalled();
+      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to create group' });
     });
   });
 
