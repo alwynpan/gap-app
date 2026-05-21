@@ -58,6 +58,27 @@ describe('CsvDropzone', () => {
     expect(onFile).toHaveBeenCalledWith(file);
   });
 
+  it('handles full drag-and-drop flow (dragOver then drop with CSV)', () => {
+    const onFile = jest.fn();
+    render(<CsvDropzone onFile={onFile} />);
+    const file = makeCsvFile('name,email\nAlice,a@b.com', 'roster.csv');
+    const dropzone = screen.getByRole('button', { name: /click to browse/i });
+
+    // dragOver must not reject the drop
+    act(() => {
+      fireEvent.dragOver(dropzone);
+    });
+
+    // drop delivers the file
+    act(() => {
+      fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+    });
+
+    expect(onFile).toHaveBeenCalledTimes(1);
+    expect(onFile.mock.calls[0][0].name).toBe('roster.csv');
+    expect(onFile.mock.calls[0][0].type).toBe('text/csv');
+  });
+
   it('does not call onFile when drop has no files', () => {
     const onFile = jest.fn();
     render(<CsvDropzone onFile={onFile} />);

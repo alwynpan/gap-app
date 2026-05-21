@@ -2,6 +2,7 @@
 
 const { buildTestServer, closeTestServer } = require('./helpers/server');
 const { cleanDatabase, createUser, loginAs, getPool } = require('./helpers/db');
+const config = require('../../src/config/index');
 
 let app;
 let adminToken;
@@ -158,6 +159,22 @@ describe('POST /api/auth/register', () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it('returns 403 when registration is disabled', async () => {
+    const original = config.app.registrationEnabled;
+    config.app.registrationEnabled = false;
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: { username: 'blocked', email: 'blocked@test.com', firstName: 'B', lastName: 'L' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).error).toMatch(/disabled/i);
+    } finally {
+      config.app.registrationEnabled = original;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -197,6 +214,26 @@ describe('GET /api/auth/me', () => {
       method: 'GET',
       url: '/api/auth/me',
       headers: { authorization: 'Bearer invalid.token.here' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns 401 when JWT belongs to a deleted user', async () => {
+    const u = await createUser({ username: 'todelete', email: 'todelete@test.com' });
+    const token = await loginAs(app, 'todelete', 'TestPass123!');
+
+    // Delete the user via admin
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    // Token is still valid JWT, but user no longer exists in DB
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(401);
   });

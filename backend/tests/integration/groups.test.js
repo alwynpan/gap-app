@@ -775,6 +775,72 @@ describe('PUT /api/groups/:id — maxMembers boundary', () => {
 // ---------------------------------------------------------------------------
 // POST /api/groups/import-mappings — full group error path
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// POST /api/groups/import-mappings — skip-action rows
+// ---------------------------------------------------------------------------
+describe('POST /api/groups/import-mappings — skip-action rows', () => {
+  it('rows with action=skip appear in the skipped response', async () => {
+    await createGroup({ name: 'SkipActionGroup', enabled: true });
+    await createUser({ username: 'skipuser', email: 'skipuser@test.com' });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/groups/import-mappings',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        rows: [
+          { email: 'skipuser@test.com', groupName: 'SkipActionGroup' },
+          { email: 'skipped@test.com', groupName: 'SkipActionGroup', action: 'skip', skipReason: 'Duplicate entry' },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.imported).toBe(1);
+    expect(body.skipped.some((s) => s.email === 'skipped@test.com' && s.reason === 'Duplicate entry')).toBe(true);
+  });
+
+  it('skip-action row with no skipReason defaults to "Skipped"', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/groups/import-mappings',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        rows: [{ email: 'noop@test.com', groupName: 'AnyGroup', action: 'skip' }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.skipped).toHaveLength(1);
+    expect(body.skipped[0].reason).toBe('Skipped');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/groups/:id/join and /leave — invalid UUID in path
+// ---------------------------------------------------------------------------
+describe('POST /api/groups/:id/join and /leave — invalid UUID', () => {
+  it('join with invalid UUID returns 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/groups/not-a-uuid/join',
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/invalid/i);
+  });
+
+  it('leave with invalid UUID returns 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/groups/not-a-uuid/leave',
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/invalid/i);
+  });
+});
+
 describe('POST /api/groups/import-mappings — full group error path', () => {
   it('importing a user mapping to a full group records an error', async () => {
     const g = await createGroup({ name: 'FullImportGroup', maxMembers: 1 });

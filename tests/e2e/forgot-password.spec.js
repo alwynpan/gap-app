@@ -35,6 +35,25 @@ test.describe('Forgot Password', () => {
     });
   });
 
+  test('does not submit with empty email field', async ({ page }) => {
+    await page.goto('/forgot-password');
+    const emailInput = page.getByPlaceholder('Enter your email address');
+
+    // Ensure the field is empty
+    await expect(emailInput).toHaveValue('');
+
+    // Click submit — HTML5 required validation should prevent submission
+    await page.getByRole('button', { name: 'Send Reset Link' }).click();
+
+    // The input should report a validity error (browser native validation)
+    const isInvalid = await emailInput.evaluate((el) => !el.validity.valid);
+    expect(isInvalid).toBe(true);
+
+    // No success or error banners should appear (form was not submitted)
+    await expect(page.locator('.bg-green-50')).not.toBeVisible();
+    await expect(page.locator('.bg-red-50')).not.toBeVisible();
+  });
+
   test('back to login link navigates to /login', async ({ page }) => {
     await page.goto('/forgot-password');
     await page.getByRole('link', { name: 'Back to login' }).click();

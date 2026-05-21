@@ -6,8 +6,19 @@ import { AuthProvider, useAuth } from '../../../src/context/AuthContext.jsx';
 jest.mock('@/utils/api');
 
 function TestHarness() {
-  const { user, loading, token, isAuthenticated, isAdmin, isAssignmentManager, login, register, logout, refreshUser } =
-    useAuth();
+  const {
+    user,
+    loading,
+    token,
+    isAuthenticated,
+    isAdmin,
+    isAssignmentManager,
+    login,
+    register,
+    logout,
+    refreshUser,
+    registrationEnabled,
+  } = useAuth();
 
   const handleLogin = async () => {
     const result = await login('demo', 'password');
@@ -27,6 +38,7 @@ function TestHarness() {
       <div data-testid="user">{user?.username ?? 'none'}</div>
       <div data-testid="is-admin">{isAdmin ? 'yes' : 'no'}</div>
       <div data-testid="is-assignment-manager">{isAssignmentManager ? 'yes' : 'no'}</div>
+      <div data-testid="registration-enabled">{registrationEnabled ? 'yes' : 'no'}</div>
       <button onClick={handleLogin}>Login</button>
       <button onClick={handleRegister}>Register</button>
       <button onClick={logout}>Logout</button>
@@ -146,6 +158,30 @@ describe('AuthContext', () => {
     });
 
     expect(window.__authResult).toEqual({ success: false, error: 'Invalid credentials' });
+  });
+
+  it('login error includes status field from response', async () => {
+    api.post.mockRejectedValue({
+      response: { data: { error: 'Account locked' }, status: 403 },
+    });
+
+    render(
+      <AuthProvider>
+        <TestHarness />
+      </AuthProvider>
+    );
+
+    await userEvent.click(screen.getByText('Login'));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalled();
+    });
+
+    expect(window.__authResult).toEqual({
+      success: false,
+      error: 'Account locked',
+      status: 403,
+    });
   });
 
   it('register sends expected payload and returns success message', async () => {
@@ -277,6 +313,43 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('auth')).toHaveTextContent('no');
     expect(screen.getByTestId('user')).toHaveTextContent('none');
     expect(screen.getByTestId('token')).toHaveTextContent('none');
+  });
+});
+
+describe('registrationEnabled config', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    jest.clearAllMocks();
+  });
+
+  it('sets registrationEnabled to true when /auth/config returns true', async () => {
+    api.get.mockResolvedValue({ data: { registrationEnabled: true } });
+
+    render(
+      <AuthProvider>
+        <TestHarness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('registration-enabled')).toHaveTextContent('yes');
+    });
+  });
+
+  it('defaults registrationEnabled to false when /auth/config call fails', async () => {
+    api.get.mockRejectedValue(new Error('network error'));
+
+    render(
+      <AuthProvider>
+        <TestHarness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('loaded');
+    });
+
+    expect(screen.getByTestId('registration-enabled')).toHaveTextContent('no');
   });
 });
 

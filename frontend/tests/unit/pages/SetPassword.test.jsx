@@ -37,6 +37,15 @@ describe('SetPassword page', () => {
     expect(screen.queryByPlaceholderText('At least 6 characters')).not.toBeInTheDocument();
   });
 
+  it('renders the form (not "Invalid Link") when token is non-empty but invalid', () => {
+    renderWithToken('not-a-real-token');
+
+    expect(screen.queryByText('Invalid Link')).not.toBeInTheDocument();
+    expect(screen.getByText('Set your password')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('At least 6 characters')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /set password/i })).toBeInTheDocument();
+  });
+
   it('renders the set password form when token is present', () => {
     renderWithToken('abc123token');
 

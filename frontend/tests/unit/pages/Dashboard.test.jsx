@@ -59,6 +59,26 @@ describe('Dashboard page', () => {
     expect(screen.getByRole('link', { name: /manage groups/i })).toBeInTheDocument();
   });
 
+  it('shows Manage Users but not Manage Groups for assignment_manager role', () => {
+    useAuth.mockReturnValue({
+      user: { username: 'manager', email: 'manager@example.com', role: 'assignment_manager' },
+      logout: mockLogout,
+      refreshUser: mockRefreshUser,
+      isAdmin: false,
+      isAssignmentManager: true,
+    });
+
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('link', { name: /manage users/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /manage groups/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+  });
+
   it('hides administration block for normal users', () => {
     render(
       <MemoryRouter>

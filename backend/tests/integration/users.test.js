@@ -997,3 +997,156 @@ describe('RBAC: AM on admin-only user endpoints', () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /api/users?groupId= — filter by group
+// ---------------------------------------------------------------------------
+describe('GET /api/users?groupId=<uuid>', () => {
+  it('returns only users in the specified group', async () => {
+    const g = await createGroup({ name: 'FilterGroup' });
+    const inGroup = await createUser({ username: 'ingroup', email: 'ingroup@test.com' });
+    await createUser({ username: 'nogroup', email: 'nogroup@test.com' });
+
+    // Assign inGroup user to the group
+    await app.inject({
+      method: 'PUT',
+      url: `/api/users/${inGroup.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { groupId: g.id },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/users?groupId=${g.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.users.every((u) => u.group_id === g.id)).toBe(true);
+    expect(body.users.some((u) => u.username === 'ingroup')).toBe(true);
+    expect(body.users.some((u) => u.username === 'nogroup')).toBe(false);
+  });
+
+  it('groupId=none returns only ungrouped users', async () => {
+    const g = await createGroup({ name: 'SomeGroup' });
+    const grouped = await createUser({ username: 'grouped', email: 'grouped@test.com' });
+    await createUser({ username: 'ungrouped', email: 'ungrouped@test.com' });
+
+    await app.inject({
+      method: 'PUT',
+      url: `/api/users/${grouped.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { groupId: g.id },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/users?groupId=none',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.users.every((u) => u.group_id === null)).toBe(true);
+    expect(body.users.some((u) => u.username === 'ungrouped')).toBe(true);
+    expect(body.users.some((u) => u.username === 'grouped')).toBe(false);
+  });
+
+  it('returns 400 for invalid groupId filter', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/users?groupId=not-a-uuid',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/groupId/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/users/import — within-batch duplicate detection
+// ---------------------------------------------------------------------------
+describe('POST /api/users/import — within-batch duplicate email', () => {
+  it('detects duplicate emails within the same batch', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        users: [
+          { username: 'dup1', email: 'same@test.com', firstName: 'Dup', lastName: 'One' },
+          { username: 'dup2', email: 'same@test.com', firstName: 'Dup', lastName: 'Two' },
+        ],
+        conflictAction: 'skip',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    // First row imports, second row errors because email is already taken by the first
+    expect(body.imported).toBe(1);
+    expect(body.errors.length).toBe(1);
+    expect(body.errors[0].reason).toMatch(/email/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/users/import — invalid conflictAction
+// ---------------------------------------------------------------------------
+describe('POST /api/users/import — invalid conflictAction', () => {
+  it('returns 400 for an invalid conflictAction value', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        users: [{ username: 'x', email: 'x@test.com', firstName: 'X', lastName: 'Y' }],
+        conflictAction: 'merge',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/conflictAction/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/users/:id — admin changes role from user to assignment_manager
+// ---------------------------------------------------------------------------
+describe('PUT /api/users/:id — admin role change', () => {
+  it('admin changes role from user to assignment_manager and verifies via GET', async () => {
+    const u = await createUser({ username: 'rolechange', email: 'rolechange@test.com', role: 'user' });
+
+    const putRes = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { email: u.email, firstName: 'Role', lastName: 'Change', role: 'assignment_manager' },
+    });
+    expect(putRes.statusCode).toBe(200);
+
+    // Verify the role was actually updated
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(getRes.statusCode).toBe(200);
+    expect(JSON.parse(getRes.body).user.role_name).toBe('assignment_manager');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/users/:id/password — admin cannot change another user's password
+// ---------------------------------------------------------------------------
+describe('PUT /api/users/:id/password — admin cross-user', () => {
+  it('admin cannot change another user password (returns 403)', async () => {
+    const other = await createUser({ username: 'adminpassvictim', email: 'apv@test.com' });
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${other.id}/password`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { currentPassword: 'TestPass123!', newPassword: 'NewPass456!' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});

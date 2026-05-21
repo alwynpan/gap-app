@@ -119,5 +119,22 @@ describe('Role Model', () => {
 
       expect(result).toEqual(mockRole);
     });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(Role.create('moderator')).rejects.toThrow('connection refused');
+    });
+
+    it('propagates duplicate-name constraint error (23505)', async () => {
+      const uniqueErr = new Error('duplicate key value violates unique constraint');
+      uniqueErr.code = '23505';
+      pool.query.mockRejectedValue(uniqueErr);
+
+      await expect(Role.create('admin')).rejects.toMatchObject({
+        message: 'duplicate key value violates unique constraint',
+        code: '23505',
+      });
+    });
   });
 });
