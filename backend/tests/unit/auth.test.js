@@ -878,6 +878,8 @@ describe('Auth Routes', () => {
 
       await capturedHandlers['/auth/set-password']({ body: { token: 'validtoken', password: 'newpass1' } }, mockReply);
 
+      expect(PasswordResetToken.markUsed).toHaveBeenCalledTimes(1);
+      expect(User.updatePassword).toHaveBeenCalledTimes(1);
       const markUsedOrder = PasswordResetToken.markUsed.mock.invocationCallOrder[0];
       const updatePasswordOrder = User.updatePassword.mock.invocationCallOrder[0];
       expect(markUsedOrder).toBeLessThan(updatePasswordOrder);

@@ -322,7 +322,8 @@ describe('POST /api/auth/set-password', () => {
 
     // Create a user and a setup token
     await createUser({ username: 'reuse_user', email: 'reuse@test.com', password: 'OldPass123!' });
-    const { rows } = await db.query("SELECT id FROM users WHERE username = 'reuse_user'");
+    const { rows } = await db.query('SELECT id FROM users WHERE username = $1', ['reuse_user']);
+    expect(rows).toHaveLength(1);
     const tokenRow = await PasswordResetToken.create(rows[0].id, 'setup');
 
     // First use — should succeed
@@ -349,7 +350,8 @@ describe('POST /api/auth/set-password', () => {
 
     // Create an already-active user
     await createUser({ username: 'reset_user', email: 'reset@test.com', password: 'OldPass123!' });
-    const { rows } = await db.query("SELECT id FROM users WHERE username = 'reset_user'");
+    const { rows } = await db.query('SELECT id FROM users WHERE username = $1', ['reset_user']);
+    expect(rows).toHaveLength(1);
     const tokenRow = await PasswordResetToken.create(rows[0].id, 'reset');
 
     // Set password using a reset-type token
