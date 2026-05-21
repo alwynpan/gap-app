@@ -2,7 +2,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { loginAs } = require('../helpers/auth');
-const { cleanDatabase, createUser, createGroup } = require('../helpers/db');
+const { cleanDatabase, createUser, createGroup, assignUserToGroup } = require('../helpers/db');
 
 test.describe('Assignment Manager', () => {
   test.beforeEach(async ({ page }) => {
@@ -48,5 +48,27 @@ test.describe('Assignment Manager', () => {
 
     // Group name appears in the user row's group cell (title attribute is unique)
     await expect(page.locator('[title="AssignGroup"]')).toBeVisible();
+  });
+
+  test('can unassign a user from a group', async ({ page }) => {
+    const group = await createGroup({ name: 'UnassignGroup' });
+    await createUser({ username: 'assigned', email: 'assigned@test.com', role: 'user' });
+    await assignUserToGroup('assigned', group.id);
+
+    await page.goto('/users');
+
+    // Verify the user is currently in the group
+    const row = page.locator('table tbody tr').filter({ hasText: 'assigned' });
+    await expect(row.locator('[title="UnassignGroup"]')).toBeVisible({ timeout: 10000 });
+
+    // Click the Assign Group button for the user
+    await row.getByRole('button', { name: 'Assign Group' }).click();
+
+    // Select "No Group" to unassign
+    await page.getByRole('combobox', { name: /assign to group/i }).selectOption({ value: '' });
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    // Group column should now show "Not assigned"
+    await expect(row.locator('[title="Not assigned"]')).toBeVisible({ timeout: 10000 });
   });
 });

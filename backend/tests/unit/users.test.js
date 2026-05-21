@@ -816,6 +816,23 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'groupId is required' });
     });
 
+    it('returns 400 when groupId is a non-null non-UUID string', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/group_put'](
+        {
+          params: { id: '00000000-0000-4000-8000-000000000001' },
+          body: { groupId: 'not-a-uuid' },
+        },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid groupId format' });
+    });
+
     it('returns 404 when user not found', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);

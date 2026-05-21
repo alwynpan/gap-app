@@ -648,6 +648,33 @@ describe('Auth Routes', () => {
         },
       });
     });
+
+    it('returns 401 when user found in token but deleted from DB', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      User.findById.mockResolvedValue(null);
+
+      const request = { user: { id: '00000000-0000-4000-8000-000000000001' } };
+      await capturedHandlers['/auth/me'](request, mockReply);
+
+      expect(User.findById).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
+      expect(mockReply.code).toHaveBeenCalledWith(401);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'User not found' });
+    });
+
+    it('returns 500 on DB error', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      User.findById.mockRejectedValue(new Error('DB connection lost'));
+
+      const request = { user: { id: '00000000-0000-4000-8000-000000000001' } };
+      await capturedHandlers['/auth/me'](request, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(500);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Failed to retrieve user info' });
+    });
   });
 
   describe('POST /auth/forgot-password', () => {

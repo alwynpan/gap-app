@@ -1,6 +1,7 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
+const { loginAs } = require('../helpers/auth');
 const { cleanDatabase, createUser, createPasswordResetToken } = require('../helpers/db');
 
 test.describe('Forgot Password', () => {
@@ -20,18 +21,18 @@ test.describe('Forgot Password', () => {
     await page.goto('/forgot-password');
     await page.getByPlaceholder('Enter your email address').fill('resetuser@test.com');
     await page.getByRole('button', { name: 'Send Reset Link' }).click();
-    await expect(
-      page.getByText(/reset link has been sent|if that email is registered/i)
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/reset link has been sent|if that email is registered/i)).toBeVisible({
+      timeout: 10000,
+    });
   });
 
   test('shows success message even for unknown email (avoids email enumeration)', async ({ page }) => {
     await page.goto('/forgot-password');
     await page.getByPlaceholder('Enter your email address').fill('nobody@nowhere.com');
     await page.getByRole('button', { name: 'Send Reset Link' }).click();
-    await expect(
-      page.getByText(/reset link has been sent|if that email is registered/i)
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/reset link has been sent|if that email is registered/i)).toBeVisible({
+      timeout: 10000,
+    });
   });
 
   test('back to login link navigates to /login', async ({ page }) => {
@@ -68,9 +69,7 @@ test.describe('Set Password', () => {
     await page.getByPlaceholder('At least 6 characters').fill('NewPass123!');
     await page.getByPlaceholder('Repeat your password').fill('NewPass123!');
     await page.getByRole('button', { name: 'Set Password' }).click();
-    await expect(
-      page.getByText(/password set successfully|you can now log in/i)
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/password set successfully|you can now log in/i)).toBeVisible({ timeout: 10000 });
     await expect(page).toHaveURL(/\/login/, { timeout: 5000 });
   });
 
@@ -102,5 +101,27 @@ test.describe('Set Password', () => {
     await page.getByPlaceholder('Repeat your password').fill('NewPass123!');
     await page.getByRole('button', { name: 'Set Password' }).click();
     await expect(page.getByText(/invalid or expired token|failed to set password/i)).toBeVisible({ timeout: 10000 });
+  });
+
+  test('setup token allows first-login password set and login', async ({ page }) => {
+    const user = await createUser({ username: 'setupuser', email: 'setupuser@test.com', password: 'TempPass000!' });
+    const token = await createPasswordResetToken(user.email, { tokenType: 'setup' });
+
+    // Navigate to set-password with the setup token
+    await page.goto(`/set-password?token=${token}`);
+    await expect(page.getByText('Set your password')).toBeVisible({ timeout: 10000 });
+
+    // Set a new password
+    await page.getByPlaceholder('At least 6 characters').fill('SetupNew123!');
+    await page.getByPlaceholder('Repeat your password').fill('SetupNew123!');
+    await page.getByRole('button', { name: 'Set Password' }).click();
+
+    // Should show success and redirect to login
+    await expect(page.getByText(/password set successfully|you can now log in/i)).toBeVisible({ timeout: 10000 });
+    await expect(page).toHaveURL(/\/login/, { timeout: 5000 });
+
+    // Login with the new password
+    await loginAs(page, 'setupuser', 'SetupNew123!');
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 10000 });
   });
 });

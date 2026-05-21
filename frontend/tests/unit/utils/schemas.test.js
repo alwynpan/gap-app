@@ -12,6 +12,7 @@ import {
   studentIdSchema,
   groupNameSchema,
   registerSchema,
+  createUserSchema,
   changePasswordSchema,
   createGroupSchema,
   updateGroupSchema,
@@ -430,6 +431,94 @@ describe('registerSchema', () => {
   it('rejects invalid email format', () => {
     const result = parseBody(registerSchema, { ...validBody, email: 'not-an-email' });
     expect(result.error).toBe('Invalid email format');
+  });
+});
+
+// ── createUserSchema ─────────────────────────────────────────────────────────
+
+describe('createUserSchema', () => {
+  const validBody = {
+    username: 'alice',
+    email: 'alice@example.com',
+    firstName: 'Alice',
+    lastName: 'Smith',
+  };
+
+  it('accepts valid input with all required fields', () => {
+    const data = ok(createUserSchema, validBody);
+    expect(data.username).toBe('alice');
+    expect(data.email).toBe('alice@example.com');
+    expect(data.firstName).toBe('Alice');
+    expect(data.lastName).toBe('Smith');
+  });
+
+  it('accepts optional role field', () => {
+    const data = ok(createUserSchema, { ...validBody, role: 'assignment_manager' });
+    expect(data.role).toBe('assignment_manager');
+  });
+
+  it('accepts optional groupId as valid UUID', () => {
+    const data = ok(createUserSchema, {
+      ...validBody,
+      groupId: '550e8400-e29b-41d4-a716-446655440000',
+    });
+    expect(data.groupId).toBe('550e8400-e29b-41d4-a716-446655440000');
+  });
+
+  it('accepts optional studentId', () => {
+    const data = ok(createUserSchema, { ...validBody, studentId: 'STU-001' });
+    expect(data.studentId).toBe('STU-001');
+  });
+
+  it('coerces empty string groupId to null', () => {
+    const data = ok(createUserSchema, { ...validBody, groupId: '' });
+    expect(data.groupId).toBeNull();
+  });
+
+  it('accepts sendSetupEmail as true', () => {
+    const data = ok(createUserSchema, { ...validBody, sendSetupEmail: true });
+    expect(data.sendSetupEmail).toBe(true);
+  });
+
+  it('accepts sendSetupEmail as false', () => {
+    const data = ok(createUserSchema, { ...validBody, sendSetupEmail: false });
+    expect(data.sendSetupEmail).toBe(false);
+  });
+
+  it('rejects missing username', () => {
+    // eslint-disable-next-line no-unused-vars
+    const { username: _u, ...body } = validBody;
+    const result = parseBody(createUserSchema, body);
+    expect(typeof result.error).toBe('string');
+  });
+
+  it('rejects missing email', () => {
+    // eslint-disable-next-line no-unused-vars
+    const { email: _e, ...body } = validBody;
+    const result = parseBody(createUserSchema, body);
+    expect(typeof result.error).toBe('string');
+  });
+
+  it('rejects missing firstName', () => {
+    // eslint-disable-next-line no-unused-vars
+    const { firstName: _f, ...body } = validBody;
+    const result = parseBody(createUserSchema, body);
+    expect(typeof result.error).toBe('string');
+  });
+
+  it('rejects missing lastName', () => {
+    // eslint-disable-next-line no-unused-vars
+    const { lastName: _l, ...body } = validBody;
+    const result = parseBody(createUserSchema, body);
+    expect(typeof result.error).toBe('string');
+  });
+
+  it('rejects invalid role value', () => {
+    expect(err(createUserSchema, { ...validBody, role: 'superuser' })).toEqual(expect.any(String));
+  });
+
+  it('rejects invalid groupId (non-UUID)', () => {
+    expect(err(createUserSchema, { ...validBody, groupId: 'not-a-uuid' })).toEqual(expect.any(String));
   });
 });
 
