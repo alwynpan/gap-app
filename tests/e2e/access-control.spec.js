@@ -46,6 +46,23 @@ test.describe('Access control', () => {
       await page.goto('/groups');
       await expect(page).toHaveURL(/\/dashboard/);
     });
+
+    test('can access /groups/import — child route is AM-accessible even though /groups is admin-only', async ({
+      page,
+    }) => {
+      await page.goto('/groups/import');
+      await expect(page).toHaveURL(/\/groups\/import/);
+    });
+
+    test('can access /users/import', async ({ page }) => {
+      await page.goto('/users/import');
+      await expect(page).toHaveURL(/\/users\/import/);
+    });
+
+    test('can access /settings', async ({ page }) => {
+      await page.goto('/settings');
+      await expect(page).toHaveURL(/\/settings/);
+    });
   });
 
   test.describe('Admin', () => {

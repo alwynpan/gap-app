@@ -151,6 +151,19 @@ describe('RBAC Middleware', () => {
     expect(mockReply.code).toHaveBeenCalledWith(403);
   });
 
+  it('checkRole allows a non-admin role present in the allowlist', async () => {
+    const rbacPlugin = require('../../src/middleware/rbac');
+    await rbacPlugin(fastify, {});
+
+    const checkRole = fastify.decorate.mock.calls.find((call) => call[0] === 'checkRole')[1];
+    const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    const result = await checkRole({ user: { role: 'assignment_manager' } }, mockReply, ['assignment_manager']);
+
+    expect(result).toBe(true);
+    expect(mockReply.code).not.toHaveBeenCalled();
+  });
+
   it('requireAssignmentManager allows assignment_manager', async () => {
     const rbacPlugin = require('../../src/middleware/rbac');
     fastify.checkRole = jest.fn().mockResolvedValue(true);

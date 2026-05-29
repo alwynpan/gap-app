@@ -46,6 +46,34 @@ describe('Email Service', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('To: to@test.com'));
     });
 
+    it('warns and does not send when SMTP host is missing in production', async () => {
+      const savedNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        jest.resetModules();
+        jest.mock('../../../src/config/index', () => ({
+          smtp: { host: '', port: 587, secure: false, user: '', pass: '', from: 'no-reply@gap-app.local' },
+          appUrl: 'http://localhost:3000',
+        }));
+        jest.mock('nodemailer', () => ({ createTransport: jest.fn() }));
+
+        const { sendEmail } = require('../../../src/services/email');
+        const nodemailer = require('nodemailer');
+        const { logger: mockLogger } = require('../../../src/utils/logger');
+        await sendEmail('to@test.com', 'Subject', '<p>Body</p>');
+
+        expect(mockLogger.warn).toHaveBeenCalledWith('[EMAIL] SMTP not configured; email not sent.');
+        expect(mockLogger.info).not.toHaveBeenCalled();
+        expect(nodemailer.createTransport).not.toHaveBeenCalled();
+      } finally {
+        if (savedNodeEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = savedNodeEnv;
+        }
+      }
+    });
+
     it('sends email via transporter when SMTP is configured', async () => {
       const mockSendMail = jest.fn().mockResolvedValue({});
       jest.resetModules();
@@ -96,6 +124,36 @@ describe('Email Service', () => {
       expect(mockSendMail.mock.calls[0][0].html).toContain('testuser');
     });
 
+    it('escapes HTML in name, username and token to prevent injection', async () => {
+      const mockSendMail = jest.fn().mockResolvedValue({});
+      jest.resetModules();
+      jest.mock('../../../src/config/index', () => ({
+        smtp: { host: 'smtp.test.com', port: 587, secure: false, user: '', pass: '', from: 'no-reply@gap.local' },
+        appUrl: 'http://localhost:3000',
+      }));
+      jest.mock('nodemailer', () => ({
+        createTransport: jest.fn(() => ({ sendMail: mockSendMail })),
+      }));
+
+      const { sendPasswordSetupEmail } = require('../../../src/services/email');
+      const user = {
+        email: 'user@test.com',
+        username: 'a<b>c',
+        first_name: '<script>alert(1)</script>',
+      };
+      await sendPasswordSetupEmail(user, 'tok"<img>');
+
+      const { html } = mockSendMail.mock.calls[0][0];
+      // Escaped forms present
+      expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+      expect(html).toContain('a&lt;b&gt;c');
+      // Token escaped in the URL
+      expect(html).toContain('token=tok&quot;&lt;img&gt;');
+      // Raw markup absent
+      expect(html).not.toContain('<script>');
+      expect(html).not.toContain('a<b>c');
+    });
+
     it('falls back to username when first_name is absent', async () => {
       const mockSendMail = jest.fn().mockResolvedValue({});
       jest.resetModules();
@@ -138,6 +196,31 @@ describe('Email Service', () => {
           html: expect.stringContaining('http://app.example.com/set-password?token=resettoken789'),
         })
       );
+    });
+
+    it('escapes HTML in name and token to prevent injection', async () => {
+      const mockSendMail = jest.fn().mockResolvedValue({});
+      jest.resetModules();
+      jest.mock('../../../src/config/index', () => ({
+        smtp: { host: 'smtp.test.com', port: 587, secure: false, user: '', pass: '', from: 'no-reply@gap.local' },
+        appUrl: 'http://app.example.com',
+      }));
+      jest.mock('nodemailer', () => ({
+        createTransport: jest.fn(() => ({ sendMail: mockSendMail })),
+      }));
+
+      const { sendPasswordResetEmail } = require('../../../src/services/email');
+      const user = {
+        email: 'user@test.com',
+        username: 'dave',
+        first_name: '<b>Dave</b>',
+      };
+      await sendPasswordResetEmail(user, 'reset"<x>');
+
+      const { html } = mockSendMail.mock.calls[0][0];
+      expect(html).toContain('&lt;b&gt;Dave&lt;/b&gt;');
+      expect(html).toContain('token=reset&quot;&lt;x&gt;');
+      expect(html).not.toContain('<b>Dave</b>');
     });
   });
 });

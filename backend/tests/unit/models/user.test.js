@@ -267,6 +267,30 @@ describe('User Model', () => {
     });
   });
 
+  describe('findByStudentId', () => {
+    it('returns the user row when a matching student_id exists', async () => {
+      const mockUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'alice',
+        student_id: 'S001',
+      };
+      pool.query.mockResolvedValue({ rows: [mockUser] });
+
+      const result = await User.findByStudentId('S001');
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE student_id = $1'), ['S001']);
+      expect(result).toEqual(mockUser);
+    });
+
+    it('returns null when no row matches', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await User.findByStudentId('S999');
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('findByEmail', () => {
     it('returns user by email', async () => {
       const mockUser = {
@@ -620,6 +644,27 @@ describe('User Model', () => {
       expect(bcrypt.compare).toHaveBeenCalledWith('wrongpassword', 'hashedPassword');
       expect(result).toBe(false);
     });
+
+    it('returns false without calling bcrypt.compare when hash is null', async () => {
+      const result = await User.verifyPassword('anyPassword', null);
+
+      expect(result).toBe(false);
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+
+    it('returns false without calling bcrypt.compare when hash is undefined', async () => {
+      const result = await User.verifyPassword('anyPassword', undefined);
+
+      expect(result).toBe(false);
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+
+    it('returns false without calling bcrypt.compare when hash is empty string', async () => {
+      const result = await User.verifyPassword('anyPassword', '');
+
+      expect(result).toBe(false);
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
   });
 
   describe('BCRYPT_ROUNDS configuration', () => {
@@ -661,6 +706,12 @@ describe('User Model', () => {
 
     it('defaults to 12 when env var is below minimum (< 4)', async () => {
       const { IsolatedUser, isolatedBcrypt } = loadIsolatedUser('2');
+      await IsolatedUser.updatePassword('some-id', 'password');
+      expect(isolatedBcrypt.hash).toHaveBeenCalledWith('password', 12);
+    });
+
+    it('defaults to 12 when env var is above maximum (> 31)', async () => {
+      const { IsolatedUser, isolatedBcrypt } = loadIsolatedUser('40');
       await IsolatedUser.updatePassword('some-id', 'password');
       expect(isolatedBcrypt.hash).toHaveBeenCalledWith('password', 12);
     });

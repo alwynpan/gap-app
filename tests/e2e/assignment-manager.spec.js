@@ -33,6 +33,38 @@ test.describe('Assignment Manager', () => {
     await expect(page).toHaveURL(/\/dashboard/);
   });
 
+  test('edit-user modal hides the Role select (no role escalation) but allows editing other fields', async ({
+    page,
+  }) => {
+    await createUser({ username: 'edittarget', email: 'edittarget@test.com', role: 'user' });
+    await page.goto('/users');
+
+    // Scope to the target user's row — the AM also has an Edit button on its own row.
+    const row = page.locator('table tbody tr').filter({ hasText: 'edittarget' });
+    await row.getByRole('button', { name: 'Edit User Profile' }).click();
+
+    // Modal opens.
+    await expect(page.getByRole('heading', { name: 'Edit User' })).toBeVisible();
+
+    // The Role <select> is admin-only — it must not be present for an assignment manager.
+    // Scope to the edit form; in edit state there is no assign-group combobox active either.
+    const editForm = page.locator('form').filter({ has: page.getByPlaceholder('Enter first name') });
+    await expect(editForm.getByRole('combobox')).toHaveCount(0);
+
+    // The AM can still update an allowed field (first name).
+    await page.getByPlaceholder('Enter first name').fill('AmEdited');
+    await page.getByRole('button', { name: /save/i }).click();
+    await expect(page.getByText('User updated successfully')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('AmEdited')).toBeVisible();
+  });
+
+  test('built-in admin row offers no Edit User Profile control to an assignment manager', async ({ page }) => {
+    await page.goto('/users');
+    const adminRow = page.locator('table tbody tr').filter({ hasText: 'admin' });
+    await expect(adminRow).toHaveCount(1);
+    await expect(adminRow.getByRole('button', { name: 'Edit User Profile' })).toHaveCount(0);
+  });
+
   test('can assign a user to a group', async ({ page }) => {
     await createUser({ username: 'assignee', email: 'assignee@test.com', role: 'user' });
     await createGroup({ name: 'AssignGroup' });

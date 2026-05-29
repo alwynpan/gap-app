@@ -95,6 +95,18 @@ test.describe('Admin', () => {
       await expect(page.getByText('Test Group Alpha')).toBeVisible();
     });
 
+    test('shows error when creating a group with a duplicate name', async ({ page }) => {
+      await createGroup({ name: 'DupGroup' });
+      await page.goto('/groups');
+      await page.getByRole('button', { name: /create group/i }).click();
+
+      await page.getByPlaceholder('Enter group name').fill('DupGroup');
+      await page.getByRole('button', { name: /^create$/i }).click();
+
+      // Backend returns 409 'Group name already exists'; the create form surfaces it inline.
+      await expect(page.getByText('Group name already exists')).toBeVisible();
+    });
+
     test('can edit a group name', async ({ page }) => {
       await createGroup({ name: 'OldGroupName' });
       await page.goto('/groups');

@@ -870,3 +870,152 @@ describe('POST /api/groups/import-mappings — full group error path', () => {
     expect(body.errors[0].error).toMatch(/full/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// DELETE /api/groups/:id — ON DELETE SET NULL cascade on members
+// ---------------------------------------------------------------------------
+describe('DELETE /api/groups/:id — member detachment (ON DELETE SET NULL)', () => {
+  it('detaches members (group_id null) instead of deleting them when the group is deleted', async () => {
+    const g = await createGroup({ name: 'CascadeGroup' });
+    const m1 = await createUser({ username: 'cascade1', email: 'cascade1@test.com' });
+    const m2 = await createUser({ username: 'cascade2', email: 'cascade2@test.com' });
+
+    // Assign both members to the group
+    for (const m of [m1, m2]) {
+      const assignRes = await app.inject({
+        method: 'PUT',
+        url: `/api/users/${m.id}/group`,
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: { groupId: g.id },
+      });
+      expect(assignRes.statusCode).toBe(200);
+    }
+
+    // Delete the group
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/groups/${g.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(delRes.statusCode).toBe(200);
+
+    // Each member must still exist with group_id now null
+    for (const m of [m1, m2]) {
+      const getRes = await app.inject({
+        method: 'GET',
+        url: `/api/users/${m.id}`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+      expect(getRes.statusCode).toBe(200);
+      expect(JSON.parse(getRes.body).user.group_id).toBeNull();
+    }
+
+    // Both detached members should now appear under groupId=none
+    const noneRes = await app.inject({
+      method: 'GET',
+      url: '/api/users?groupId=none',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(noneRes.statusCode).toBe(200);
+    const ungrouped = JSON.parse(noneRes.body).users;
+    expect(ungrouped.some((u) => u.username === 'cascade1')).toBe(true);
+    expect(ungrouped.some((u) => u.username === 'cascade2')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/groups/bulk — ON DELETE SET NULL cascade on members
+// ---------------------------------------------------------------------------
+describe('DELETE /api/groups/bulk — member detachment (ON DELETE SET NULL)', () => {
+  it('bulk delete detaches members of every deleted group rather than deleting them', async () => {
+    const g1 = await createGroup({ name: 'BulkCascade1' });
+    const g2 = await createGroup({ name: 'BulkCascade2' });
+    const m1 = await createUser({ username: 'bulkcasc1', email: 'bulkcasc1@test.com' });
+    const m2 = await createUser({ username: 'bulkcasc2', email: 'bulkcasc2@test.com' });
+
+    await app.inject({
+      method: 'PUT',
+      url: `/api/users/${m1.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { groupId: g1.id },
+    });
+    await app.inject({
+      method: 'PUT',
+      url: `/api/users/${m2.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { groupId: g2.id },
+    });
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/groups/bulk',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { ids: [g1.id, g2.id] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).deleted).toBe(2);
+
+    for (const m of [m1, m2]) {
+      const getRes = await app.inject({
+        method: 'GET',
+        url: `/api/users/${m.id}`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+      expect(getRes.statusCode).toBe(200);
+      expect(JSON.parse(getRes.body).user.group_id).toBeNull();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/groups/:id — scoped deletion / member_count consistency
+// ---------------------------------------------------------------------------
+describe('DELETE /api/groups/:id — scoped deletion preserves other groups', () => {
+  it('deleting a different empty group leaves the populated group and its memberCount intact', async () => {
+    const populated = await createGroup({ name: 'PopulatedGroup' });
+    const empty = await createGroup({ name: 'EmptyGroup' });
+    const member = await createUser({ username: 'scopedmember', email: 'scoped@test.com' });
+
+    await app.inject({
+      method: 'PUT',
+      url: `/api/users/${member.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { groupId: populated.id },
+    });
+
+    // Delete the unrelated empty group
+    const delEmpty = await app.inject({
+      method: 'DELETE',
+      url: `/api/groups/${empty.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(delEmpty.statusCode).toBe(200);
+
+    // The populated group is untouched and still reports its single member
+    const getPopulated = await app.inject({
+      method: 'GET',
+      url: `/api/groups/${populated.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(getPopulated.statusCode).toBe(200);
+    const populatedBody = JSON.parse(getPopulated.body);
+    expect(populatedBody.group.memberCount).toBe(1);
+    expect(populatedBody.members).toHaveLength(1);
+
+    // Now delete the populated group; member is detached, not deleted
+    const delPopulated = await app.inject({
+      method: 'DELETE',
+      url: `/api/groups/${populated.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(delPopulated.statusCode).toBe(200);
+
+    const getMember = await app.inject({
+      method: 'GET',
+      url: `/api/users/${member.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(getMember.statusCode).toBe(200);
+    expect(JSON.parse(getMember.body).user.group_id).toBeNull();
+  });
+});
