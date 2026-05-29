@@ -1,7 +1,7 @@
 'use strict';
 
 const { buildTestServer, closeTestServer } = require('./helpers/server');
-const { cleanDatabase, createUser, createGroup, loginAs } = require('./helpers/db');
+const { cleanDatabase, createUser, createGroup, loginAs, getPool } = require('./helpers/db');
 
 let app;
 let adminToken;
@@ -1148,5 +1148,187 @@ describe('PUT /api/users/:id/password — admin cross-user', () => {
       payload: { currentPassword: 'TestPass123!', newPassword: 'NewPass456!' },
     });
     expect(res.statusCode).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/users/:id/group — transactional capacity guard (409)
+// ---------------------------------------------------------------------------
+describe('PUT /api/users/:id/group — transactional capacity guard', () => {
+  it('returns 409 when assigning a second user to a maxMembers=1 group', async () => {
+    const g = await createGroup({ name: 'TxnFullGroup', maxMembers: 1 });
+    const first = await createUser({ username: 'txnfirst', email: 'txnfirst@test.com' });
+    const second = await createUser({ username: 'txnsecond', email: 'txnsecond@test.com' });
+
+    // Fill the group via PUT (the same endpoint under test)
+    const fillRes = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${first.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { groupId: g.id },
+    });
+    expect(fillRes.statusCode).toBe(200);
+
+    // Second assignment must hit the row-locked transaction's full-group throw
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${second.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { groupId: g.id },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body).error).toMatch(/full/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/users/:id/group — transactional not-found guard (404)
+// ---------------------------------------------------------------------------
+describe('PUT /api/users/:id/group — transactional not-found guard', () => {
+  it('returns 404 when groupId is a valid but non-existent UUID', async () => {
+    // Real user so the route-level user pre-check passes and the transaction runs
+    const u = await createUser({ username: 'txnnogroup', email: 'txnnogroup@test.com' });
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${u.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { groupId: '00000000-0000-0000-0000-000000000000' },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).error).toMatch(/group not found/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/users/:id — password_reset_tokens cascade (ON DELETE CASCADE)
+// ---------------------------------------------------------------------------
+describe('DELETE /api/users/:id — reset token cascade', () => {
+  it('deletes outstanding password_reset_tokens when the user is deleted', async () => {
+    const PasswordResetToken = require('../../src/models/PasswordResetToken');
+    const u = await createUser({ username: 'tokenowner', email: 'tokenowner@test.com' });
+
+    // Create an outstanding reset token for the user
+    await PasswordResetToken.create(u.id, 'reset', 1);
+
+    const db = getPool();
+    const before = await db.query('SELECT COUNT(*)::int AS count FROM password_reset_tokens WHERE user_id = $1', [
+      u.id,
+    ]);
+    expect(before.rows[0].count).toBe(1);
+
+    // Delete the user via the API
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(delRes.statusCode).toBe(200);
+
+    // The cascade must have removed the token row
+    const after = await db.query('SELECT COUNT(*)::int AS count FROM password_reset_tokens WHERE user_id = $1', [u.id]);
+    expect(after.rows[0].count).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/users — duplicate studentId (409)
+// ---------------------------------------------------------------------------
+describe('POST /api/users — duplicate studentId', () => {
+  it('returns 409 when studentId is already taken by another user', async () => {
+    await createUser({ username: 'sidowner', email: 'sidowner@test.com', studentId: 'S123' });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'sidclash',
+        email: 'sidclash@test.com',
+        firstName: 'Sid',
+        lastName: 'Clash',
+        studentId: 'S123',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body).error).toMatch(/student id/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/users/import — overwrite collides with another existing user's email
+// ---------------------------------------------------------------------------
+describe('POST /api/users/import — overwrite email owned by a different user', () => {
+  it('rejects the row when the new email already belongs to another existing user', async () => {
+    const userA = await createUser({ username: 'ovrA', email: 'a@test.com' });
+    await createUser({ username: 'ovrB', email: 'b@test.com' });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        users: [{ username: 'ovrA', email: 'b@test.com', firstName: 'A', lastName: 'Overwrite' }],
+        conflictAction: 'overwrite',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.imported).toBe(0);
+    expect(body.errors.length).toBe(1);
+    expect(body.errors[0].reason).toMatch(/email already in use/i);
+
+    // userA's email must be unchanged
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/users/${userA.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(getRes.statusCode).toBe(200);
+    expect(JSON.parse(getRes.body).user.email).toBe('a@test.com');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/users/import — within-batch duplicate studentId for new users
+// ---------------------------------------------------------------------------
+describe('POST /api/users/import — within-batch duplicate studentId', () => {
+  it('imports the first new-user row and errors the second sharing a studentId', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        users: [
+          { username: 'sidnew1', email: 'sidnew1@test.com', firstName: 'Sid', lastName: 'One', studentId: 'SBATCH1' },
+          { username: 'sidnew2', email: 'sidnew2@test.com', firstName: 'Sid', lastName: 'Two', studentId: 'SBATCH1' },
+        ],
+        conflictAction: 'skip',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.imported).toBe(1);
+    expect(body.errors.length).toBe(1);
+    expect(body.errors[0].reason).toMatch(/student id/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/users/:id — regular user editing another user (403)
+// ---------------------------------------------------------------------------
+describe('PUT /api/users/:id — horizontal privilege escalation guard', () => {
+  it('regular user editing another user returns 403', async () => {
+    const other = await createUser({ username: 'editvictim', email: 'editvictim@test.com' });
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${other.id}`,
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: { email: 'hijacked@test.com', firstName: 'H', lastName: 'J' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toMatch(/your own profile/i);
   });
 });

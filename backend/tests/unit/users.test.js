@@ -1894,6 +1894,35 @@ describe('Users Routes', () => {
       expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
     });
+
+    it('propagates a sub-500 statusCode error (e.g. 409 Group is full)', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'test',
+      });
+      const fullErr = new Error('Group is full');
+      fullErr.statusCode = 409;
+      Group.assignUserToGroup.mockRejectedValue(fullErr);
+      const { logger: mockLogger } = require('../../src/utils/logger');
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/group_put'](
+        {
+          params: { id: '00000000-0000-4000-8000-000000000001' },
+          body: { groupId: '10000000-0000-4000-8000-000000000002' },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(409);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group is full' });
+      expect(mockLogger.error).not.toHaveBeenCalled();
+    });
   });
 
   describe('PUT /users/:id - error handling', () => {

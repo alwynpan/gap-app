@@ -72,6 +72,36 @@ test.describe('Authentication', () => {
     });
   });
 
+  test.describe('Pending account', () => {
+    test('pending (un-activated) user cannot log in and sees the setup-pending banner', async ({ page }) => {
+      // Self-registration creates the user with status='pending' (password not yet set).
+      // The pending guard fires before password verification, so any password is rejected.
+      // Reach /register via the login link — the /register route only mounts once the
+      // auth context has loaded registrationEnabled, so a direct goto can race the redirect.
+      await page.goto('/login');
+      await page.getByRole('link', { name: /register here/i }).click();
+      await expect(page.getByRole('heading', { name: 'Create Account' })).toBeVisible();
+      await page.getByPlaceholder('Choose a username').fill('pendinguser');
+      await page.getByPlaceholder('Enter your email').fill('pending@test.com');
+      await page.getByPlaceholder('Enter your first name').fill('Pending');
+      await page.getByPlaceholder('Enter your last name').fill('User');
+      await page.getByRole('button', { name: /create account/i }).click();
+      await expect(page.getByText(/registration successful/i)).toBeVisible({ timeout: 10000 });
+
+      // Attempt to log in as the pending user with any password.
+      await page.goto('/login');
+      await page.fill('#username', 'pendinguser');
+      await page.fill('#password', 'AnyPassword123!');
+      await page.click('button[type="submit"]');
+
+      // The pending-specific banner is shown rather than a generic invalid-credentials error.
+      await expect(
+        page.getByText('Account setup pending. Please check your email to set your password.')
+      ).toBeVisible();
+      await expect(page).toHaveURL(/\/login/);
+    });
+  });
+
   test.describe('Unauthenticated access', () => {
     test('redirects /dashboard to /login', async ({ page }) => {
       await page.goto('/dashboard');

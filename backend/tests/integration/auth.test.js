@@ -282,6 +282,37 @@ describe('POST /api/auth/forgot-password', () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it('creates a setup-type token (not reset) for a pending user', async () => {
+    // Create a pending user via the API (sendSetupEmail:false → no token yet, status pending)
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'pendingforgot',
+        email: 'pendingforgot@test.com',
+        firstName: 'Pending',
+        lastName: 'Forgot',
+        sendSetupEmail: false,
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const userId = JSON.parse(createRes.body).user.id;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/forgot-password',
+      payload: { email: 'pendingforgot@test.com' },
+    });
+    expect(res.statusCode).toBe(200);
+
+    // A single setup-type token should now exist for the pending user
+    const db = getPool();
+    const { rows } = await db.query('SELECT token_type FROM password_reset_tokens WHERE user_id = $1', [userId]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].token_type).toBe('setup');
+  });
 });
 
 // ---------------------------------------------------------------------------

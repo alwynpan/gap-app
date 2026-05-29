@@ -92,6 +92,26 @@ test.describe('Set Password', () => {
     await expect(page).toHaveURL(/\/login/, { timeout: 5000 });
   });
 
+  test('rejects a token that has already been used (single-use / no replay)', async ({ page }) => {
+    const user = await createUser({ username: 'replayuser', email: 'replayuser@test.com' });
+    const token = await createPasswordResetToken(user.email);
+
+    // First use: set the password successfully.
+    await page.goto(`/set-password?token=${token}`);
+    await page.getByPlaceholder('At least 6 characters').fill('FirstPass123!');
+    await page.getByPlaceholder('Repeat your password').fill('FirstPass123!');
+    await page.getByRole('button', { name: 'Set Password' }).click();
+    await expect(page.getByText(/password set successfully|you can now log in/i)).toBeVisible({ timeout: 10000 });
+    await expect(page).toHaveURL(/\/login/, { timeout: 5000 });
+
+    // Replay the same (now consumed) token: must be rejected.
+    await page.goto(`/set-password?token=${token}`);
+    await page.getByPlaceholder('At least 6 characters').fill('SecondPass456!');
+    await page.getByPlaceholder('Repeat your password').fill('SecondPass456!');
+    await page.getByRole('button', { name: 'Set Password' }).click();
+    await expect(page.getByText(/invalid or expired token|failed to set password/i)).toBeVisible({ timeout: 10000 });
+  });
+
   test('shows error when passwords do not match', async ({ page }) => {
     const user = await createUser({ username: 'tokenuser3', email: 'tokenuser3@test.com' });
     const token = await createPasswordResetToken(user.email);
