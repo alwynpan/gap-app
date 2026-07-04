@@ -199,9 +199,6 @@ jobs:
       checks: write
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      # Prevent apt/debconf from blocking on an interactive prompt during
-      # `playwright install --with-deps` (the step that was hanging on the runner).
-      DEBIAN_FRONTEND: noninteractive
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
