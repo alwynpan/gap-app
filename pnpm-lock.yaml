@@ -174,8 +174,8 @@ importers:
   tests:
     devDependencies:
       '@playwright/test':
-        specifier: ^1.50.0
-        version: 1.59.1
+        specifier: ^1.61.1
+        version: 1.61.1
       '@testcontainers/postgresql':
         specifier: ^11.14.0
         version: 11.14.0
@@ -184,7 +184,7 @@ importers:
         version: 3.5.0(preact@10.29.1)
       allure-playwright:
         specifier: ^3.6.0
-        version: 3.7.1(@playwright/test@1.59.1)
+        version: 3.7.1(@playwright/test@1.61.1)
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -1363,8 +1363,8 @@ packages:
     resolution: {integrity: sha512-QNqXyfVS2wm9hweSYD2O7F0G06uurj9kZ96TRQE5Y9hU7+tgdZwIkbAKc5Ocy1HxEY2kuDQa6cQ1WRs/O5LFKA==}
     engines: {node: ^12.20.0 || ^14.18.0 || >=16.0.0}
 
-  '@playwright/test@1.59.1':
-    resolution: {integrity: sha512-PG6q63nQg5c9rIi4/Z5lR5IVF7yU5MqmKaPOe0HSc0O2cX1fPi96sUQu5j7eo4gKCkB2AnNGoWt7y4/Xx3Kcqg==}
+  '@playwright/test@1.61.1':
+    resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -4149,13 +4149,13 @@ packages:
     resolution: {integrity: sha512-HRDzbaKjC+AOWVXxAU/x54COGeIv9eb+6CkDSQoNTt4XyWoIJvuPsXizxu/Fr23EiekbtZwmh1IcIG/l/a10GQ==}
     engines: {node: '>=8'}
 
-  playwright-core@1.59.1:
-    resolution: {integrity: sha512-HBV/RJg81z5BiiZ9yPzIiClYV/QMsDCKUyogwH9p3MCP6IYjUFu/MActgYAvK0oWyV9NlwM3GLBjADyWgydVyg==}
+  playwright-core@1.61.1:
+    resolution: {integrity: sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==}
     engines: {node: '>=18'}
     hasBin: true
 
-  playwright@1.59.1:
-    resolution: {integrity: sha512-C8oWjPR3F81yljW9o5OxcWzfh6avkVwDD2VYdwIGqTkl+OGFISgypqzfu7dOe4QNLL2aqcWBmI3PMtLIK233lw==}
+  playwright@1.61.1:
+    resolution: {integrity: sha512-DWnY5o3YbLWK4GovuAVwpqL+1VwGNdUGrRr++8j8PtQQzvAVZUIMjKQ90fY689sEJZJBbZVw1rXaOKSTitkzPQ==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -6949,9 +6949,9 @@ snapshots:
 
   '@pkgr/core@0.2.9': {}
 
-  '@playwright/test@1.59.1':
+  '@playwright/test@1.61.1':
     dependencies:
-      playwright: 1.59.1
+      playwright: 1.61.1
 
   '@preact/compat@18.3.2(preact@10.29.1)':
     dependencies:
@@ -7426,16 +7426,16 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  allure-js-commons@3.7.1(allure-playwright@3.7.1(@playwright/test@1.59.1)):
+  allure-js-commons@3.7.1(allure-playwright@3.7.1(@playwright/test@1.61.1)):
     dependencies:
       md5: 2.3.0
     optionalDependencies:
-      allure-playwright: 3.7.1(@playwright/test@1.59.1)
+      allure-playwright: 3.7.1(@playwright/test@1.61.1)
 
-  allure-playwright@3.7.1(@playwright/test@1.59.1):
+  allure-playwright@3.7.1(@playwright/test@1.61.1):
     dependencies:
-      '@playwright/test': 1.59.1
-      allure-js-commons: 3.7.1(allure-playwright@3.7.1(@playwright/test@1.59.1))
+      '@playwright/test': 1.61.1
+      allure-js-commons: 3.7.1(allure-playwright@3.7.1(@playwright/test@1.61.1))
 
   allure@3.5.0(preact@10.29.1):
     dependencies:
@@ -10019,11 +10019,11 @@ snapshots:
     dependencies:
       find-up: 4.1.0
 
-  playwright-core@1.59.1: {}
+  playwright-core@1.61.1: {}
 
-  playwright@1.59.1:
+  playwright@1.61.1:
     dependencies:
-      playwright-core: 1.59.1
+      playwright-core: 1.61.1
     optionalDependencies:
       fsevents: 2.3.2
 
