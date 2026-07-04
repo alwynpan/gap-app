@@ -11,7 +11,7 @@
     "test:allure": "playwright test && allure generate -o allure-report && allure open allure-report"
   },
   "devDependencies": {
-    "@playwright/test": "^1.50.0",
+    "@playwright/test": "^1.61.1",
     "@testcontainers/postgresql": "^11.14.0",
     "allure": "^3.4.1",
     "allure-playwright": "^3.6.0",
