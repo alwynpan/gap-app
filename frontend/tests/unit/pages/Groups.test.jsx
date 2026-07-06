@@ -1082,6 +1082,79 @@ describe('Groups page (groups of one assignment)', () => {
       expect(screen.getByText(/\(6 groups\)/i)).toBeInTheDocument();
     });
 
+    it('pads generated names to the width of the batch size (3 digits for 300 groups)', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage({ groups: [] });
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '300');
+
+      // Preview reflects the padded last name
+      expect(screen.getByText(/team300/i)).toBeInTheDocument();
+      expect(screen.getByText(/team001/i)).toBeInTheDocument();
+
+      api.post.mockResolvedValueOnce({ data: { groups: [] } });
+      await user.click(screen.getByRole('button', { name: /create 300 groups/i }));
+
+      await waitFor(() => {
+        expect(api.post).toHaveBeenCalledTimes(1);
+        const body = api.post.mock.calls[0][1];
+        expect(body.groups[0].name).toBe('Team001');
+        expect(body.groups[9].name).toBe('Team010');
+        expect(body.groups[99].name).toBe('Team100');
+        expect(body.groups[299].name).toBe('Team300');
+      });
+    });
+
+    it('pads generated names to 4 digits for 3000 groups', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage({ groups: [] });
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '3000');
+
+      api.post.mockResolvedValue({ data: { groups: [] } });
+      await user.click(screen.getByRole('button', { name: /create 3000 groups/i }));
+
+      await waitFor(() => {
+        // Large batches are split into sequential calls; check first and last chunk
+        const calls = api.post.mock.calls;
+        const firstBatch = calls[0][1].groups;
+        const lastBatch = calls[calls.length - 1][1].groups;
+        expect(firstBatch[0].name).toBe('Team0001');
+        expect(lastBatch[lastBatch.length - 1].name).toBe('Team3000');
+      });
+    });
+
+    it('keeps 2-digit padding for batches of 10–99 (existing behaviour)', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage({ groups: [] });
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '90');
+
+      api.post.mockResolvedValueOnce({ data: { groups: [] } });
+      await user.click(screen.getByRole('button', { name: /create 90 groups/i }));
+
+      await waitFor(() => {
+        const body = api.post.mock.calls[0][1];
+        expect(body.groups[0].name).toBe('Team01');
+        expect(body.groups[89].name).toBe('Team90');
+      });
+    });
+
     it('sends { assignmentId, groups } in a single POST /groups/bulk call', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
@@ -1126,10 +1199,10 @@ describe('Groups page (groups of one assignment)', () => {
         expect(firstCall[0]).toMatch(/\/groups\/bulk$/);
         expect(firstCall[1].assignmentId).toBe(ASSIGNMENT_ID);
         expect(firstCall[1].groups).toHaveLength(500);
-        expect(firstCall[1].groups[0]).toEqual({ name: 'Group01' });
-        expect(firstCall[1].groups[499]).toEqual({ name: 'Group500' });
+        expect(firstCall[1].groups[0]).toEqual({ name: 'Group0001' });
+        expect(firstCall[1].groups[499]).toEqual({ name: 'Group0500' });
         expect(secondCall[1].groups).toHaveLength(500);
-        expect(secondCall[1].groups[0]).toEqual({ name: 'Group501' });
+        expect(secondCall[1].groups[0]).toEqual({ name: 'Group0501' });
         expect(thirdCall[1].groups).toHaveLength(500);
         expect(thirdCall[1].groups[499]).toEqual({ name: 'Group1500' });
         expect(screen.getByText('Created 1500 groups')).toBeInTheDocument();

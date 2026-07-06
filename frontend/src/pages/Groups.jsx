@@ -297,7 +297,9 @@ function Groups() {
       return;
     }
 
-    const pad = n < 10 ? 1 : 2;
+    // Pad to the width of the batch size (min 2) so names sort correctly
+    // everywhere they are ordered lexicographically (DB, exports, UI).
+    const pad = n < 10 ? 1 : String(n).length;
     const allGroups = Array.from({ length: n }, (_, i) => {
       const item = { name: `${prefix.trim()}${String(i + 1).padStart(pad, '0')}` };
       if (maxMembersVal !== null) {
@@ -343,7 +345,7 @@ function Groups() {
     if (!prefix.trim() || isNaN(n) || n < 1) {
       return [];
     }
-    const pad = n < 10 ? 1 : 2;
+    const pad = n < 10 ? 1 : String(n).length;
     return Array.from({ length: n }, (_, i) => `${prefix.trim()}${String(i + 1).padStart(pad, '0')}`);
   };
 
