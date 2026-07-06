@@ -16,4 +16,4 @@ RUN pnpm install --frozen-lockfile --filter gap-frontend
 EXPOSE 3000
 
 WORKDIR /app/frontend
-CMD ["pnpm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["pnpm", "run", "dev", "--host", "0.0.0.0"]
