@@ -20,6 +20,30 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
+// ── API route mocks ──────────────────────────────────────────────────────────
+
+const SUBJECTS = [
+  { id: 'sub-1', name: 'Subject One' },
+  { id: 'sub-2', name: 'Subject Two' },
+];
+
+/**
+ * Install a url-router implementation on api.get so every endpoint the page
+ * touches (GET /subjects on mount, GET /users for the conflict check) is
+ * served independently.
+ */
+function mockApiRoutes({ users = [], subjects = SUBJECTS, usersError = null, subjectsError = null } = {}) {
+  api.get.mockImplementation((url) => {
+    if (url.endsWith('/subjects')) {
+      return subjectsError ? Promise.reject(subjectsError) : Promise.resolve({ data: { subjects } });
+    }
+    if (url.endsWith('/users')) {
+      return usersError ? Promise.reject(usersError) : Promise.resolve({ data: { users } });
+    }
+    return Promise.reject(new Error(`Unexpected url: ${url}`));
+  });
+}
+
 // ── FileReader mock ──────────────────────────────────────────────────────────
 // JSDOM's FileReader is asynchronous and can be unreliable in tests. We mock
 // it so readAsText fires onload via a resolved microtask, using content stored
@@ -74,12 +98,15 @@ function uploadCsv(content, name = 'users.csv') {
   });
 }
 
-function renderPage() {
-  return render(
+async function renderPage() {
+  const utils = render(
     <MemoryRouter>
       <ImportUsers />
     </MemoryRouter>
   );
+  // Flush the GET /subjects fetch fired on mount
+  await act(async () => {});
+  return utils;
 }
 
 /**
@@ -100,6 +127,11 @@ async function waitForStep3() {
   await screen.findByRole('button', { name: 'Import' });
 }
 
+/** Select the target subject in the step-3 options panel. */
+async function chooseSubject(id = 'sub-1') {
+  await userEvent.selectOptions(screen.getByLabelText(/target subject/i), id);
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('ImportUsers page', () => {
@@ -107,6 +139,7 @@ describe('ImportUsers page', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockApiRoutes();
     restoreFileReader = setupFileReaderMock();
   });
 
@@ -117,26 +150,26 @@ describe('ImportUsers page', () => {
   // ── Step 1: Upload ─────────────────────────────────────────────────────────
 
   describe('Step 1 — Upload', () => {
-    it('renders upload area on initial render', () => {
-      renderPage();
+    it('renders upload area on initial render', async () => {
+      await renderPage();
       expect(screen.getByText(/upload csv file/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
     });
 
     it('Cancel button navigates to /users', async () => {
-      renderPage();
+      await renderPage();
       await userEvent.click(screen.getByRole('button', { name: /cancel/i }));
       expect(mockNavigate).toHaveBeenCalledWith('/users');
     });
 
     it('"Back to Users" button navigates to /users', async () => {
-      renderPage();
+      await renderPage();
       await userEvent.click(screen.getAllByRole('button', { name: /back to users/i })[0]);
       expect(mockNavigate).toHaveBeenCalledWith('/users');
     });
 
     it('shows error when a non-CSV file is uploaded', async () => {
-      renderPage();
+      await renderPage();
       const file = new File(['hello'], 'data.txt', { type: 'text/plain' });
       file.__testContent = 'hello';
       const input = document.querySelector('input[type="file"]');
@@ -148,33 +181,33 @@ describe('ImportUsers page', () => {
     });
 
     it('shows error when CSV has no data rows', async () => {
-      renderPage();
+      await renderPage();
       // Header row + blank data row → parser filters blank rows → 0 data rows
       uploadCsv('username,email,firstName,lastName\n,,,,');
       expect(await screen.findByText(/no data rows found/i)).toBeInTheDocument();
     });
 
     it('advances to step 2 after a valid CSV upload', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv('username,email,firstName,lastName\njdoe,jdoe@test.com,John,Doe');
       // Wait for a combobox to appear — they only exist in step 2
-      await waitForStep2();
+      waitForStep2();
       expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
     });
 
     it('accepts a valid CSV via drag and drop and advances to step 2', async () => {
-      renderPage();
+      await renderPage();
       const file = makeCsvFile('username,email,firstName,lastName\njdoe,jdoe@test.com,John,Doe');
       const dropzone = screen.getByRole('button', { name: /click to browse/i });
       act(() => {
         fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
       });
-      await waitForStep2();
+      waitForStep2();
       expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
     });
 
     it('shows error when a non-CSV file is dropped', async () => {
-      renderPage();
+      await renderPage();
       const file = new File(['hello'], 'data.txt', { type: 'text/plain' });
       file.__testContent = 'hello';
       const dropzone = screen.getByRole('button', { name: /click to browse/i });
@@ -191,9 +224,9 @@ describe('ImportUsers page', () => {
     const validCsv = 'username,email,firstName,lastName\njdoe,jdoe@test.com,John,Doe';
 
     it('auto-detects column mappings from header names', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv(validCsv);
-      await waitForStep2();
+      waitForStep2();
       const values = screen.getAllByRole('combobox').map((s) => s.value);
       expect(values).toContain('username');
       expect(values).toContain('email');
@@ -202,45 +235,44 @@ describe('ImportUsers page', () => {
     });
 
     it('shows validation error when required fields are not mapped', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv('col1,col2\nval1,val2');
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       expect(await screen.findByText(/required fields not mapped/i)).toBeInTheDocument();
     });
 
     it('"Send setup email" checkbox defaults to unchecked', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv(validCsv);
-      await waitForStep2();
+      waitForStep2();
       const checkbox = screen.getByRole('checkbox');
       expect(checkbox).not.toBeChecked();
     });
 
     it('Back button returns to step 1', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv(validCsv);
-      await waitForStep2();
+      waitForStep2();
       // "Back" exact name to avoid matching "Back to Users" breadcrumb
       await userEvent.click(screen.getByRole('button', { name: 'Back' }));
       expect(screen.getByText(/upload csv file/i)).toBeInTheDocument();
     });
 
     it('loads preview and advances to step 3 on success', async () => {
-      api.get.mockResolvedValue({ data: { users: [] } });
-      renderPage();
+      await renderPage();
       uploadCsv(validCsv);
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
       expect(screen.getByText(/import preview/i)).toBeInTheDocument();
     });
 
     it('shows error when fetching existing users fails', async () => {
-      api.get.mockRejectedValue({ response: { data: { error: 'Server error' } } });
-      renderPage();
+      mockApiRoutes({ usersError: { response: { data: { error: 'Server error' } } } });
+      await renderPage();
       uploadCsv(validCsv);
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       expect(await screen.findByText('Server error')).toBeInTheDocument();
     });
@@ -252,10 +284,10 @@ describe('ImportUsers page', () => {
     const twoCsv = 'username,email,firstName,lastName\njdoe,jdoe@test.com,John,Doe\njane,jane@test.com,Jane,Smith';
 
     async function goToPreview({ existingUsers = [], csv = twoCsv } = {}) {
-      api.get.mockResolvedValue({ data: { users: existingUsers } });
-      renderPage();
+      mockApiRoutes({ users: existingUsers });
+      await renderPage();
       uploadCsv(csv);
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
     }
@@ -307,13 +339,15 @@ describe('ImportUsers page', () => {
     it('submits import and shows result step', async () => {
       api.post.mockResolvedValue({ data: { imported: 2, skipped: 0, errors: [] } });
       await goToPreview();
+      await chooseSubject();
       await userEvent.click(screen.getByRole('button', { name: 'Import' }));
       expect(await screen.findByText('Import Complete')).toBeInTheDocument();
     });
 
-    it('calls POST /users/import with correct payload', async () => {
+    it('calls POST /users/import with correct payload including subjectId', async () => {
       api.post.mockResolvedValue({ data: { imported: 2, skipped: 0, errors: [] } });
       await goToPreview();
+      await chooseSubject('sub-2');
       await userEvent.click(screen.getByRole('button', { name: 'Import' }));
       await screen.findByText('Import Complete');
       expect(api.post).toHaveBeenCalledWith(
@@ -321,6 +355,7 @@ describe('ImportUsers page', () => {
         expect.objectContaining({
           conflictAction: 'skip',
           sendSetupEmail: false,
+          subjectId: 'sub-2',
           users: expect.any(Array),
         })
       );
@@ -329,6 +364,7 @@ describe('ImportUsers page', () => {
     it('shows submit error when import API fails', async () => {
       api.post.mockRejectedValue({ response: { data: { error: 'Import failed' } } });
       await goToPreview();
+      await chooseSubject();
       await userEvent.click(screen.getByRole('button', { name: 'Import' }));
       expect(await screen.findByText('Import failed')).toBeInTheDocument();
     });
@@ -343,8 +379,84 @@ describe('ImportUsers page', () => {
       await goToPreview();
       await userEvent.click(screen.getByRole('button', { name: 'Back' }));
       // Step 2 comboboxes reappear
-      await waitForStep2();
+      waitForStep2();
       expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
+    });
+  });
+
+  // ── Target subject selection ───────────────────────────────────────────────
+
+  describe('Target subject selection', () => {
+    const twoCsv = 'username,email,firstName,lastName\njdoe,jdoe@test.com,John,Doe\njane,jane@test.com,Jane,Smith';
+
+    async function goToPreview() {
+      await renderPage();
+      uploadCsv(twoCsv);
+      waitForStep2();
+      await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
+      await waitForStep3();
+    }
+
+    it('renders the subject select with options fetched from GET /subjects', async () => {
+      await goToPreview();
+      const select = screen.getByLabelText(/target subject/i);
+      expect(select).toBeInTheDocument();
+      expect(select).toHaveValue('');
+      expect(screen.getByRole('option', { name: 'Select subject' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'Subject One' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'Subject Two' })).toBeInTheDocument();
+      expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/subjects$/));
+    });
+
+    it('blocks import with "Subject is required" when no subject is chosen', async () => {
+      await goToPreview();
+      await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+      expect(await screen.findByText('Subject is required')).toBeInTheDocument();
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it('clears the "Subject is required" error once a subject is chosen', async () => {
+      await goToPreview();
+      await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+      expect(await screen.findByText('Subject is required')).toBeInTheDocument();
+      await chooseSubject();
+      expect(screen.queryByText('Subject is required')).not.toBeInTheDocument();
+    });
+
+    it('sends the selected subjectId in the POST body', async () => {
+      api.post.mockResolvedValue({ data: { imported: 2, skipped: 0, errors: [] } });
+      await goToPreview();
+      await chooseSubject('sub-1');
+      await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+      await screen.findByText('Import Complete');
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining('/users/import'),
+        expect.objectContaining({ subjectId: 'sub-1' })
+      );
+    });
+
+    it('surfaces a 403 error message from the API', async () => {
+      api.post.mockRejectedValue({
+        response: { status: 403, data: { error: 'You do not manage an assignment in this subject' } },
+      });
+      await goToPreview();
+      await chooseSubject();
+      await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+      expect(await screen.findByText('You do not manage an assignment in this subject')).toBeInTheDocument();
+    });
+
+    it('shows a permission fallback message for a 403 without a server error message', async () => {
+      api.post.mockRejectedValue({ response: { status: 403, data: {} } });
+      await goToPreview();
+      await chooseSubject();
+      await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+      expect(await screen.findByText(/do not have permission to import users into this subject/i)).toBeInTheDocument();
+    });
+
+    it('shows an error when subjects fail to load', async () => {
+      mockApiRoutes({ subjectsError: new Error('network') });
+      await goToPreview();
+      expect(screen.getByText(/failed to load subjects/i)).toBeInTheDocument();
     });
   });
 
@@ -352,13 +464,13 @@ describe('ImportUsers page', () => {
 
   describe('Step 4 — Result', () => {
     async function goToResult({ imported = 2, skipped = 0, errors = [] } = {}) {
-      api.get.mockResolvedValue({ data: { users: [] } });
       api.post.mockResolvedValue({ data: { imported, skipped, errors } });
-      renderPage();
+      await renderPage();
       uploadCsv('username,email,firstName,lastName\njdoe,jdoe@test.com,John,Doe\njane,jane@test.com,Jane,Smith');
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
+      await chooseSubject();
       await userEvent.click(screen.getByRole('button', { name: 'Import' }));
       await screen.findByText('Import Complete');
     }
@@ -396,11 +508,10 @@ describe('ImportUsers page', () => {
 
   describe('Full Name column mapping', () => {
     it('splits "First Last" format correctly in preview', async () => {
-      api.get.mockResolvedValue({ data: { users: [] } });
-      renderPage();
+      await renderPage();
       // "name" header auto-detects to fullNameFL
       uploadCsv('username,email,name\njdoe,jdoe@test.com,John Doe');
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
       expect(screen.getByText('John')).toBeInTheDocument();
@@ -408,10 +519,9 @@ describe('ImportUsers page', () => {
     });
 
     it('splits "First, Last" comma format correctly for fullNameFL', async () => {
-      api.get.mockResolvedValue({ data: { users: [] } });
-      renderPage();
+      await renderPage();
       uploadCsv('username,email,name\njdoe,jdoe@test.com,"John, Doe"');
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
       expect(screen.getByText('John')).toBeInTheDocument();
@@ -419,11 +529,10 @@ describe('ImportUsers page', () => {
     });
 
     it('splits "Last, First" format correctly when mapped to fullNameLF', async () => {
-      api.get.mockResolvedValue({ data: { users: [] } });
-      renderPage();
+      await renderPage();
       // "fullname" auto-detects to fullNameFL; we'll change it to fullNameLF
       uploadCsv('username,email,fullname\njdoe,jdoe@test.com,"Doe, John"');
-      await waitForStep2();
+      waitForStep2();
 
       // Third column (index 2) — change mapping to fullNameLF
       const selects = screen.getAllByRole('combobox');
@@ -447,9 +556,9 @@ describe('ImportUsers page', () => {
     }
 
     it('hides a selected field from other column dropdowns', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv(fiveColCsv);
-      await waitForStep2();
+      waitForStep2();
 
       // Map column 0 to "username"
       fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'username' } });
@@ -461,9 +570,9 @@ describe('ImportUsers page', () => {
     });
 
     it('hides fullName options when firstName is selected', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv(fiveColCsv);
-      await waitForStep2();
+      waitForStep2();
 
       fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'firstName' } });
 
@@ -476,9 +585,9 @@ describe('ImportUsers page', () => {
     });
 
     it('hides firstName, lastName, and both fullName options when fullNameFL is selected', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv(fiveColCsv);
-      await waitForStep2();
+      waitForStep2();
 
       fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'fullNameFL' } });
 
@@ -490,9 +599,9 @@ describe('ImportUsers page', () => {
     });
 
     it('clears conflicting selections when a new value creates a conflict', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv(fiveColCsv);
-      await waitForStep2();
+      waitForStep2();
 
       // Re-query combobox references after each change (React re-renders replace DOM nodes)
       fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'firstName' } });
@@ -510,10 +619,10 @@ describe('ImportUsers page', () => {
     });
 
     it('autoDetect does not assign duplicate fields to multiple columns', async () => {
-      renderPage();
+      await renderPage();
       // Two columns named "email" — only the first should get the mapping
       uploadCsv('email,email,firstName,lastName\na@t.com,b@t.com,John,Doe');
-      await waitForStep2();
+      waitForStep2();
 
       const selects = screen.getAllByRole('combobox');
       expect(selects[0].value).toBe('email');
@@ -521,9 +630,9 @@ describe('ImportUsers page', () => {
     });
 
     it('autoDetect blocks fullName when firstName/lastName are already assigned', async () => {
-      renderPage();
+      await renderPage();
       uploadCsv('firstName,lastName,name\nJohn,Doe,John Doe');
-      await waitForStep2();
+      waitForStep2();
 
       const selects = screen.getAllByRole('combobox');
       expect(selects[0].value).toBe('firstName');
@@ -537,63 +646,55 @@ describe('ImportUsers page', () => {
 
   describe('Duplicate and conflict detection', () => {
     it('shows "Duplicate in file" badge for intra-CSV duplicate usernames', async () => {
-      api.get.mockResolvedValue({ data: { users: [] } });
-      renderPage();
+      await renderPage();
       uploadCsv('username,email,firstName,lastName\njdoe,jdoe@a.com,John,Doe\njdoe,jdoe@b.com,Jane,Doe');
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
       expect(screen.getByText('Duplicate in file')).toBeInTheDocument();
     });
 
     it('shows "Duplicate in file" badge for intra-CSV duplicate emails', async () => {
-      api.get.mockResolvedValue({ data: { users: [] } });
-      renderPage();
+      await renderPage();
       uploadCsv('username,email,firstName,lastName\njdoe,same@test.com,John,Doe\njane,same@test.com,Jane,Smith');
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
       expect(screen.getByText('Duplicate in file')).toBeInTheDocument();
     });
 
     it('shows "Conflict (email/ID taken)" for email conflict with existing user', async () => {
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ username: 'other', email: 'taken@test.com', role_name: 'user' }],
-        },
+      mockApiRoutes({
+        users: [{ username: 'other', email: 'taken@test.com', role_name: 'user' }],
       });
-      renderPage();
+      await renderPage();
       uploadCsv('username,email,firstName,lastName\nnewuser,taken@test.com,New,User');
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
       expect(screen.getByText('Conflict (email/ID taken)')).toBeInTheDocument();
     });
 
     it('shows "Conflict (email/ID taken)" for student ID conflict with existing user', async () => {
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ username: 'other', email: 'other@test.com', role_name: 'user', student_id: 'S123' }],
-        },
+      mockApiRoutes({
+        users: [{ username: 'other', email: 'other@test.com', role_name: 'user', student_id: 'S123' }],
       });
-      renderPage();
+      await renderPage();
       uploadCsv('username,email,firstName,lastName,student id\nnewuser,new@test.com,New,User,S123');
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
       expect(screen.getByText('Conflict (email/ID taken)')).toBeInTheDocument();
     });
 
     it('does not send conflict rows to the import API', async () => {
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ username: 'other', email: 'taken@test.com', role_name: 'user' }],
-        },
+      mockApiRoutes({
+        users: [{ username: 'other', email: 'taken@test.com', role_name: 'user' }],
       });
       api.post.mockResolvedValue({ data: { imported: 0, skipped: 0, errors: [] } });
-      renderPage();
+      await renderPage();
       uploadCsv('username,email,firstName,lastName\nnewuser,taken@test.com,New,User');
-      await waitForStep2();
+      waitForStep2();
       await userEvent.click(screen.getByRole('button', { name: /preview import/i }));
       await waitForStep3();
       // Import button should be disabled since the only row is a conflict

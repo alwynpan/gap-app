@@ -3,6 +3,9 @@
 /**
  * Direct database helpers for e2e test setup and cleanup.
  * Reads connection config from the state file written by global-setup.js.
+ *
+ * Hierarchy: subjects → assignments → groups. Users enrol in subjects
+ * (user_subjects); group membership is per assignment (user_groups).
  */
 
 const { Pool } = require('pg');
@@ -29,15 +32,30 @@ function getPool() {
 }
 
 /**
- * Truncates test data, preserving the seeded admin user.
+ * Run an arbitrary parameterised query against the e2e database.
+ * Used by specs that need to assert DB state directly (e.g. cascade deletes).
+ */
+async function query(text, params = []) {
+  const db = getPool();
+  const result = await db.query(text, params);
+  return result.rows;
+}
+
+/**
+ * Truncates test data in FK-safe order, preserving the seeded admin user.
  * Call in beforeEach to guarantee a clean slate between tests.
  */
 async function cleanDatabase() {
   const db = getPool();
   await db.query(`
     DELETE FROM password_reset_tokens WHERE TRUE;
+    DELETE FROM user_groups WHERE TRUE;
+    DELETE FROM assignment_managers WHERE TRUE;
+    DELETE FROM user_subjects WHERE TRUE;
     DELETE FROM users WHERE LOWER(username) != 'admin';
     DELETE FROM groups WHERE TRUE;
+    DELETE FROM assignments WHERE TRUE;
+    DELETE FROM subjects WHERE TRUE;
     DELETE FROM config WHERE TRUE;
   `);
 }
@@ -71,23 +89,119 @@ async function createUser({
 }
 
 /**
- * Create a group directly in the DB.
+ * Create a subject directly in the DB.
  */
-async function createGroup({ name, enabled = true, maxMembers = null }) {
+async function createSubject({ name }) {
+  const db = getPool();
+  const { rows } = await db.query('INSERT INTO subjects (name) VALUES ($1) RETURNING *', [name]);
+  return rows[0];
+}
+
+/**
+ * Create an assignment under a subject directly in the DB.
+ */
+async function createAssignment({ subjectId, name }) {
+  const db = getPool();
+  const { rows } = await db.query('INSERT INTO assignments (subject_id, name) VALUES ($1, $2) RETURNING *', [
+    subjectId,
+    name,
+  ]);
+  return rows[0];
+}
+
+/**
+ * Enrol a user in a subject (idempotent).
+ */
+async function addUserToSubject(userId, subjectId) {
   const db = getPool();
   const { rows } = await db.query(
-    'INSERT INTO groups (name, enabled, max_members) VALUES ($1, $2, $3) RETURNING *',
-    [name, enabled, maxMembers]
+    `INSERT INTO user_subjects (user_id, subject_id) VALUES ($1, $2)
+     ON CONFLICT (user_id, subject_id) DO NOTHING
+     RETURNING *`,
+    [userId, subjectId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Make a user a manager of an assignment (idempotent).
+ */
+async function assignManager(userId, assignmentId) {
+  const db = getPool();
+  const { rows } = await db.query(
+    `INSERT INTO assignment_managers (user_id, assignment_id) VALUES ($1, $2)
+     ON CONFLICT (user_id, assignment_id) DO NOTHING
+     RETURNING *`,
+    [userId, assignmentId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Create a group under an assignment directly in the DB.
+ */
+async function createGroup({ assignmentId, name, enabled = true, maxMembers = null }) {
+  const db = getPool();
+  const { rows } = await db.query(
+    'INSERT INTO groups (assignment_id, name, enabled, max_members) VALUES ($1, $2, $3, $4) RETURNING *',
+    [assignmentId, name, enabled, maxMembers]
   );
   return rows[0];
 }
 
 /**
- * Assign a user to a group directly in the DB.
+ * Composite fixture: one subject with one assignment and optional groups.
+ * `groups` is an array of group specs ({ name, enabled?, maxMembers? }).
+ * Returns { subject, assignment, groups }.
+ */
+async function createHierarchy({ subjectName = 'Subject 1', assignmentName = 'Assignment 1', groups = [] } = {}) {
+  const subject = await createSubject({ name: subjectName });
+  const assignment = await createAssignment({ subjectId: subject.id, name: assignmentName });
+  const createdGroups = [];
+  for (const groupSpec of groups) {
+    createdGroups.push(await createGroup({ assignmentId: assignment.id, ...groupSpec }));
+  }
+  return { subject, assignment, groups: createdGroups };
+}
+
+/**
+ * Assign a user (by username, case-insensitive) to a group directly in the DB.
+ * Replaces any existing membership for the group's assignment and enrols the
+ * user in the parent subject so the fixture satisfies the universal
+ * subject-membership rule enforced by the backend.
  */
 async function assignUserToGroup(username, groupId) {
   const db = getPool();
-  await db.query('UPDATE users SET group_id = $1 WHERE LOWER(username) = LOWER($2)', [groupId, username]);
+
+  const userResult = await db.query('SELECT id FROM users WHERE LOWER(username) = LOWER($1)', [username]);
+  const user = userResult.rows[0];
+  if (!user) {
+    throw new Error(`assignUserToGroup: no user found for username ${username}`);
+  }
+
+  const groupResult = await db.query(
+    `SELECT g.id, g.assignment_id, a.subject_id
+     FROM groups g
+     JOIN assignments a ON a.id = g.assignment_id
+     WHERE g.id = $1`,
+    [groupId]
+  );
+  const group = groupResult.rows[0];
+  if (!group) {
+    throw new Error(`assignUserToGroup: no group found for id ${groupId}`);
+  }
+
+  await db.query(
+    `INSERT INTO user_subjects (user_id, subject_id) VALUES ($1, $2)
+     ON CONFLICT (user_id, subject_id) DO NOTHING`,
+    [user.id, group.subject_id]
+  );
+  await db.query('DELETE FROM user_groups WHERE user_id = $1 AND assignment_id = $2', [user.id, group.assignment_id]);
+  await db.query('INSERT INTO user_groups (user_id, assignment_id, group_id) VALUES ($1, $2, $3)', [
+    user.id,
+    group.assignment_id,
+    group.id,
+  ]);
 }
 
 /**
@@ -121,4 +235,17 @@ async function closePool() {
   }
 }
 
-module.exports = { cleanDatabase, createUser, createGroup, assignUserToGroup, createPasswordResetToken, closePool };
+module.exports = {
+  query,
+  cleanDatabase,
+  createUser,
+  createSubject,
+  createAssignment,
+  addUserToSubject,
+  assignManager,
+  createGroup,
+  createHierarchy,
+  assignUserToGroup,
+  createPasswordResetToken,
+  closePool,
+};

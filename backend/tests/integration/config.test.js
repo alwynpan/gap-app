@@ -1,12 +1,23 @@
 'use strict';
 
 const { buildTestServer, closeTestServer } = require('./helpers/server');
-const { cleanDatabase, createUser, createGroup, loginAs } = require('./helpers/db');
+const {
+  cleanDatabase,
+  createUser,
+  createSubject,
+  createAssignment,
+  createGroup,
+  addUserToSubject,
+  loginAs,
+} = require('./helpers/db');
 
 let app;
 let adminToken;
 let amToken;
 let userToken;
+let am1;
+let subject;
+let assignment;
 
 beforeAll(async () => {
   app = await buildTestServer();
@@ -20,10 +31,14 @@ beforeEach(async () => {
   await cleanDatabase();
   adminToken = await loginAs(app, 'admin', 'AdminPass123!');
 
-  await createUser({ username: 'am1', email: 'am1@test.com', role: 'assignment_manager' });
+  subject = await createSubject({ name: 'ConfigSubject' });
+  assignment = await createAssignment({ subjectId: subject.id, name: 'A1' });
+
+  am1 = await createUser({ username: 'am1', email: 'am1@test.com', role: 'assignment_manager' });
   amToken = await loginAs(app, 'am1', 'TestPass123!');
 
-  await createUser({ username: 'user1', email: 'user1@test.com', role: 'user' });
+  const user1 = await createUser({ username: 'user1', email: 'user1@test.com', role: 'user' });
+  await addUserToSubject(user1.id, subject.id);
   userToken = await loginAs(app, 'user1', 'TestPass123!');
 });
 
@@ -204,7 +219,7 @@ describe('PUT /api/config/:key', () => {
 // ---------------------------------------------------------------------------
 describe('group_join_locked enforcement', () => {
   it('prevents regular users from joining when locked', async () => {
-    const g = await createGroup({ name: 'LockTestGroup', enabled: true });
+    const g = await createGroup({ assignmentId: assignment.id, name: 'LockTestGroup', enabled: true });
 
     await app.inject({
       method: 'PUT',
@@ -223,7 +238,9 @@ describe('group_join_locked enforcement', () => {
   });
 
   it('allows assignment_manager to join group even when locked', async () => {
-    const g = await createGroup({ name: 'AMCanJoin', enabled: true });
+    const g = await createGroup({ assignmentId: assignment.id, name: 'AMCanJoin', enabled: true });
+    // Joining still requires subject membership — the lock bypass is what is under test
+    await addUserToSubject(am1.id, subject.id);
 
     await app.inject({
       method: 'PUT',
@@ -242,7 +259,15 @@ describe('group_join_locked enforcement', () => {
   });
 
   it('allows admin to join group even when locked', async () => {
-    const g = await createGroup({ name: 'AdminCanJoin', enabled: true });
+    const g = await createGroup({ assignmentId: assignment.id, name: 'AdminCanJoin', enabled: true });
+    // Joining requires subject membership even for admins; enrol the admin first
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'admin', password: 'AdminPass123!' },
+    });
+    const adminId = JSON.parse(loginRes.body).user.id;
+    await addUserToSubject(adminId, subject.id);
 
     await app.inject({
       method: 'PUT',
@@ -256,8 +281,7 @@ describe('group_join_locked enforcement', () => {
       url: `/api/groups/${g.id}/join`,
       headers: { authorization: `Bearer ${adminToken}` },
     });
-    // Admin bypasses the lock — cleanDatabase resets admin's group_id to NULL
-    // (via ON DELETE SET NULL), so admin can always join a fresh group.
+    // Admin bypasses the lock (cleanDatabase clears user_groups between tests)
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).error).toBeUndefined();
   });

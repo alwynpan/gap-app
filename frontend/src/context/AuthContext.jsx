@@ -121,6 +121,8 @@ export function AuthProvider({ children }) {
     isAdmin: user?.role === 'admin',
     isAssignmentManager: user?.role === 'assignment_manager' || user?.role === 'admin',
     registrationEnabled,
+    memberships: user?.memberships ?? [],
+    managedAssignmentIds: (user?.managedAssignments ?? []).map((a) => a.id),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

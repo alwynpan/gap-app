@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import api from '@/utils/api';
 import Groups from '../../../src/pages/Groups.jsx';
 import { useAuth } from '../../../src/context/AuthContext.jsx';
@@ -14,20 +14,35 @@ jest.mock('../../../src/utils/csv.js', () => ({
   downloadCsv: jest.fn(),
 }));
 
+const SUBJECT_ID = '11111111-1111-4111-8111-111111111111';
+const ASSIGNMENT_ID = '22222222-2222-4222-8222-222222222222';
+const OTHER_ASSIGNMENT_ID = '33333333-3333-4333-8333-333333333333';
+const GROUP_ID = '44444444-4444-4444-8444-444444444444';
+
 const makeGroup = (overrides = {}) => ({
-  id: 'g0000000-0000-0000-0000-000000000001',
+  id: GROUP_ID,
   name: 'Group A',
   enabled: true,
   member_count: 3,
   max_members: 5,
+  assignment_id: ASSIGNMENT_ID,
   created_at: '2025-01-01T00:00:00.000Z',
   ...overrides,
 });
 
-describe('Groups page', () => {
+const makeAssignment = (overrides = {}) => ({
+  id: ASSIGNMENT_ID,
+  name: 'Assignment 1',
+  subject_id: SUBJECT_ID,
+  subject_name: 'COMP1000',
+  group_count: 1,
+  ...overrides,
+});
+
+describe('Groups page (groups of one assignment)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    useAuth.mockReturnValue({ isAssignmentManager: true });
+    useAuth.mockReturnValue({ isAdmin: true, user: { username: 'admin', role: 'admin' } });
   });
 
   afterEach(() => {
@@ -35,41 +50,103 @@ describe('Groups page', () => {
     jest.restoreAllMocks();
   });
 
-  const setupPage = async (groups = [makeGroup()]) => {
-    api.get.mockResolvedValueOnce({ data: { groups } });
+  const asManagingAM = () =>
+    useAuth.mockReturnValue({
+      isAdmin: false,
+      user: {
+        username: 'am1',
+        role: 'assignment_manager',
+        managedAssignments: [{ id: ASSIGNMENT_ID, name: 'Assignment 1' }],
+      },
+    });
+
+  const asNonManagingAM = () =>
+    useAuth.mockReturnValue({
+      isAdmin: false,
+      user: {
+        username: 'am2',
+        role: 'assignment_manager',
+        managedAssignments: [{ id: OTHER_ASSIGNMENT_ID, name: 'Other Assignment' }],
+      },
+    });
+
+  const asRegularUser = () => useAuth.mockReturnValue({ isAdmin: false, user: { username: 'stu', role: 'user' } });
+
+  /**
+   * Route api.get calls by URL instead of queueing mockResolvedValueOnce —
+   * avoids queue-pollution between the parallel fetches this page performs.
+   * Calling setupApi again mid-test swaps the dataset (e.g. after a refetch).
+   */
+  const setupApi = ({
+    groups = [makeGroup()],
+    assignment = makeAssignment(),
+    members = [],
+    subjectUsers = [],
+    mappings = [],
+  } = {}) => {
+    api.get.mockImplementation((url) => {
+      if (url.endsWith(`/assignments/${ASSIGNMENT_ID}/groups`)) {
+        return Promise.resolve({ data: { groups } });
+      }
+      if (url.endsWith(`/assignments/${ASSIGNMENT_ID}/export-mappings`)) {
+        return Promise.resolve({ data: { mappings } });
+      }
+      if (url.endsWith(`/assignments/${ASSIGNMENT_ID}`)) {
+        return Promise.resolve({ data: { assignment } });
+      }
+      if (url.endsWith(`/subjects/${SUBJECT_ID}/users`)) {
+        return Promise.resolve({ data: { users: subjectUsers } });
+      }
+      if (/\/groups\/[^/]+$/.test(url)) {
+        return Promise.resolve({ data: { group: {}, members } });
+      }
+      return Promise.reject(new Error(`Unmocked GET ${url}`));
+    });
+  };
+
+  const renderPage = () =>
     render(
-      <MemoryRouter>
-        <Groups />
+      <MemoryRouter initialEntries={[`/subjects/${SUBJECT_ID}/assignments/${ASSIGNMENT_ID}`]}>
+        <Routes>
+          <Route path="/subjects/:subjectId/assignments/:assignmentId" element={<Groups />} />
+        </Routes>
       </MemoryRouter>
     );
-    await waitFor(() => expect(screen.getByText(/manage groups/i)).toBeInTheDocument());
+
+  const setupPage = async (options = {}) => {
+    setupApi(options);
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Subjects' })).toBeInTheDocument());
   };
 
   // ── Loading / fetch ────────────────────────────────────────────────────
   it('shows loading spinner before data resolves', () => {
     api.get.mockImplementation(() => new Promise(() => {}));
-    const { container } = render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
+    const { container } = renderPage();
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
-    expect(screen.queryByText(/manage groups/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Subjects' })).not.toBeInTheDocument();
   });
 
   it('shows empty-state text when there are no groups', async () => {
-    await setupPage([]);
+    await setupPage({ groups: [] });
     expect(screen.getByText('No groups created yet')).toBeInTheDocument();
   });
 
-  it('shows fetch error state', async () => {
+  it('shows fetch error banner when initial load fails', async () => {
     api.get.mockRejectedValue(new Error('boom'));
-    render(
-      <MemoryRouter>
-        <Groups />
-      </MemoryRouter>
-    );
+    renderPage();
     await waitFor(() => expect(screen.getByText('Failed to load groups')).toBeInTheDocument());
+  });
+
+  it('fetches assignment info and groups from the assignment-scoped endpoints', async () => {
+    await setupPage();
+    expect(api.get).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/assignments/${ASSIGNMENT_ID}$`)));
+    expect(api.get).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/assignments/${ASSIGNMENT_ID}/groups$`)));
+    // Old flat GET /groups endpoint must no longer be used
+    const flatGroupCalls = api.get.mock.calls.filter(
+      ([url]) => url.endsWith('/groups') && !url.includes('/assignments/')
+    );
+    expect(flatGroupCalls).toHaveLength(0);
   });
 
   it('renders group name and member count after successful fetch', async () => {
@@ -79,43 +156,64 @@ describe('Groups page', () => {
   });
 
   it('shows ∞ when max_members is null', async () => {
-    await setupPage([makeGroup({ max_members: null })]);
+    await setupPage({ groups: [makeGroup({ max_members: null })] });
     expect(screen.getByText('3 / ∞')).toBeInTheDocument();
+  });
+
+  // ── Breadcrumb ─────────────────────────────────────────────────────────
+  describe('Breadcrumb', () => {
+    it('renders Subjects › subject › assignment breadcrumb with correct links', async () => {
+      await setupPage();
+      const subjectsLink = screen.getByRole('link', { name: 'Subjects' });
+      expect(subjectsLink).toHaveAttribute('href', '/subjects');
+      const subjectLink = screen.getByRole('link', { name: 'COMP1000' });
+      expect(subjectLink).toHaveAttribute('href', `/subjects/${SUBJECT_ID}`);
+      const breadcrumb = screen.getByRole('navigation', { name: /breadcrumb/i });
+      expect(within(breadcrumb).getByText('Assignment 1')).toBeInTheDocument();
+    });
+
+    it('passes the assignment name to the page header', async () => {
+      await setupPage();
+      // Breadcrumb leaf + Header pageName
+      expect(screen.getAllByText('Assignment 1').length).toBeGreaterThanOrEqual(2);
+    });
   });
 
   // ── Three sections ─────────────────────────────────────────────────────
   it('places open group in "Groups with space" section', async () => {
-    await setupPage([makeGroup({ member_count: 2, max_members: 5 })]);
+    await setupPage({ groups: [makeGroup({ member_count: 2, max_members: 5 })] });
     expect(screen.getByText(/groups with space/i)).toBeInTheDocument();
   });
 
   it('places unlimited group in "Groups with space" section', async () => {
-    await setupPage([makeGroup({ member_count: 10, max_members: null })]);
+    await setupPage({ groups: [makeGroup({ member_count: 10, max_members: null })] });
     expect(screen.getByText(/groups with space/i)).toBeInTheDocument();
   });
 
   it('places full group in "Groups full" section', async () => {
-    await setupPage([makeGroup({ member_count: 5, max_members: 5 })]);
+    await setupPage({ groups: [makeGroup({ member_count: 5, max_members: 5 })] });
     expect(screen.getByText(/groups full/i)).toBeInTheDocument();
   });
 
   it('places disabled group in "Disabled groups" section', async () => {
-    await setupPage([makeGroup({ enabled: false })]);
+    await setupPage({ groups: [makeGroup({ enabled: false })] });
     expect(screen.getByText(/disabled groups/i)).toBeInTheDocument();
   });
 
   it('shows correct counts in section headings', async () => {
-    await setupPage([
-      makeGroup({ id: 'g1', name: 'Open', member_count: 1, max_members: 5 }),
-      makeGroup({ id: 'g2', name: 'Full', member_count: 3, max_members: 3 }),
-      makeGroup({ id: 'g3', name: 'Disabled', enabled: false }),
-    ]);
+    await setupPage({
+      groups: [
+        makeGroup({ id: 'g1', name: 'Open', member_count: 1, max_members: 5 }),
+        makeGroup({ id: 'g2', name: 'Full', member_count: 3, max_members: 3 }),
+        makeGroup({ id: 'g3', name: 'Disabled', enabled: false }),
+      ],
+    });
     expect(screen.getByText(/groups with space/i).closest('h3')).toHaveTextContent('(1)');
     expect(screen.getByText(/groups full/i).closest('h3')).toHaveTextContent('(1)');
     expect(screen.getByText(/disabled groups/i).closest('h3')).toHaveTextContent('(1)');
   });
 
-  // ── Action icon buttons ────────────────────────────────────────────────
+  // ── Enable / disable ───────────────────────────────────────────────────
   it('shows disable, set-limit, and delete icon buttons', async () => {
     await setupPage();
     expect(screen.getByRole('button', { name: 'Disable Group' })).toBeInTheDocument();
@@ -124,7 +222,7 @@ describe('Groups page', () => {
   });
 
   it('shows enable button for a disabled group', async () => {
-    await setupPage([makeGroup({ enabled: false })]);
+    await setupPage({ groups: [makeGroup({ enabled: false })] });
     expect(screen.getByRole('button', { name: 'Enable Group' })).toBeInTheDocument();
   });
 
@@ -133,12 +231,11 @@ describe('Groups page', () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     await setupPage();
     api.put.mockResolvedValueOnce({});
-    api.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ enabled: false })] } });
 
     await user.click(screen.getByRole('button', { name: 'Disable Group' }));
 
     await waitFor(() => {
-      expect(api.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/), {
+      expect(api.put).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/groups/${GROUP_ID}$`)), {
         enabled: false,
       });
       expect(screen.getByText('Group disabled successfully')).toBeInTheDocument();
@@ -150,9 +247,8 @@ describe('Groups page', () => {
 
   it('enables a disabled group', async () => {
     const user = userEvent.setup();
-    await setupPage([makeGroup({ enabled: false })]);
+    await setupPage({ groups: [makeGroup({ enabled: false })] });
     api.put.mockResolvedValueOnce({});
-    api.get.mockResolvedValueOnce({ data: { groups: [makeGroup()] } });
 
     await user.click(screen.getByRole('button', { name: 'Enable Group' }));
 
@@ -175,7 +271,7 @@ describe('Groups page', () => {
     await waitFor(() => expect(screen.queryByText('Cannot update group')).not.toBeInTheDocument());
   });
 
-  // ── Delete ─────────────────────────────────────────────────────────────
+  // ── Delete (single-step modal) ─────────────────────────────────────────
   it('opens delete confirmation modal when delete icon is clicked', async () => {
     const user = userEvent.setup();
     await setupPage();
@@ -186,9 +282,9 @@ describe('Groups page', () => {
     expect(screen.getByText('This action cannot be undone.')).toBeInTheDocument();
   });
 
-  it('shows member warning in single-group delete modal when group has members', async () => {
+  it('shows member warning in delete modal when group has members', async () => {
     const user = userEvent.setup();
-    await setupPage([makeGroup({ member_count: 3 })]);
+    await setupPage({ groups: [makeGroup({ member_count: 3 })] });
 
     await user.click(screen.getByRole('button', { name: 'Delete Group' }));
 
@@ -196,9 +292,9 @@ describe('Groups page', () => {
     expect(screen.getByText(/3 members/i)).toBeInTheDocument();
   });
 
-  it('does not show warning in single-group delete modal when group has no members', async () => {
+  it('does not show warning in delete modal when group has no members', async () => {
     const user = userEvent.setup();
-    await setupPage([makeGroup({ member_count: 0 })]);
+    await setupPage({ groups: [makeGroup({ member_count: 0 })] });
 
     await user.click(screen.getByRole('button', { name: 'Delete Group' }));
 
@@ -210,13 +306,12 @@ describe('Groups page', () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     await setupPage();
     api.delete.mockResolvedValueOnce({});
-    api.get.mockResolvedValueOnce({ data: { groups: [] } });
 
     await user.click(screen.getByRole('button', { name: 'Delete Group' }));
     await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
 
     await waitFor(() => {
-      expect(api.delete).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/));
+      expect(api.delete).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/groups/${GROUP_ID}$`)));
       expect(screen.getByText('Group deleted successfully')).toBeInTheDocument();
     });
 
@@ -224,7 +319,7 @@ describe('Groups page', () => {
     await waitFor(() => expect(screen.queryByText('Group deleted successfully')).not.toBeInTheDocument());
   });
 
-  it('cancels single-group delete modal without deleting', async () => {
+  it('cancels delete modal without deleting', async () => {
     const user = userEvent.setup();
     await setupPage();
 
@@ -262,7 +357,6 @@ describe('Groups page', () => {
     const user = userEvent.setup();
     await setupPage();
     api.put.mockResolvedValueOnce({});
-    api.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ max_members: 10 })] } });
 
     await user.click(screen.getByRole('button', { name: 'Set Member Limit' }));
     const input = screen.getByPlaceholderText('Unlimited');
@@ -271,7 +365,7 @@ describe('Groups page', () => {
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
-      expect(api.put).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/), {
+      expect(api.put).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/groups/${GROUP_ID}$`)), {
         maxMembers: 10,
       });
       expect(screen.getByText('Group limit updated')).toBeInTheDocument();
@@ -282,7 +376,6 @@ describe('Groups page', () => {
     const user = userEvent.setup();
     await setupPage();
     api.put.mockResolvedValueOnce({});
-    api.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ max_members: null })] } });
 
     await user.click(screen.getByRole('button', { name: 'Set Member Limit' }));
     await user.clear(screen.getByPlaceholderText('Unlimited'));
@@ -293,7 +386,7 @@ describe('Groups page', () => {
     });
   });
 
-  it('rejects invalid limit input', async () => {
+  it('rejects invalid limit input client-side', async () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     await setupPage();
@@ -319,38 +412,47 @@ describe('Groups page', () => {
     expect(screen.queryByRole('heading', { name: 'Set Member Limit' })).not.toBeInTheDocument();
   });
 
-  it('shows error when set limit API fails', async () => {
+  it('shows API error when the limit is below the current member count', async () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     await setupPage();
-    api.put.mockRejectedValue({ response: { data: { error: 'Limit too low' } } });
+    api.put.mockRejectedValue({
+      response: { data: { error: 'Max members cannot be less than current member count' } },
+    });
 
     await user.click(screen.getByRole('button', { name: 'Set Member Limit' }));
+    const input = screen.getByPlaceholderText('Unlimited');
+    await user.clear(input);
+    await user.type(input, '1');
     await user.click(screen.getByRole('button', { name: /save/i }));
 
-    await waitFor(() => expect(screen.getByText('Limit too low')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Max members cannot be less than current member count')).toBeInTheDocument()
+    );
   });
 
   // ── Create group modal ─────────────────────────────────────────────────
   it('opens create-group modal', async () => {
-    await setupPage([]);
+    await setupPage({ groups: [] });
     await userEvent.click(screen.getByRole('button', { name: /create group/i }));
     expect(screen.getByText('Create New Group')).toBeInTheDocument();
   });
 
-  it('creates a group and shows success feedback', async () => {
+  it('creates a group sending assignmentId and shows success feedback', async () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-    await setupPage([]);
+    await setupPage({ groups: [] });
     api.post.mockResolvedValueOnce({});
-    api.get.mockResolvedValueOnce({ data: { groups: [makeGroup()] } });
 
     await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
     await user.type(screen.getByPlaceholderText(/enter group name/i), ' New Team ');
     await user.click(screen.getByRole('button', { name: /^create$/i }));
 
     await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), { name: 'New Team' });
+      expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), {
+        assignmentId: ASSIGNMENT_ID,
+        name: 'New Team',
+      });
       expect(screen.getByText('Group created successfully')).toBeInTheDocument();
     });
 
@@ -360,9 +462,8 @@ describe('Groups page', () => {
 
   it('creates a group with maxMembers', async () => {
     const user = userEvent.setup();
-    await setupPage([]);
+    await setupPage({ groups: [] });
     api.post.mockResolvedValueOnce({});
-    api.get.mockResolvedValueOnce({ data: { groups: [makeGroup()] } });
 
     await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
     await user.type(screen.getByPlaceholderText(/enter group name/i), 'Limited Team');
@@ -371,6 +472,7 @@ describe('Groups page', () => {
 
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups$/), {
+        assignmentId: ASSIGNMENT_ID,
         name: 'Limited Team',
         maxMembers: 10,
       });
@@ -379,7 +481,7 @@ describe('Groups page', () => {
 
   it('does not create a group when name is blank', async () => {
     const user = userEvent.setup();
-    await setupPage([]);
+    await setupPage({ groups: [] });
 
     await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
     await user.type(screen.getByPlaceholderText(/enter group name/i), '   ');
@@ -388,9 +490,25 @@ describe('Groups page', () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 
-  it('shows error inside modal when create group fails', async () => {
+  it('shows duplicate-name error inside modal when create returns 409', async () => {
     const user = userEvent.setup();
-    await setupPage([]);
+    await setupPage({ groups: [] });
+    api.post.mockRejectedValue({
+      response: { status: 409, data: { error: 'A group with this name already exists in this assignment' } },
+    });
+
+    await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
+    await user.type(screen.getByPlaceholderText(/enter group name/i), 'Team X');
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText('A group with this name already exists in this assignment')).toBeInTheDocument()
+    );
+  });
+
+  it('shows generic error inside modal when create group fails without response body', async () => {
+    const user = userEvent.setup();
+    await setupPage({ groups: [] });
     api.post.mockRejectedValue(new Error('network'));
 
     await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
@@ -406,7 +524,7 @@ describe('Groups page', () => {
 
   it('cancels create modal and resets fields', async () => {
     const user = userEvent.setup();
-    await setupPage([]);
+    await setupPage({ groups: [] });
 
     await user.click(screen.getByRole('button', { name: /^\+ create group$/i }));
     await user.type(screen.getByPlaceholderText(/enter group name/i), 'Test');
@@ -434,10 +552,10 @@ describe('Groups page', () => {
         first_name: 'Bob',
         last_name: 'Jones',
         student_id: null,
-        role_name: 'assignment_manager',
+        role_name: 'user',
       },
     ];
-    const allUsersData = [
+    const subjectUsersData = [
       ...membersData,
       {
         id: 'u0000000-0000-0000-0000-000000000012',
@@ -447,6 +565,7 @@ describe('Groups page', () => {
         last_name: 'Brown',
         student_id: 'S003',
         role_name: 'user',
+        status: 'enabled',
       },
     ];
 
@@ -454,12 +573,9 @@ describe('Groups page', () => {
       await user.click(screen.getByText('Group A'));
     };
 
-    it('expands group row to show members', async () => {
+    it('expands group row to show members fetched from GET /groups/:id', async () => {
       const user = userEvent.setup();
-      await setupPage();
-      api.get
-        .mockResolvedValueOnce({ data: { members: membersData } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
 
@@ -468,14 +584,22 @@ describe('Groups page', () => {
         expect(screen.getByText('bob')).toBeInTheDocument();
         expect(screen.getByText('alice@test.com')).toBeInTheDocument();
       });
+      expect(api.get).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/groups/${GROUP_ID}$`)));
+    });
+
+    it('fetches the add-member candidates from the parent subject', async () => {
+      const user = userEvent.setup();
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
+
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+
+      expect(api.get).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/subjects/${SUBJECT_ID}/users$`)));
     });
 
     it('shows full name and student ID for each member', async () => {
       const user = userEvent.setup();
-      await setupPage();
-      api.get
-        .mockResolvedValueOnce({ data: { members: membersData } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
 
@@ -490,8 +614,7 @@ describe('Groups page', () => {
 
     it('shows "No members in this group" when group is empty', async () => {
       const user = userEvent.setup();
-      await setupPage();
-      api.get.mockResolvedValueOnce({ data: { members: [] } }).mockResolvedValueOnce({ data: { users: [] } });
+      await setupPage({ members: [], subjectUsers: [] });
 
       await expandGroup(user);
 
@@ -500,10 +623,7 @@ describe('Groups page', () => {
 
     it('collapses row on second click', async () => {
       const user = userEvent.setup();
-      await setupPage();
-      api.get
-        .mockResolvedValueOnce({ data: { members: membersData } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
@@ -512,28 +632,21 @@ describe('Groups page', () => {
       await waitFor(() => expect(screen.queryByText('alice')).not.toBeInTheDocument());
     });
 
-    it('removes a member from the group', async () => {
+    it('removes a member with PUT /users/:id/group { assignmentId, groupId: null }', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage();
-      api.get
-        .mockResolvedValueOnce({ data: { members: membersData } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
       api.put.mockResolvedValueOnce({});
-      api.get
-        .mockResolvedValueOnce({ data: { members: [membersData[1]] } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
-
       await user.click(screen.getByRole('button', { name: /remove alice/i }));
 
       await waitFor(() => {
         expect(api.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000010\/group$/),
-          { groupId: null }
+          { assignmentId: ASSIGNMENT_ID, groupId: null }
         );
         expect(screen.getByText('Member removed successfully')).toBeInTheDocument();
       });
@@ -542,31 +655,24 @@ describe('Groups page', () => {
       await waitFor(() => expect(screen.queryByText('Member removed successfully')).not.toBeInTheDocument());
     });
 
-    it('adds a member to the group', async () => {
+    it('adds a member with PUT /users/:id/group { assignmentId, groupId }', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage();
-      api.get
-        .mockResolvedValueOnce({ data: { members: membersData } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-      // charlie is the only user not in the group
+      // charlie is the only subject member not already in the group
       await user.selectOptions(screen.getByRole('combobox'), 'u0000000-0000-0000-0000-000000000012');
 
       api.put.mockResolvedValueOnce({});
-      api.get
-        .mockResolvedValueOnce({ data: { members: [...membersData, allUsersData[2]] } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
-
       await user.click(screen.getByRole('button', { name: /^add$/i }));
 
       await waitFor(() => {
         expect(api.put).toHaveBeenCalledWith(
           expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000012\/group$/),
-          { groupId: 'g0000000-0000-0000-0000-000000000001' }
+          { assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }
         );
         expect(screen.getByText('Member added successfully')).toBeInTheDocument();
       });
@@ -577,10 +683,7 @@ describe('Groups page', () => {
 
     it('does not submit add when no user selected', async () => {
       const user = userEvent.setup();
-      await setupPage();
-      api.get
-        .mockResolvedValueOnce({ data: { members: membersData } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
       await waitFor(() => expect(screen.getByRole('button', { name: /^add$/i })).toBeInTheDocument());
@@ -589,25 +692,57 @@ describe('Groups page', () => {
       expect(api.put).not.toHaveBeenCalled();
     });
 
-    it('hides add/remove controls for non-assignment-managers', async () => {
-      useAuth.mockReturnValue({ isAssignmentManager: false });
+    it('excludes users already in the expanded group from the dropdown', async () => {
       const user = userEvent.setup();
-      await setupPage();
-      api.get.mockResolvedValueOnce({ data: { members: membersData } });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
-      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
 
-      expect(screen.queryByRole('button', { name: /remove alice/i })).not.toBeInTheDocument();
-      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+      const optionTexts = screen.getAllByRole('option').map((o) => o.textContent);
+      expect(optionTexts.some((t) => t.includes('charlie'))).toBe(true);
+      expect(optionTexts.every((t) => !t.includes('alice'))).toBe(true);
+      expect(optionTexts.every((t) => !t.includes('bob'))).toBe(true);
+    });
+
+    it('excludes admins and managers from the Add Member dropdown', async () => {
+      const user = userEvent.setup();
+      const adminUser = {
+        id: 'u0000000-0000-0000-0000-000000000020',
+        username: 'adminuser',
+        email: 'admin@test.com',
+        role_name: 'admin',
+      };
+      const managerUser = {
+        id: 'u0000000-0000-0000-0000-000000000021',
+        username: 'manageruser',
+        email: 'mgr@test.com',
+        role_name: 'assignment_manager',
+      };
+      const regularUser = {
+        id: 'u0000000-0000-0000-0000-000000000022',
+        username: 'regularuser',
+        email: 'reg@test.com',
+        role_name: 'user',
+      };
+      await setupPage({ members: [], subjectUsers: [adminUser, managerUser, regularUser] });
+
+      await expandGroup(user);
+      await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+
+      const optionTexts = screen.getAllByRole('option').map((o) => o.textContent);
+      expect(optionTexts.some((t) => t.includes('regularuser'))).toBe(true);
+      expect(optionTexts.every((t) => !t.includes('adminuser'))).toBe(true);
+      expect(optionTexts.every((t) => !t.includes('manageruser'))).toBe(true);
     });
 
     it('hides add member dropdown when group is full', async () => {
       const user = userEvent.setup();
-      await setupPage([makeGroup({ member_count: 2, max_members: 2 })]);
-      api.get
-        .mockResolvedValueOnce({ data: { members: membersData } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
+      await setupPage({
+        groups: [makeGroup({ member_count: 2, max_members: 2 })],
+        members: membersData,
+        subjectUsers: subjectUsersData,
+      });
 
       await expandGroup(user);
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
@@ -633,10 +768,7 @@ describe('Groups page', () => {
     it('shows error when remove member fails', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage();
-      api.get
-        .mockResolvedValueOnce({ data: { members: membersData } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
@@ -647,59 +779,116 @@ describe('Groups page', () => {
       await waitFor(() => expect(screen.getByText('Remove failed')).toBeInTheDocument());
     });
 
-    it('shows error when add member fails', async () => {
+    it('surfaces the 403 subject-membership error from the backend', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage();
-      api.get
-        .mockResolvedValueOnce({ data: { members: membersData } })
-        .mockResolvedValueOnce({ data: { users: allUsersData } });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
       await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
 
       await user.selectOptions(screen.getByRole('combobox'), 'u0000000-0000-0000-0000-000000000012');
-      api.put.mockRejectedValue({ response: { data: { error: 'Add failed' } } });
+      api.put.mockRejectedValue({
+        response: { status: 403, data: { error: 'User is not a member of this subject' } },
+      });
       await user.click(screen.getByRole('button', { name: /^add$/i }));
 
-      await waitFor(() => expect(screen.getByText('Add failed')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('User is not a member of this subject')).toBeInTheDocument());
     });
 
-    it('excludes admins and managers from the Add Member dropdown', async () => {
-      const user = userEvent.setup();
-      await setupPage();
-      const adminUser = {
-        id: 'u0000000-0000-0000-0000-000000000020',
-        username: 'adminuser',
-        email: 'admin@test.com',
-        role_name: 'admin',
-      };
-      const managerUser = {
-        id: 'u0000000-0000-0000-0000-000000000021',
-        username: 'manageruser',
-        email: 'mgr@test.com',
-        role_name: 'assignment_manager',
-      };
-      const regularUser = {
-        id: 'u0000000-0000-0000-0000-000000000022',
-        username: 'regularuser',
-        email: 'reg@test.com',
-        role_name: 'user',
-      };
-      // Group has no current members; all three users are "available" by membership,
-      // but only regularUser has role_name === 'user'
-      api.get
-        .mockResolvedValueOnce({ data: { members: [] } })
-        .mockResolvedValueOnce({ data: { users: [adminUser, managerUser, regularUser] } });
+    it('surfaces the 409 already-in-a-group error from the backend', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage({ members: membersData, subjectUsers: subjectUsersData });
 
       await expandGroup(user);
       await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
 
-      const options = screen.getAllByRole('option');
-      const optionTexts = options.map((o) => o.textContent);
-      expect(optionTexts.some((t) => t.includes('regularuser'))).toBe(true);
-      expect(optionTexts.every((t) => !t.includes('adminuser'))).toBe(true);
-      expect(optionTexts.every((t) => !t.includes('manageruser'))).toBe(true);
+      await user.selectOptions(screen.getByRole('combobox'), 'u0000000-0000-0000-0000-000000000012');
+      api.put.mockRejectedValue({
+        response: { status: 409, data: { error: 'User is already in a group for this assignment' } },
+      });
+      await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+      await waitFor(() =>
+        expect(screen.getByText('User is already in a group for this assignment')).toBeInTheDocument()
+      );
+    });
+  });
+
+  // ── Permission gating ──────────────────────────────────────────────────
+  describe('Permission gating (canManage)', () => {
+    it('shows management controls for an AM who manages this assignment', async () => {
+      asManagingAM();
+      await setupPage();
+
+      expect(screen.getByRole('button', { name: /^\+ create group$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /bulk create/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /import mappings/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Disable Group' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Set Member Limit' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete Group' })).toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: /select group a/i })).toBeInTheDocument();
+    });
+
+    it('hides all management controls for an AM who does not manage this assignment', async () => {
+      asNonManagingAM();
+      await setupPage();
+
+      // Read-only listing still renders
+      expect(screen.getByText('Group A')).toBeInTheDocument();
+      expect(screen.getByText('3 / 5')).toBeInTheDocument();
+
+      expect(screen.queryByRole('button', { name: /^\+ create group$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /bulk create/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /import mappings/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Edit Group' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Disable Group' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Set Member Limit' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Delete Group' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    });
+
+    it('hides all management controls for a regular user', async () => {
+      asRegularUser();
+      await setupPage();
+
+      expect(screen.getByText('Group A')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^\+ create group$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Delete Group' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    });
+
+    it('hides add/remove member controls and skips the subject users fetch when not managing', async () => {
+      asNonManagingAM();
+      const user = userEvent.setup();
+      await setupPage({
+        members: [
+          {
+            id: 'u0000000-0000-0000-0000-000000000010',
+            username: 'alice',
+            email: 'alice@test.com',
+            first_name: 'Alice',
+            last_name: 'Smith',
+            role_name: 'user',
+          },
+        ],
+      });
+
+      await user.click(screen.getByText('Group A'));
+      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+
+      expect(screen.queryByRole('button', { name: /remove alice/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+      expect(api.get).not.toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/subjects/${SUBJECT_ID}/users$`)));
+    });
+
+    it('hides the empty-state create button when not managing', async () => {
+      asNonManagingAM();
+      await setupPage({ groups: [] });
+
+      expect(screen.getByText('No groups created yet')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /create your first group/i })).not.toBeInTheDocument();
     });
   });
 
@@ -728,10 +917,12 @@ describe('Groups page', () => {
 
     it('section select-all selects all groups in that section', async () => {
       const user = userEvent.setup();
-      await setupPage([
-        makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
-        makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
-      ]);
+      await setupPage({
+        groups: [
+          makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
+          makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
+        ],
+      });
 
       await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
 
@@ -740,10 +931,12 @@ describe('Groups page', () => {
 
     it('section select-all deselects all when all already selected', async () => {
       const user = userEvent.setup();
-      await setupPage([
-        makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
-        makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
-      ]);
+      await setupPage({
+        groups: [
+          makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
+          makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
+        ],
+      });
 
       const sectionCb = screen.getByRole('checkbox', { name: /select all groups with space/i });
       await user.click(sectionCb);
@@ -765,61 +958,20 @@ describe('Groups page', () => {
 
   // ── Bulk delete ────────────────────────────────────────────────────────
   describe('Bulk delete', () => {
-    it('opens bulk delete confirmation modal', async () => {
-      const user = userEvent.setup();
-      await setupPage();
-
-      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
-      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
-
-      expect(screen.getByText(/delete 1 group\?/i)).toBeInTheDocument();
-    });
-
-    it('cancels bulk delete modal', async () => {
-      const user = userEvent.setup();
-      await setupPage();
-
-      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
-      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
-      await user.click(screen.getByRole('button', { name: /cancel/i }));
-
-      expect(screen.queryByText(/delete 1 group\?/i)).not.toBeInTheDocument();
-    });
-
-    it('shows warning when selected groups have members', async () => {
-      const user = userEvent.setup();
-      await setupPage([makeGroup({ member_count: 3 })]);
-
-      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
-      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
-
-      expect(screen.getByText(/will be unassigned/i)).toBeInTheDocument();
-    });
-
-    it('does not show warning when selected groups have no members', async () => {
-      const user = userEvent.setup();
-      await setupPage([makeGroup({ member_count: 0 })]);
-
-      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
-      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
-
-      expect(screen.queryByText(/will be unassigned/i)).not.toBeInTheDocument();
-    });
-
-    it('deletes all selected groups and shows success', async () => {
+    it('deletes all selected groups via DELETE /groups/bulk and shows success', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([
-        makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
-        makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
-      ]);
+      await setupPage({
+        groups: [
+          makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
+          makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
+        ],
+      });
 
       await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
       await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
       api.delete.mockResolvedValue({});
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
       await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
 
       await waitFor(() => {
@@ -831,76 +983,81 @@ describe('Groups page', () => {
       });
     });
 
+    it('single delete still uses DELETE /groups/:id (not bulk)', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage();
+      api.delete.mockResolvedValueOnce({});
+
+      await user.click(screen.getByRole('button', { name: 'Delete Group' }));
+      await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
+
+      await waitFor(() => {
+        expect(api.delete).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/groups/${GROUP_ID}$`)));
+        expect(api.delete).not.toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk/), expect.anything());
+      });
+    });
+
     it('shows error when bulk delete fails', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([makeGroup({ member_count: 0 })]);
-
-      await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
-      await user.click(screen.getByRole('button', { name: /delete \(1\)/i }));
-      api.delete.mockRejectedValue({ response: { data: { error: 'Delete failed' } } });
-
-      await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
-
-      await waitFor(() => expect(screen.getByText('Delete failed')).toBeInTheDocument());
-    });
-
-    it('delete modal has scrollable layout so action buttons remain accessible with many items', async () => {
-      const user = userEvent.setup();
-      const manyGroups = Array.from({ length: 50 }, (_, i) =>
-        makeGroup({ id: `g${i}`, name: `Group ${i}`, member_count: 3 })
-      );
-      await setupPage(manyGroups);
+      await setupPage({
+        groups: [
+          makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
+          makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
+        ],
+      });
 
       await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
-      await user.click(screen.getByRole('button', { name: /delete \(50\)/i }));
+      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
-      const dialog = screen.getByText(/delete 50 groups\?/i).closest('.bg-white');
-      expect(dialog).toHaveClass('max-h-[90vh]');
-      expect(dialog).toHaveClass('flex-col');
+      api.delete.mockRejectedValue({ response: { data: { error: 'Bulk delete failed' } } });
+      await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
 
-      const scrollable = dialog.querySelector('.overflow-y-auto');
-      expect(scrollable).toBeInTheDocument();
-
-      expect(screen.getByRole('button', { name: /delete 50 groups/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText('Bulk delete failed')).toBeInTheDocument());
     });
   });
 
   // ── Bulk create ────────────────────────────────────────────────────────
   describe('Bulk create', () => {
-    it('opens bulk create modal', async () => {
+    it('opens and cancels bulk create modal', async () => {
       const user = userEvent.setup();
-      await setupPage([]);
+      await setupPage({ groups: [] });
 
       await user.click(screen.getByRole('button', { name: /bulk create/i }));
-
       expect(screen.getByText('Bulk Create Groups')).toBeInTheDocument();
-    });
 
-    it('cancels bulk create modal', async () => {
-      const user = userEvent.setup();
-      await setupPage([]);
-
-      await user.click(screen.getByRole('button', { name: /bulk create/i }));
       await user.click(screen.getByRole('button', { name: /cancel/i }));
-
       expect(screen.queryByText('Bulk Create Groups')).not.toBeInTheDocument();
     });
 
     it('disables submit button when prefix is empty', async () => {
       const user = userEvent.setup();
-      await setupPage([]);
+      await setupPage({ groups: [] });
 
       await user.click(screen.getByRole('button', { name: /bulk create/i }));
 
-      // no prefix typed, preview is empty → submit disabled
       expect(screen.getByRole('button', { name: /create.*groups/i })).toBeDisabled();
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it('disables submit button when count is invalid (0)', async () => {
+      const user = userEvent.setup();
+      await setupPage({ groups: [] });
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '0');
+
+      expect(screen.getByRole('button', { name: /create.*groups/i })).toBeDisabled();
+      expect(api.post).not.toHaveBeenCalled();
     });
 
     it('shows inline preview when prefix and count are set (<=5 groups)', async () => {
       const user = userEvent.setup();
-      await setupPage([]);
+      await setupPage({ groups: [] });
 
       await user.click(screen.getByRole('button', { name: /bulk create/i }));
       await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
@@ -913,7 +1070,7 @@ describe('Groups page', () => {
 
     it('shows truncated preview for more than 5 groups', async () => {
       const user = userEvent.setup();
-      await setupPage([]);
+      await setupPage({ groups: [] });
 
       await user.click(screen.getByRole('button', { name: /bulk create/i }));
       await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
@@ -925,12 +1082,10 @@ describe('Groups page', () => {
       expect(screen.getByText(/\(6 groups\)/i)).toBeInTheDocument();
     });
 
-    // ── Bulk create via POST /groups/bulk ──────────────────────────────────
-
-    it('happy path — small batch (≤500): sends single POST /groups/bulk call', async () => {
+    it('sends { assignmentId, groups } in a single POST /groups/bulk call', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([]);
+      await setupPage({ groups: [] });
 
       await user.click(screen.getByRole('button', { name: /bulk create/i }));
       await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
@@ -938,26 +1093,23 @@ describe('Groups page', () => {
       await user.clear(countInput);
       await user.type(countInput, '3');
 
-      api.post.mockResolvedValueOnce({ data: { created: 3 } });
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
+      api.post.mockResolvedValueOnce({ data: { groups: [] } });
       await user.click(screen.getByRole('button', { name: /create 3 groups/i }));
 
       await waitFor(() => {
         expect(api.post).toHaveBeenCalledTimes(1);
-        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk$/), [
-          { name: 'Team1' },
-          { name: 'Team2' },
-          { name: 'Team3' },
-        ]);
+        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk$/), {
+          assignmentId: ASSIGNMENT_ID,
+          groups: [{ name: 'Team1' }, { name: 'Team2' }, { name: 'Team3' }],
+        });
         expect(screen.getByText('Created 3 groups')).toBeInTheDocument();
       });
     });
 
-    it('happy path — large batch (>500): sends three sequential POST /groups/bulk calls', async () => {
+    it('splits large batches (>500) into sequential { assignmentId, groups } calls', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([]);
+      await setupPage({ groups: [] });
 
       await user.click(screen.getByRole('button', { name: /bulk create/i }));
       await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Group');
@@ -965,69 +1117,29 @@ describe('Groups page', () => {
       await user.clear(countInput);
       await user.type(countInput, '1500');
 
-      // First batch: 500 items; second batch: 500 items; third batch: 500 items
-      api.post
-        .mockResolvedValueOnce({ data: { created: 500 } })
-        .mockResolvedValueOnce({ data: { created: 500 } })
-        .mockResolvedValueOnce({ data: { created: 500 } });
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
+      api.post.mockResolvedValue({ data: { groups: [] } });
       await user.click(screen.getByRole('button', { name: /create 1500 groups/i }));
 
       await waitFor(() => {
         expect(api.post).toHaveBeenCalledTimes(3);
-        // First call — 500 items (pad=2 for n=1500)
-        const firstCall = api.post.mock.calls[0];
+        const [firstCall, secondCall, thirdCall] = api.post.mock.calls;
         expect(firstCall[0]).toMatch(/\/groups\/bulk$/);
-        expect(firstCall[1]).toHaveLength(500);
-        expect(firstCall[1][0]).toEqual({ name: 'Group01' });
-        expect(firstCall[1][499]).toEqual({ name: 'Group500' });
-        // Second call — 500 items
-        const secondCall = api.post.mock.calls[1];
-        expect(secondCall[0]).toMatch(/\/groups\/bulk$/);
-        expect(secondCall[1]).toHaveLength(500);
-        expect(secondCall[1][0]).toEqual({ name: 'Group501' });
-        expect(secondCall[1][499]).toEqual({ name: 'Group1000' });
-        // Third call — 500 items
-        const thirdCall = api.post.mock.calls[2];
-        expect(thirdCall[0]).toMatch(/\/groups\/bulk$/);
-        expect(thirdCall[1]).toHaveLength(500);
-        expect(thirdCall[1][0]).toEqual({ name: 'Group1001' });
-        expect(thirdCall[1][499]).toEqual({ name: 'Group1500' });
+        expect(firstCall[1].assignmentId).toBe(ASSIGNMENT_ID);
+        expect(firstCall[1].groups).toHaveLength(500);
+        expect(firstCall[1].groups[0]).toEqual({ name: 'Group01' });
+        expect(firstCall[1].groups[499]).toEqual({ name: 'Group500' });
+        expect(secondCall[1].groups).toHaveLength(500);
+        expect(secondCall[1].groups[0]).toEqual({ name: 'Group501' });
+        expect(thirdCall[1].groups).toHaveLength(500);
+        expect(thirdCall[1].groups[499]).toEqual({ name: 'Group1500' });
         expect(screen.getByText('Created 1500 groups')).toBeInTheDocument();
       });
     });
 
-    it('happy path — exactly 500: sends a single batch call', async () => {
-      const user = userEvent.setup();
-      await setupPage([]);
-
-      await user.click(screen.getByRole('button', { name: /bulk create/i }));
-      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
-      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
-      await user.clear(countInput);
-      await user.type(countInput, '500');
-
-      api.post.mockResolvedValueOnce({ data: { created: 500 } });
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
-      await user.click(screen.getByRole('button', { name: /create 500 groups/i }));
-
-      await waitFor(() => {
-        expect(api.post).toHaveBeenCalledTimes(1);
-        expect(api.post).toHaveBeenCalledWith(
-          expect.stringMatching(/\/groups\/bulk$/),
-          expect.arrayContaining([expect.objectContaining({ name: 'Team01' })])
-        );
-        const callArg = api.post.mock.calls[0][1];
-        expect(callArg).toHaveLength(500);
-      });
-    });
-
-    it('with maxMembers: includes maxMembers in each item when set', async () => {
+    it('includes maxMembers in each item when set', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([]);
+      await setupPage({ groups: [] });
 
       await user.click(screen.getByRole('button', { name: /bulk create/i }));
       await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
@@ -1036,23 +1148,65 @@ describe('Groups page', () => {
       await user.type(countInput, '2');
       await user.type(screen.getByPlaceholderText(/unlimited/i), '30');
 
-      api.post.mockResolvedValueOnce({ data: { created: 2 } });
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
+      api.post.mockResolvedValueOnce({ data: { groups: [] } });
       await user.click(screen.getByRole('button', { name: /create 2 groups/i }));
 
       await waitFor(() => {
-        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk$/), [
-          { name: 'Team1', maxMembers: 30 },
-          { name: 'Team2', maxMembers: 30 },
-        ]);
+        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk$/), {
+          assignmentId: ASSIGNMENT_ID,
+          groups: [
+            { name: 'Team1', maxMembers: 30 },
+            { name: 'Team2', maxMembers: 30 },
+          ],
+        });
       });
+    });
+
+    it('shows in-batch duplicate error (400) from the backend', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage({ groups: [] });
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '2');
+
+      api.post.mockRejectedValueOnce({
+        response: { status: 400, data: { error: 'Duplicate group names in request' } },
+      });
+      await user.click(screen.getByRole('button', { name: /create 2 groups/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Duplicate group names in request')).toBeInTheDocument();
+        expect(screen.queryByText(/created \d+ group/i)).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows existing-name conflict error (409) from the backend', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await setupPage({ groups: [] });
+
+      await user.click(screen.getByRole('button', { name: /bulk create/i }));
+      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
+      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
+      await user.clear(countInput);
+      await user.type(countInput, '2');
+
+      api.post.mockRejectedValueOnce({
+        response: { status: 409, data: { error: 'Groups already exist: Team1, Team2' } },
+      });
+      await user.click(screen.getByRole('button', { name: /create 2 groups/i }));
+
+      await waitFor(() => expect(screen.getByText('Groups already exist: Team1, Team2')).toBeInTheDocument());
     });
 
     it('partial failure: first batch succeeds, second batch fails — shows both toasts', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([]);
+      await setupPage({ groups: [] });
 
       await user.click(screen.getByRole('button', { name: /bulk create/i }));
       await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
@@ -1061,9 +1215,8 @@ describe('Groups page', () => {
       await user.type(countInput, '1500');
 
       api.post
-        .mockResolvedValueOnce({ data: { created: 500 } })
+        .mockResolvedValueOnce({ data: { groups: [] } })
         .mockRejectedValueOnce({ response: { data: { error: 'DB overloaded' } } });
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
 
       await user.click(screen.getByRole('button', { name: /create 1500 groups/i }));
 
@@ -1075,68 +1228,18 @@ describe('Groups page', () => {
         { timeout: 5000 }
       );
     });
-
-    it('all fail: first batch fails — shows only error toast, no success toast', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([]);
-
-      await user.click(screen.getByRole('button', { name: /bulk create/i }));
-      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
-      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
-      await user.clear(countInput);
-      await user.type(countInput, '2');
-
-      api.post.mockRejectedValueOnce({ response: { data: { error: 'Create failed' } } });
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
-      await user.click(screen.getByRole('button', { name: /create 2 groups/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText('Create failed')).toBeInTheDocument();
-        expect(screen.queryByText(/created \d+ group/i)).not.toBeInTheDocument();
-      });
-    });
-
-    it('empty prefix: does not make any API call', async () => {
-      const user = userEvent.setup();
-      await setupPage([]);
-
-      await user.click(screen.getByRole('button', { name: /bulk create/i }));
-      // Leave prefix empty, just set a count
-      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
-      await user.clear(countInput);
-      await user.type(countInput, '5');
-
-      // Submit button is disabled when prefix is empty, so we verify no API call
-      expect(screen.getByRole('button', { name: /create.*groups/i })).toBeDisabled();
-      expect(api.post).not.toHaveBeenCalled();
-    });
-
-    it('invalid count (0): does not make any API call', async () => {
-      const user = userEvent.setup();
-      await setupPage([]);
-
-      await user.click(screen.getByRole('button', { name: /bulk create/i }));
-      await user.type(screen.getByPlaceholderText(/e\.g\. team/i), 'Team');
-      const countInput = screen.getByPlaceholderText(/e\.g\. 10/i);
-      await user.clear(countInput);
-      await user.type(countInput, '0');
-
-      // Submit button disabled when count < 1
-      expect(screen.getByRole('button', { name: /create.*groups/i })).toBeDisabled();
-      expect(api.post).not.toHaveBeenCalled();
-    });
   });
 
   // ── Bulk set limit ─────────────────────────────────────────────────────
   describe('Bulk set limit', () => {
     it('opens limit modal with multi-group text when bulk set limit is clicked', async () => {
       const user = userEvent.setup();
-      await setupPage([
-        makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
-        makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
-      ]);
+      await setupPage({
+        groups: [
+          makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
+          makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
+        ],
+      });
 
       await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
       await user.click(screen.getByRole('checkbox', { name: /select group b/i }));
@@ -1144,16 +1247,17 @@ describe('Groups page', () => {
 
       const heading = screen.getByRole('heading', { name: 'Set Member Limit' });
       expect(heading).toBeInTheDocument();
-      // "Applies to N selected groups." paragraph is only shown for bulk (>1) operations
       expect(heading.parentElement).toHaveTextContent(/applies to.*selected groups/i);
     });
 
     it('saves limit for all selected groups and shows success', async () => {
       const user = userEvent.setup();
-      await setupPage([
-        makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
-        makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
-      ]);
+      await setupPage({
+        groups: [
+          makeGroup({ id: 'g1', name: 'Group A', member_count: 1, max_members: 5 }),
+          makeGroup({ id: 'g2', name: 'Group B', member_count: 2, max_members: 5 }),
+        ],
+      });
 
       await user.click(screen.getByRole('checkbox', { name: /select group a/i }));
       await user.click(screen.getByRole('checkbox', { name: /select group b/i }));
@@ -1164,8 +1268,6 @@ describe('Groups page', () => {
       await user.type(input, '8');
 
       api.put.mockResolvedValue({});
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
       await user.click(screen.getByRole('button', { name: /save/i }));
 
       await waitFor(() => {
@@ -1180,17 +1282,17 @@ describe('Groups page', () => {
   // ── Search ─────────────────────────────────────────────────────────────
   describe('Group search', () => {
     it('shows all groups when search is empty', async () => {
-      await setupPage([makeGroup({ name: 'Alpha' }), makeGroup({ id: 'g2', name: 'Beta' })]);
+      await setupPage({ groups: [makeGroup({ name: 'Alpha' }), makeGroup({ id: 'g2', name: 'Beta' })] });
 
       expect(screen.getByText('Alpha')).toBeInTheDocument();
       expect(screen.getByText('Beta')).toBeInTheDocument();
     });
 
-    it('filters groups by name when search term is entered', async () => {
+    it('filters groups by name when search term is entered (case-insensitive)', async () => {
       const user = userEvent.setup();
-      await setupPage([makeGroup({ name: 'Alpha Team' }), makeGroup({ id: 'g2', name: 'Beta Group' })]);
+      await setupPage({ groups: [makeGroup({ name: 'Alpha Team' }), makeGroup({ id: 'g2', name: 'Beta Group' })] });
 
-      await user.type(screen.getByPlaceholderText('Search groups...'), 'alpha');
+      await user.type(screen.getByPlaceholderText('Search groups...'), 'ALPHA');
 
       await waitFor(() => {
         expect(screen.getByText('Alpha Team')).toBeInTheDocument();
@@ -1200,7 +1302,7 @@ describe('Groups page', () => {
 
     it('shows no-results message when search matches nothing', async () => {
       const user = userEvent.setup();
-      await setupPage([makeGroup({ name: 'Alpha Team' })]);
+      await setupPage({ groups: [makeGroup({ name: 'Alpha Team' })] });
 
       await user.type(screen.getByPlaceholderText('Search groups...'), 'zzz');
 
@@ -1209,39 +1311,25 @@ describe('Groups page', () => {
         expect(screen.queryByText('Alpha Team')).not.toBeInTheDocument();
       });
     });
-
-    it('search is case-insensitive', async () => {
-      const user = userEvent.setup();
-      await setupPage([makeGroup({ name: 'Alpha Team' })]);
-
-      await user.type(screen.getByPlaceholderText('Search groups...'), 'ALPHA');
-
-      await waitFor(() => expect(screen.getByText('Alpha Team')).toBeInTheDocument());
-    });
   });
 
   // ── Export Mappings ────────────────────────────────────────────────────
   describe('Export Mappings', () => {
-    it('renders the "Export Mappings" button', async () => {
-      await setupPage();
-      expect(screen.getByRole('button', { name: /export mappings/i })).toBeInTheDocument();
-    });
-
-    it('calls export-mappings API and triggers download on click', async () => {
+    it('calls the assignment-scoped export endpoint and triggers download', async () => {
       const { downloadCsv } = require('../../../src/utils/csv.js');
       const user = userEvent.setup();
-      await setupPage();
-
       const mappings = [
         { groupName: 'Team Alpha', email: 'alice@test.com' },
         { groupName: 'Team Beta', email: 'bob@test.com' },
       ];
-      api.get.mockResolvedValueOnce({ data: { mappings } });
+      await setupPage({ mappings });
 
       await user.click(screen.getByRole('button', { name: /export mappings/i }));
 
       await waitFor(() => {
-        expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/export-mappings$/));
+        expect(api.get).toHaveBeenCalledWith(
+          expect.stringMatching(new RegExp(`/assignments/${ASSIGNMENT_ID}/export-mappings$`))
+        );
         expect(downloadCsv).toHaveBeenCalledWith(
           mappings,
           ['groupName', 'email'],
@@ -1264,113 +1352,20 @@ describe('Groups page', () => {
 
   // ── Import Mappings link ────────────────────────────────────────────────
   describe('Import Mappings', () => {
-    it('renders the "Import Mappings" link pointing to /groups/import', async () => {
+    it('renders the import link with subjectId and assignmentId query params', async () => {
       await setupPage();
       const link = screen.getByRole('link', { name: /import mappings/i });
-      expect(link).toBeInTheDocument();
-      expect(link).toHaveAttribute('href', '/groups/import');
+      expect(link).toHaveAttribute('href', `/groups/import?subjectId=${SUBJECT_ID}&assignmentId=${ASSIGNMENT_ID}`);
     });
   });
 
-  // ── handleDeleteConfirmed — single vs bulk routing ────────────────────
-  describe('handleDeleteConfirmed routing (single vs bulk)', () => {
-    it('single delete still uses DELETE /groups/:id', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage();
-      api.delete.mockResolvedValueOnce({});
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
-      await user.click(screen.getByRole('button', { name: 'Delete Group' }));
-      await user.click(screen.getByRole('button', { name: /delete 1 group$/i }));
-
-      await waitFor(() => {
-        expect(api.delete).toHaveBeenCalledWith(
-          expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001$/)
-        );
-        expect(api.delete).not.toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk/));
-      });
-    });
-
-    it('multi-delete uses DELETE /groups/bulk with correct ids array', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([
-        makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
-        makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
-      ]);
-
-      await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
-      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
-
-      api.delete.mockResolvedValueOnce({});
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
-      await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
-
-      await waitFor(() => {
-        expect(api.delete).toHaveBeenCalledTimes(1);
-        expect(api.delete).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/bulk$/), {
-          data: { ids: expect.arrayContaining(['g1', 'g2']) },
-        });
-      });
-    });
-
-    it('success toast is shown after bulk delete', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([
-        makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
-        makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
-      ]);
-
-      await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
-      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
-
-      api.delete.mockResolvedValueOnce({});
-      api.get.mockResolvedValueOnce({ data: { groups: [] } });
-
-      await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
-
-      await waitFor(() => expect(screen.getByText('Deleted 2 groups')).toBeInTheDocument());
-    });
-
-    it('error toast is shown when bulk delete fails', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupPage([
-        makeGroup({ id: 'g1', name: 'Group A', member_count: 0, max_members: 5 }),
-        makeGroup({ id: 'g2', name: 'Group B', member_count: 0, max_members: 5 }),
-      ]);
-
-      await user.click(screen.getByRole('checkbox', { name: /select all groups with space/i }));
-      await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
-
-      api.delete.mockRejectedValue({ response: { data: { error: 'Bulk delete failed' } } });
-
-      await user.click(screen.getByRole('button', { name: /delete 2 groups/i }));
-
-      await waitFor(() => expect(screen.getByText('Bulk delete failed')).toBeInTheDocument());
-    });
-  });
-
-  describe('data freshness on navigation and tab visibility', () => {
+  // ── Data freshness ─────────────────────────────────────────────────────
+  describe('data freshness on tab visibility', () => {
     it('re-fetches groups when the browser tab becomes visible', async () => {
-      // Initial load — one group
-      api.get.mockResolvedValueOnce({ data: { groups: [makeGroup({ name: 'Group A' })] } });
-      render(
-        <MemoryRouter>
-          <Groups />
-        </MemoryRouter>
-      );
-      await waitFor(() => expect(screen.getByText('Group A')).toBeInTheDocument());
+      await setupPage({ groups: [makeGroup({ name: 'Group A' })] });
 
       // Simulate another tab creating a group, then this tab regaining focus
-      api.get.mockResolvedValueOnce({
-        data: {
-          groups: [makeGroup({ name: 'Group A' }), makeGroup({ id: 'g2', name: 'Group B' })],
-        },
-      });
+      setupApi({ groups: [makeGroup({ name: 'Group A' }), makeGroup({ id: 'g2', name: 'Group B' })] });
 
       Object.defineProperty(document, 'hidden', { value: false, configurable: true, writable: true });
       document.dispatchEvent(new Event('visibilitychange'));

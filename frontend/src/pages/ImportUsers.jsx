@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
 import { ArrowLeft, ArrowRight, Check, AlertTriangle, ChevronDown } from 'lucide-react';
@@ -274,6 +274,9 @@ export default function ImportUsers() {
   const [existingByEmail, setExistingByEmail] = useState(new Map());
   const [existingByStudentId, setExistingByStudentId] = useState(new Map());
   const [conflictAction, setConflictAction] = useState('skip');
+  const [subjects, setSubjects] = useState([]);
+  const [subjectId, setSubjectId] = useState('');
+  const [subjectsError, setSubjectsError] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -281,6 +284,27 @@ export default function ImportUsers() {
 
   // Step 4
   const [result, setResult] = useState(null);
+
+  // ── Subjects (target subject for enrolment) ──────────────────────────────
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get(`${API_BASE}/subjects`)
+      .then((res) => {
+        if (!cancelled) {
+          setSubjects(res.data.subjects || []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSubjectsError('Failed to load subjects. Please reload the page.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ── File handling ────────────────────────────────────────────────────────
 
@@ -430,6 +454,10 @@ export default function ImportUsers() {
   // ── Import ───────────────────────────────────────────────────────────────
 
   const handleImport = async () => {
+    if (!subjectId) {
+      setSubmitError('Subject is required');
+      return;
+    }
     setSubmitting(true);
     setSubmitError('');
     try {
@@ -453,6 +481,7 @@ export default function ImportUsers() {
         users: validUsers,
         conflictAction,
         sendSetupEmail,
+        subjectId,
       });
       setResult({
         ...res.data,
@@ -460,7 +489,11 @@ export default function ImportUsers() {
       });
       setStep(4);
     } catch (e) {
-      setSubmitError(e.response?.data?.error || 'Import failed. Please try again.');
+      if (e.response?.status === 403) {
+        setSubmitError(e.response?.data?.error || 'You do not have permission to import users into this subject.');
+      } else {
+        setSubmitError(e.response?.data?.error || 'Import failed. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -480,6 +513,7 @@ export default function ImportUsers() {
     setExistingByEmail(new Map());
     setExistingByStudentId(new Map());
     setConflictAction('skip');
+    setSubjectId('');
     setPreviewError('');
     setSubmitError('');
     setResult(null);
@@ -740,6 +774,32 @@ export default function ImportUsers() {
 
               {/* Options */}
               <div className="flex flex-wrap gap-6 mb-5 p-4 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                <div>
+                  <label htmlFor="target-subject" className="block font-medium text-gray-700 mb-2">
+                    Target subject <span className="text-red-600">*</span>
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="target-subject"
+                      value={subjectId}
+                      onChange={(e) => {
+                        setSubjectId(e.target.value);
+                        setSubmitError('');
+                      }}
+                      className="appearance-none border border-gray-300 rounded-md pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                    >
+                      <option value="">Select subject</option>
+                      {subjects.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Imported users will be enrolled in this subject.</p>
+                  {subjectsError && <p className="text-xs text-red-600 mt-1">{subjectsError}</p>}
+                </div>
                 <fieldset>
                   <legend className="font-medium text-gray-700 mb-2">For existing users:</legend>
                   <div className="flex gap-4">

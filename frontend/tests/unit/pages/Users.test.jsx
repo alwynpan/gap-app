@@ -10,6 +10,29 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(),
 }));
 
+const SUBJECT_A = {
+  id: 'aaaaaaaa-0000-4000-8000-000000000001',
+  name: 'Subject A',
+  assignment_count: 1,
+  member_count: 2,
+};
+const SUBJECT_B = {
+  id: 'aaaaaaaa-0000-4000-8000-000000000002',
+  name: 'Subject B',
+  assignment_count: 1,
+  member_count: 1,
+};
+const ASSIGNMENT_1 = { id: 'bbbbbbbb-0000-4000-8000-000000000001', name: 'Assignment 1', group_count: 1 };
+const GROUP_1 = { id: 'cccccccc-0000-4000-8000-000000000001', name: 'Group 1', max_members: 5, member_count: 2 };
+const MEMBERSHIP_1 = {
+  assignment_id: ASSIGNMENT_1.id,
+  assignment_name: 'Assignment 1',
+  subject_id: SUBJECT_A.id,
+  subject_name: 'Subject A',
+  group_id: GROUP_1.id,
+  group_name: 'Group 1',
+};
+
 describe('Users page', () => {
   const initialUsers = [
     {
@@ -19,15 +42,51 @@ describe('Users page', () => {
       first_name: 'First',
       last_name: 'Last',
       role_name: 'user',
-      group_name: null,
       student_id: 's1',
       role_id: 3,
       enabled: true,
+      subjects: [],
+      memberships: [],
     },
   ];
-  const initialGroups = [
-    { id: 'g0000000-0000-0000-0000-000000000002', name: 'Group A', max_members: null, member_count: 3 },
-  ];
+  const initialSubjects = [SUBJECT_A, SUBJECT_B];
+
+  /**
+   * URL-router mock for api.get covering the page fetch (GET /users + GET /subjects)
+   * plus the endpoints used by CascadingAssignmentSelect inside the modals.
+   */
+  const mockApiGet = ({
+    users = initialUsers,
+    subjects = initialSubjects,
+    assignments = [ASSIGNMENT_1],
+    groups = [GROUP_1],
+  } = {}) => {
+    api.get.mockImplementation((url) => {
+      if (/\/users$/.test(url)) {
+        return Promise.resolve({ data: { users } });
+      }
+      if (/\/subjects$/.test(url)) {
+        return Promise.resolve({ data: { subjects } });
+      }
+      if (/\/subjects\/[^/]+$/.test(url)) {
+        return Promise.resolve({ data: { subject: SUBJECT_A, assignments } });
+      }
+      if (/\/assignments\/[^/]+\/groups$/.test(url)) {
+        return Promise.resolve({ data: { groups } });
+      }
+      return Promise.reject(new Error(`Unexpected url: ${url}`));
+    });
+  };
+
+  const renderPage = async (options) => {
+    mockApiGet(options);
+    render(
+      <MemoryRouter>
+        <Users />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -55,23 +114,16 @@ describe('Users page', () => {
     expect(screen.queryByText(/manage users/i)).not.toBeInTheDocument();
   });
 
-  it('renders users after successful fetch', async () => {
-    api.get
-      .mockResolvedValueOnce({ data: { users: initialUsers } })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } });
+  it('fetches users and subjects in parallel and renders users', async () => {
+    await renderPage();
 
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/manage users/i)).toBeInTheDocument();
-      expect(screen.getByText('u1')).toBeInTheDocument();
-      expect(screen.getByText('u1@test.com')).toBeInTheDocument();
-      expect(screen.getByText('Not assigned')).toBeInTheDocument();
-    });
+    expect(screen.getByText('u1')).toBeInTheDocument();
+    expect(screen.getByText('u1@test.com')).toBeInTheDocument();
+    // Subjects column placeholder for a user without subjects
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/users$/));
+    expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/subjects$/));
+    expect(api.get).not.toHaveBeenCalledWith(expect.stringMatching(/\/groups\/enabled$/));
   });
 
   it('shows error when fetch fails', async () => {
@@ -89,194 +141,333 @@ describe('Users page', () => {
   });
 
   it('shows empty state when no users are returned', async () => {
-    api.get.mockResolvedValue({ data: { users: [], groups: [] } });
+    await renderPage({ users: [], subjects: [] });
 
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
+    expect(screen.getByText('No admin or manager accounts')).toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect(screen.getByText('No admin or manager accounts')).toBeInTheDocument();
+  describe('sections by subject membership', () => {
+    it('splits regular users into "without a subject" and "in subjects" sections', async () => {
+      const users = [
+        { ...initialUsers[0], id: 'u1', username: 'bob', email: 'bob@t.com', subjects: [] },
+        {
+          ...initialUsers[0],
+          id: 'u2',
+          username: 'carol',
+          email: 'carol@t.com',
+          subjects: [SUBJECT_A],
+          memberships: [MEMBERSHIP_1],
+        },
+      ];
+      await renderPage({ users });
+
+      const withoutSection = screen.getByRole('heading', { name: /users without a subject/i }).closest('.mb-8');
+      expect(within(withoutSection).getByText('bob')).toBeInTheDocument();
+      expect(within(withoutSection).queryByText('carol')).not.toBeInTheDocument();
+
+      const inSection = screen.getByRole('heading', { name: /users in subjects/i }).closest('.mb-8');
+      expect(within(inSection).getByText('carol')).toBeInTheDocument();
+      expect(within(inSection).queryByText('bob')).not.toBeInTheDocument();
+    });
+
+    it('keeps admins and managers in the Administrators section', async () => {
+      const users = [
+        { ...initialUsers[0], id: 'u1', username: 'boss', role_name: 'admin', subjects: [] },
+        { ...initialUsers[0], id: 'u2', username: 'mgr', email: 'm@t.com', role_name: 'assignment_manager' },
+      ];
+      await renderPage({ users });
+
+      const adminSection = screen.getByRole('heading', { name: /administrators/i }).closest('.mb-8');
+      expect(within(adminSection).getByText('boss')).toBeInTheDocument();
+      expect(within(adminSection).getByText('mgr')).toBeInTheDocument();
     });
   });
 
-  it('assigns a group and shows success feedback', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  describe('Subjects column', () => {
+    it('renders subject names joined with a comma', async () => {
+      const users = [{ ...initialUsers[0], subjects: [SUBJECT_A, SUBJECT_B] }];
+      await renderPage({ users });
 
-    api.get
-      .mockResolvedValueOnce({ data: { users: initialUsers } })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } })
-      .mockResolvedValueOnce({
-        data: { users: [{ ...initialUsers[0], group_name: 'Group A' }] },
-      })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } });
-    api.put.mockResolvedValue({});
-
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /assign group/i })).toBeInTheDocument();
+      expect(screen.getByText('Subject A, Subject B')).toBeInTheDocument();
+      expect(screen.getAllByRole('columnheader', { name: 'Subjects' }).length).toBeGreaterThan(0);
+      expect(screen.queryByRole('columnheader', { name: 'Current Group' })).not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: /assign group/i }));
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: /assign to group/i }),
-      'g0000000-0000-0000-0000-000000000002'
-    );
-    await user.click(screen.getByRole('button', { name: /save/i }));
-
-    await waitFor(() => {
-      expect(api.put).toHaveBeenCalledWith(
-        expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/group$/),
-        { groupId: 'g0000000-0000-0000-0000-000000000002' }
-      );
-      expect(screen.getByText('User group updated successfully')).toBeInTheDocument();
+    it('renders an em dash when the user has no subjects', async () => {
+      await renderPage();
+      expect(screen.getByText('—')).toBeInTheDocument();
     });
 
-    jest.advanceTimersByTime(3000);
-    await waitFor(() => {
-      expect(screen.queryByText('User group updated successfully')).not.toBeInTheDocument();
+    it('adds a title tooltip listing memberships as Subject › Assignment › Group lines', async () => {
+      const secondMembership = {
+        assignment_id: 'bbbbbbbb-0000-4000-8000-000000000002',
+        assignment_name: 'Assignment 2',
+        subject_id: SUBJECT_B.id,
+        subject_name: 'Subject B',
+        group_id: 'cccccccc-0000-4000-8000-000000000002',
+        group_name: 'Group 2',
+      };
+      const users = [
+        { ...initialUsers[0], subjects: [SUBJECT_A, SUBJECT_B], memberships: [MEMBERSHIP_1, secondMembership] },
+      ];
+      await renderPage({ users });
+
+      const cell = screen.getByText('Subject A, Subject B');
+      expect(cell).toHaveAttribute('title', 'Subject A › Assignment 1 › Group 1\nSubject B › Assignment 2 › Group 2');
     });
   });
 
-  it('hides full groups from the assign group dropdown', async () => {
-    const user = userEvent.setup();
-    const fullGroup = {
-      id: 'g0000000-0000-0000-0000-000000000003',
-      name: 'Full Group',
-      max_members: 2,
-      member_count: 2,
-    };
-    const openGroup = {
-      id: 'g0000000-0000-0000-0000-000000000004',
-      name: 'Open Group',
-      max_members: 5,
-      member_count: 2,
-    };
-
-    api.get
-      .mockResolvedValueOnce({ data: { users: initialUsers } })
-      .mockResolvedValueOnce({ data: { groups: [fullGroup, openGroup] } });
-
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => expect(screen.getByRole('button', { name: /assign group/i })).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: /assign group/i }));
-
-    const select = screen.getByRole('combobox', { name: /assign to group/i });
-    expect(select).toBeInTheDocument();
-    expect(select).not.toHaveDisplayValue('Full Group');
-    expect(within(select).queryByRole('option', { name: /full group/i })).not.toBeInTheDocument();
-    expect(within(select).getByRole('option', { name: /open group/i })).toBeInTheDocument();
-  });
-
-  it('removes user from group when "No Group" is selected', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    const usersInGroup = [
-      { ...initialUsers[0], group_name: 'Group A', group_id: 'g0000000-0000-0000-0000-000000000002' },
+  describe('subject filter', () => {
+    const filterUsers = [
+      { ...initialUsers[0], id: 'u1', username: 'bob', email: 'bob@t.com', subjects: [SUBJECT_A] },
+      { ...initialUsers[0], id: 'u2', username: 'carol', email: 'carol@t.com', subjects: [SUBJECT_B] },
     ];
 
-    api.get
-      .mockResolvedValueOnce({ data: { users: usersInGroup } })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } })
-      .mockResolvedValueOnce({ data: { users: initialUsers } })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } });
-    api.put.mockResolvedValue({});
+    it('offers All subjects plus each subject as options', async () => {
+      await renderPage({ users: filterUsers });
 
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /assign group/i })).toBeInTheDocument();
+      const select = screen.getByRole('combobox', { name: /filter by subject/i });
+      const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+      expect(options).toEqual(['All subjects', 'Subject A', 'Subject B']);
     });
 
-    await user.click(screen.getByRole('button', { name: /assign group/i }));
-    // "No Group" (value="") is already the default selection
-    await user.click(screen.getByRole('button', { name: /save/i }));
+    it('filters users client-side by selected subject', async () => {
+      const user = userEvent.setup();
+      await renderPage({ users: filterUsers });
 
-    await waitFor(() => {
-      expect(api.put).toHaveBeenCalledWith(
-        expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/group$/),
-        {
-          groupId: null,
-        }
-      );
-      expect(screen.getByText('User group updated successfully')).toBeInTheDocument();
+      await user.selectOptions(screen.getByRole('combobox', { name: /filter by subject/i }), SUBJECT_A.id);
+
+      expect(screen.getByText('bob')).toBeInTheDocument();
+      expect(screen.queryByText('carol')).not.toBeInTheDocument();
     });
 
-    jest.advanceTimersByTime(3000);
-    await waitFor(() => {
-      expect(screen.queryByText('User group updated successfully')).not.toBeInTheDocument();
+    it('clear filters resets the subject filter', async () => {
+      const user = userEvent.setup();
+      await renderPage({ users: filterUsers });
+
+      await user.selectOptions(screen.getByRole('combobox', { name: /filter by subject/i }), SUBJECT_B.id);
+      expect(screen.queryByText('bob')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /clear filters/i }));
+
+      expect(screen.getByText('bob')).toBeInTheDocument();
+      expect(screen.getByText('carol')).toBeInTheDocument();
     });
   });
 
-  it('shows API error when group update fails', async () => {
-    jest.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  describe('Assign Group modal', () => {
+    const memberUser = {
+      ...initialUsers[0],
+      subjects: [SUBJECT_A],
+      memberships: [],
+    };
 
-    api.get
-      .mockResolvedValueOnce({ data: { users: initialUsers } })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } });
-    api.put.mockRejectedValue({ response: { data: { error: 'Update denied' } } });
+    it('opens AssignGroupModal for the right user when the row action is clicked', async () => {
+      const user = userEvent.setup();
+      await renderPage({ users: [memberUser] });
 
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
+      await user.click(screen.getByRole('button', { name: /assign group/i }));
 
-    await waitFor(() => {
+      const heading = screen.getByRole('heading', { name: 'Assign Group — u1' });
+      expect(heading).toBeInTheDocument();
+      // Cascade offers only the target user's subjects
+      const modal = heading.closest('.fixed');
+      expect(within(modal).getByRole('option', { name: 'Subject A' })).toBeInTheDocument();
+      expect(within(modal).queryByRole('option', { name: 'Subject B' })).not.toBeInTheDocument();
+    });
+
+    it('assigns via the cascade, PUTs assignmentId+groupId, refetches and shows success', async () => {
+      const user = userEvent.setup();
+      api.put.mockResolvedValue({ data: {} });
+      await renderPage({ users: [memberUser] });
+
+      await user.click(screen.getByRole('button', { name: /assign group/i }));
+      await user.selectOptions(screen.getByLabelText('Subject'), SUBJECT_A.id);
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Assignment 1' })).toBeInTheDocument());
+      await user.selectOptions(screen.getByLabelText('Assignment'), ASSIGNMENT_1.id);
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Group 1 (2/5)' })).toBeInTheDocument());
+      await user.selectOptions(screen.getByLabelText('Group'), GROUP_1.id);
+
+      const callsBefore = api.get.mock.calls.filter((c) => /\/users$/.test(c[0])).length;
+      await user.click(screen.getByRole('button', { name: 'Assign' }));
+
+      await waitFor(() => {
+        expect(api.put).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users\/u0000000-0000-0000-0000-000000000001\/group$/),
+          { assignmentId: ASSIGNMENT_1.id, groupId: GROUP_1.id }
+        );
+      });
+      await waitFor(() => {
+        expect(screen.getByText('User group updated successfully')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Assign Group — u1' })).not.toBeInTheDocument();
+        expect(api.get.mock.calls.filter((c) => /\/users$/.test(c[0])).length).toBeGreaterThan(callsBefore);
+      });
+    });
+
+    it('shows the API error inside the modal and keeps it open on failure', async () => {
+      const user = userEvent.setup();
+      api.put.mockRejectedValue({ response: { data: { error: 'Update denied' } } });
+      await renderPage({ users: [memberUser] });
+
+      await user.click(screen.getByRole('button', { name: /assign group/i }));
+      await user.selectOptions(screen.getByLabelText('Subject'), SUBJECT_A.id);
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Assignment 1' })).toBeInTheDocument());
+      await user.selectOptions(screen.getByLabelText('Assignment'), ASSIGNMENT_1.id);
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Group 1 (2/5)' })).toBeInTheDocument());
+      await user.selectOptions(screen.getByLabelText('Group'), GROUP_1.id);
+      await user.click(screen.getByRole('button', { name: 'Assign' }));
+
+      await waitFor(() => expect(screen.getByText('Update denied')).toBeInTheDocument());
+      expect(screen.getByRole('heading', { name: 'Assign Group — u1' })).toBeInTheDocument();
+    });
+
+    it('closes the modal without a PUT when Cancel is clicked', async () => {
+      const user = userEvent.setup();
+      await renderPage({ users: [memberUser] });
+
+      await user.click(screen.getByRole('button', { name: /assign group/i }));
+      await user.click(screen.getByRole('button', { name: /cancel/i }));
+
+      expect(screen.queryByRole('heading', { name: 'Assign Group — u1' })).not.toBeInTheDocument();
+      expect(api.put).not.toHaveBeenCalled();
+    });
+
+    it('shows Assign Group for assignment managers', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 'u0000000-0000-0000-0000-000000000098', username: 'mgr', role: 'assignment_manager' },
+        isAdmin: false,
+        isAssignmentManager: true,
+      });
+      await renderPage({ users: [memberUser] });
+
       expect(screen.getByRole('button', { name: /assign group/i })).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: /assign group/i }));
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: /assign to group/i }),
-      'g0000000-0000-0000-0000-000000000002'
-    );
-    await user.click(screen.getByRole('button', { name: /save/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText('Update denied')).toBeInTheDocument();
+    it('hides Assign Group for admin-role rows', async () => {
+      await renderPage({ users: [{ ...initialUsers[0], role_name: 'admin' }] });
+      expect(screen.queryByRole('button', { name: /assign group/i })).not.toBeInTheDocument();
     });
 
-    jest.advanceTimersByTime(3000);
-    await waitFor(() => {
-      expect(screen.queryByText('Update denied')).not.toBeInTheDocument();
+    it('hides Assign Group for assignment_manager-role rows', async () => {
+      await renderPage({ users: [{ ...initialUsers[0], role_name: 'assignment_manager' }] });
+      expect(screen.queryByRole('button', { name: /assign group/i })).not.toBeInTheDocument();
+    });
+
+    it('hides Assign Group when the viewer is a regular user', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 'u0000000-0000-0000-0000-000000000001', username: 'u1', role: 'user' },
+        isAdmin: false,
+        isAssignmentManager: false,
+      });
+      await renderPage({ users: [memberUser] });
+
+      expect(screen.queryByRole('button', { name: /assign group/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Manage Subjects modal', () => {
+    const enrolledUser = {
+      ...initialUsers[0],
+      subjects: [SUBJECT_A],
+      memberships: [MEMBERSHIP_1],
+    };
+
+    it('shows the Manage Subjects action for admins on user rows only', async () => {
+      const users = [enrolledUser, { ...initialUsers[0], id: 'u9', username: 'mgr', role_name: 'assignment_manager' }];
+      await renderPage({ users });
+
+      expect(screen.getAllByRole('button', { name: /manage subjects/i })).toHaveLength(1);
+    });
+
+    it('hides the Manage Subjects action for assignment managers', async () => {
+      useAuth.mockReturnValue({
+        user: { id: 'u0000000-0000-0000-0000-000000000098', username: 'mgr', role: 'assignment_manager' },
+        isAdmin: false,
+        isAssignmentManager: true,
+      });
+      await renderPage({ users: [enrolledUser] });
+
+      expect(screen.queryByRole('button', { name: /manage subjects/i })).not.toBeInTheDocument();
+    });
+
+    it('opens the modal with checkboxes pre-checked for the user subjects', async () => {
+      const user = userEvent.setup();
+      await renderPage({ users: [enrolledUser] });
+
+      await user.click(screen.getByRole('button', { name: /manage subjects/i }));
+
+      expect(screen.getByRole('heading', { name: 'Manage Subjects — u1' })).toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: 'Subject A' })).toBeChecked();
+      expect(screen.getByRole('checkbox', { name: 'Subject B' })).not.toBeChecked();
+    });
+
+    it('diff-saves: POST for added subjects and DELETE for removed, then refetches with success', async () => {
+      const user = userEvent.setup();
+      api.post.mockResolvedValue({ data: {} });
+      api.delete.mockResolvedValue({ data: {} });
+      await renderPage({ users: [enrolledUser] });
+
+      await user.click(screen.getByRole('button', { name: /manage subjects/i }));
+      await user.click(screen.getByRole('checkbox', { name: 'Subject B' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Subject A' }));
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => {
+        expect(api.post).toHaveBeenCalledWith(expect.stringContaining(`/subjects/${SUBJECT_B.id}/users`), {
+          userIds: [enrolledUser.id],
+        });
+      });
+      expect(api.delete).toHaveBeenCalledWith(
+        expect.stringContaining(`/subjects/${SUBJECT_A.id}/users/${enrolledUser.id}`)
+      );
+      await waitFor(() => {
+        expect(screen.getByText('Subjects updated successfully')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Manage Subjects — u1' })).not.toBeInTheDocument();
+      });
+    });
+
+    it('warns inside the modal when unchecking a subject that holds group memberships', async () => {
+      const user = userEvent.setup();
+      await renderPage({ users: [enrolledUser] });
+
+      await user.click(screen.getByRole('button', { name: /manage subjects/i }));
+      expect(screen.queryByText(/removing a subject also removes/i)).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('checkbox', { name: 'Subject A' }));
+      expect(
+        screen.getByText(/removing a subject also removes the user's group memberships in it\./i)
+      ).toBeInTheDocument();
+    });
+
+    it('shows the API error and keeps the modal open when saving fails', async () => {
+      const user = userEvent.setup();
+      api.post.mockRejectedValue({ response: { data: { error: 'Enrolment failed' } } });
+      await renderPage({ users: [enrolledUser] });
+
+      await user.click(screen.getByRole('button', { name: /manage subjects/i }));
+      await user.click(screen.getByRole('checkbox', { name: 'Subject B' }));
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(screen.getByText('Enrolment failed')).toBeInTheDocument());
+      expect(screen.getByRole('heading', { name: 'Manage Subjects — u1' })).toBeInTheDocument();
+      expect(screen.queryByText('Subjects updated successfully')).not.toBeInTheDocument();
     });
   });
 
   describe('Create User', () => {
     const setupRenderedPage = async () => {
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      await renderPage();
+    };
 
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
+    const fillRequiredFields = async (user) => {
+      await user.type(screen.getByPlaceholderText('Enter username'), 'newuser');
+      await user.type(screen.getByPlaceholderText('Enter email'), 'new@test.com');
+      await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
+      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+    };
 
-      await waitFor(() => {
-        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
-      });
+    const selectSubject = async (user) => {
+      await user.selectOptions(screen.getByLabelText('Subject'), SUBJECT_A.id);
     };
 
     it('shows Create User button for admin', async () => {
@@ -316,22 +507,32 @@ describe('Users page', () => {
       expect(screen.queryByText('Create New User')).not.toBeInTheDocument();
     });
 
-    it('creates a user and shows success feedback', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    it('blocks creating a role=user account without a subject', async () => {
+      const user = userEvent.setup();
       await setupRenderedPage();
 
-      api.post.mockResolvedValue({ data: { message: 'User created successfully' } });
-      // Mock refetch after create
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await fillRequiredFields(user);
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+      expect(screen.getByText('Subject is required')).toBeInTheDocument();
+      expect(api.post).not.toHaveBeenCalled();
+      expect(screen.getByText('Create New User')).toBeInTheDocument();
+    });
+
+    it('creates a user with subjectIds and optional placement and shows success', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      api.post.mockResolvedValue({ data: { message: 'User created successfully', user: {} } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
-      await user.type(screen.getByPlaceholderText('Enter username'), 'newuser');
-      await user.type(screen.getByPlaceholderText('Enter email'), 'new@test.com');
-      await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
-      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await fillRequiredFields(user);
+      await selectSubject(user);
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Assignment 1' })).toBeInTheDocument());
+      await user.selectOptions(screen.getByLabelText('Assignment'), ASSIGNMENT_1.id);
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Group 1 (2/5)' })).toBeInTheDocument());
+      await user.selectOptions(screen.getByLabelText('Group'), GROUP_1.id);
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
@@ -341,18 +542,129 @@ describe('Users page', () => {
             username: 'newuser',
             email: 'new@test.com',
             role: 'user',
+            subjectIds: [SUBJECT_A.id],
+            assignmentId: ASSIGNMENT_1.id,
+            groupId: GROUP_1.id,
           })
         );
-        expect(screen.getByText('User created successfully')).toBeInTheDocument();
       });
-
-      // Modal should be closed
-      expect(screen.queryByText('Create New User')).not.toBeInTheDocument();
-
-      jest.advanceTimersByTime(3000);
+      expect(api.post.mock.calls[0][1]).not.toHaveProperty('assignmentIds');
       await waitFor(() => {
-        expect(screen.queryByText('User created successfully')).not.toBeInTheDocument();
+        expect(screen.getByText('User created successfully')).toBeInTheDocument();
+        expect(screen.queryByText('Create New User')).not.toBeInTheDocument();
       });
+    });
+
+    it('omits assignmentId and groupId when only a subject is selected', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      api.post.mockResolvedValue({ data: { message: 'ok', user: {} } });
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await fillRequiredFields(user);
+      await selectSubject(user);
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+      await waitFor(() => {
+        expect(api.post).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users$/),
+          expect.objectContaining({ subjectIds: [SUBJECT_A.id] })
+        );
+      });
+      expect(api.post.mock.calls[0][1]).not.toHaveProperty('assignmentId');
+      expect(api.post.mock.calls[0][1]).not.toHaveProperty('groupId');
+    });
+
+    it('shows a yellow warning banner when creation succeeds with a warning', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      api.post.mockResolvedValue({
+        data: { message: 'ok', user: {}, warning: 'User created but the setup email failed to send' },
+      });
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await fillRequiredFields(user);
+      await selectSubject(user);
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('User created but the setup email failed to send')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Create New User')).not.toBeInTheDocument();
+      const banner = screen.getByText('User created but the setup email failed to send').closest('div');
+      expect(banner.className).toContain('bg-yellow-50');
+    });
+
+    it('creates an assignment manager with assignmentIds scope and no subjectIds', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      api.post.mockResolvedValue({ data: { message: 'ok', user: {} } });
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await fillRequiredFields(user);
+      const roleSelect = screen
+        .getAllByRole('combobox')
+        .find((el) => el.querySelector('option[value="assignment_manager"]') && !el.querySelector('option[value=""]'));
+      await user.selectOptions(roleSelect, 'assignment_manager');
+
+      // AM cascade hides the group select
+      expect(screen.queryByLabelText('Group')).not.toBeInTheDocument();
+
+      await selectSubject(user);
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Assignment 1' })).toBeInTheDocument());
+      await user.selectOptions(screen.getByLabelText('Assignment'), ASSIGNMENT_1.id);
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+      await waitFor(() => {
+        expect(api.post).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users$/),
+          expect.objectContaining({ role: 'assignment_manager', assignmentIds: [ASSIGNMENT_1.id] })
+        );
+      });
+      expect(api.post.mock.calls[0][1]).not.toHaveProperty('subjectIds');
+      expect(api.post.mock.calls[0][1]).not.toHaveProperty('groupId');
+    });
+
+    it('creates an assignment manager without assignmentIds when no assignment is chosen', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      api.post.mockResolvedValue({ data: { message: 'ok', user: {} } });
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await fillRequiredFields(user);
+      const roleSelect = screen
+        .getAllByRole('combobox')
+        .find((el) => el.querySelector('option[value="assignment_manager"]') && !el.querySelector('option[value=""]'));
+      await user.selectOptions(roleSelect, 'assignment_manager');
+      await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+      await waitFor(() => {
+        expect(api.post).toHaveBeenCalledWith(
+          expect.stringMatching(/\/users$/),
+          expect.objectContaining({ role: 'assignment_manager' })
+        );
+      });
+      expect(api.post.mock.calls[0][1]).not.toHaveProperty('assignmentIds');
+    });
+
+    it('resets the cascade when the role changes', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /create user/i }));
+      await selectSubject(user);
+      expect(screen.getByLabelText('Subject')).toHaveValue(SUBJECT_A.id);
+
+      const roleSelect = screen
+        .getAllByRole('combobox')
+        .find((el) => el.querySelector('option[value="assignment_manager"]') && !el.querySelector('option[value=""]'));
+      await user.selectOptions(roleSelect, 'assignment_manager');
+
+      expect(screen.getByLabelText('Subject')).toHaveValue('');
     });
 
     it('shows generic error when user creation fails with 409', async () => {
@@ -362,10 +674,8 @@ describe('Users page', () => {
       api.post.mockRejectedValue({ response: { data: { error: 'Username already exists' }, status: 409 } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
-      await user.type(screen.getByPlaceholderText('Enter username'), 'existing');
-      await user.type(screen.getByPlaceholderText('Enter email'), 'e@test.com');
-      await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
-      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await fillRequiredFields(user);
+      await selectSubject(user);
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
@@ -380,10 +690,8 @@ describe('Users page', () => {
       api.post.mockRejectedValue({ response: { data: { error: 'Invalid input' }, status: 400 } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
-      await user.type(screen.getByPlaceholderText('Enter username'), 'baduser');
-      await user.type(screen.getByPlaceholderText('Enter email'), 'bad@test.com');
-      await user.type(screen.getByPlaceholderText('Enter first name'), 'Bad');
-      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await fillRequiredFields(user);
+      await selectSubject(user);
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
@@ -398,10 +706,8 @@ describe('Users page', () => {
       api.post.mockRejectedValue({ response: { data: { error: 'Server error' }, status: 500 } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
-      await user.type(screen.getByPlaceholderText('Enter username'), 'baduser');
-      await user.type(screen.getByPlaceholderText('Enter email'), 'bad@test.com');
-      await user.type(screen.getByPlaceholderText('Enter first name'), 'Bad');
-      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await fillRequiredFields(user);
+      await selectSubject(user);
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
@@ -422,29 +728,11 @@ describe('Users page', () => {
       expect(options).toEqual(['user', 'assignment_manager', 'admin']);
     });
 
-    it('allows selecting a group in create form', async () => {
+    it('sends firstName, lastName and studentId when creating a user', async () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /create user/i }));
-
-      const groupSelect = screen
-        .getAllByRole('combobox')
-        .find((el) => el.querySelector('option[value="g0000000-0000-0000-0000-000000000002"]'));
-      expect(groupSelect).toBeTruthy();
-      await user.selectOptions(groupSelect, 'g0000000-0000-0000-0000-000000000002');
-      expect(groupSelect.value).toBe('g0000000-0000-0000-0000-000000000002');
-    });
-
-    it('sends firstName and lastName when creating a user', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      await setupRenderedPage();
-
-      api.post.mockResolvedValue({ data: { message: 'User created' } });
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.post.mockResolvedValue({ data: { message: 'User created', user: {} } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
       await user.type(screen.getByPlaceholderText('Enter username'), 'jdoe');
@@ -452,6 +740,7 @@ describe('Users page', () => {
       await user.type(screen.getByPlaceholderText('Enter first name'), 'John');
       await user.type(screen.getByPlaceholderText('Enter last name'), 'Doe');
       await user.type(screen.getByPlaceholderText('Enter student ID'), 'ST99');
+      await selectSubject(user);
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
@@ -479,20 +768,14 @@ describe('Users page', () => {
     });
 
     it('passes sendSetupEmail: false when checkbox is unchecked', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       await setupRenderedPage();
 
-      api.post.mockResolvedValue({ data: { message: 'User created successfully' } });
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.post.mockResolvedValue({ data: { message: 'User created successfully', user: {} } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
-      await user.type(screen.getByPlaceholderText('Enter username'), 'newuser');
-      await user.type(screen.getByPlaceholderText('Enter email'), 'new@test.com');
-      await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
-      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await fillRequiredFields(user);
+      await selectSubject(user);
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
       await waitFor(() => {
@@ -504,20 +787,14 @@ describe('Users page', () => {
     });
 
     it('passes sendSetupEmail: true when checkbox is checked', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       await setupRenderedPage();
 
-      api.post.mockResolvedValue({ data: { message: 'User created successfully' } });
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      api.post.mockResolvedValue({ data: { message: 'User created successfully', user: {} } });
 
       await user.click(screen.getByRole('button', { name: /create user/i }));
-      await user.type(screen.getByPlaceholderText('Enter username'), 'newuser');
-      await user.type(screen.getByPlaceholderText('Enter email'), 'new@test.com');
-      await user.type(screen.getByPlaceholderText('Enter first name'), 'Test');
-      await user.type(screen.getByPlaceholderText('Enter last name'), 'User');
+      await fillRequiredFields(user);
+      await selectSubject(user);
       await user.click(screen.getByRole('checkbox', { name: /send.*set password.*email now/i }));
       await user.click(screen.getByRole('button', { name: /^create$/i }));
 
@@ -532,54 +809,16 @@ describe('Users page', () => {
 
   it('displays formatted role names instead of raw values', async () => {
     const usersWithRoles = [
-      {
-        id: 'u0000000-0000-0000-0000-000000000001',
-        username: 'u1',
-        email: 'u1@test.com',
-        role_name: 'admin',
-        group_name: null,
-        student_id: null,
-        role_id: 1,
-        enabled: true,
-      },
-      {
-        id: 'u0000000-0000-0000-0000-000000000010',
-        username: 'u2',
-        email: 'u2@test.com',
-        role_name: 'assignment_manager',
-        group_name: null,
-        student_id: null,
-        role_id: 2,
-        enabled: true,
-      },
-      {
-        id: 'u0000000-0000-0000-0000-000000000011',
-        username: 'u3',
-        email: 'u3@test.com',
-        role_name: 'user',
-        group_name: null,
-        student_id: null,
-        role_id: 3,
-        enabled: true,
-      },
+      { ...initialUsers[0], id: 'u1', username: 'a1', email: 'a1@t.com', role_name: 'admin', role_id: 1 },
+      { ...initialUsers[0], id: 'u2', username: 'a2', email: 'a2@t.com', role_name: 'assignment_manager', role_id: 2 },
+      { ...initialUsers[0], id: 'u3', username: 'a3', email: 'a3@t.com', role_name: 'user', role_id: 3 },
     ];
 
-    api.get
-      .mockResolvedValueOnce({ data: { users: usersWithRoles } })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } });
+    await renderPage({ users: usersWithRoles });
 
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
+    expect(screen.getAllByText('Admin').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Assignment Manager').length).toBeGreaterThan(0);
 
-    await waitFor(() => {
-      expect(screen.getAllByText('Admin').length).toBeGreaterThan(0);
-      expect(screen.getAllByText('Assignment Manager').length).toBeGreaterThan(0);
-    });
-
-    // Verify raw role values don't appear in role badge spans
     const roleBadges = document.querySelectorAll('span.rounded-full');
     const badgeTexts = Array.from(roleBadges).map((el) => el.textContent);
     expect(badgeTexts).not.toContain('admin');
@@ -589,83 +828,9 @@ describe('Users page', () => {
     expect(badgeTexts).toContain('User');
   });
 
-  it('hides Assign Group button for admin-role users', async () => {
-    const adminUser = {
-      ...initialUsers[0],
-      role_name: 'admin',
-    };
-    api.get
-      .mockResolvedValueOnce({ data: { users: [adminUser] } })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /assign group/i })).not.toBeInTheDocument();
-  });
-
-  it('hides Assign Group button for assignment_manager-role users', async () => {
-    const managerUser = {
-      ...initialUsers[0],
-      role_name: 'assignment_manager',
-    };
-    api.get
-      .mockResolvedValueOnce({ data: { users: [managerUser] } })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /assign group/i })).not.toBeInTheDocument();
-  });
-
-  it('cancels group assignment inline', async () => {
-    const user = userEvent.setup();
-
-    api.get
-      .mockResolvedValueOnce({ data: { users: initialUsers } })
-      .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-    render(
-      <MemoryRouter>
-        <Users />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /assign group/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /assign group/i }));
-    expect(screen.getByRole('combobox', { name: /assign to group/i })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /cancel/i }));
-    expect(screen.queryByRole('combobox', { name: /assign to group/i })).not.toBeInTheDocument();
-  });
-
   describe('Edit User', () => {
-    const setupRenderedPage = async () => {
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
-      });
+    const setupRenderedPage = async (users = initialUsers) => {
+      await renderPage({ users });
     };
 
     it('shows Edit button for admin on all users', async () => {
@@ -706,6 +871,35 @@ describe('Users page', () => {
       expect(screen.queryByText('Edit User')).not.toBeInTheDocument();
     });
 
+    it('shows a read-only memberships summary for role user', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage([{ ...initialUsers[0], subjects: [SUBJECT_A], memberships: [MEMBERSHIP_1] }]);
+
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
+
+      expect(screen.getByText('Memberships')).toBeInTheDocument();
+      expect(screen.getByText('Subject A › Assignment 1 › Group 1')).toBeInTheDocument();
+    });
+
+    it('shows None in the memberships summary when the user has no memberships', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage();
+
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
+
+      expect(screen.getByText('Memberships')).toBeInTheDocument();
+      expect(screen.getByText('None')).toBeInTheDocument();
+    });
+
+    it('does not show the memberships summary for admin-role users', async () => {
+      const user = userEvent.setup();
+      await setupRenderedPage([{ ...initialUsers[0], role_name: 'admin' }]);
+
+      await user.click(screen.getByRole('button', { name: /edit user profile/i }));
+
+      expect(screen.queryByText('Memberships')).not.toBeInTheDocument();
+    });
+
     it('admin can edit user and save successfully', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
@@ -713,7 +907,6 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
-      // Username field is disabled and cannot be changed
       const usernameInput = screen.getByDisplayValue('u1');
       expect(usernameInput.disabled).toBe(true);
 
@@ -726,9 +919,6 @@ describe('Users page', () => {
       await user.type(lastNameInput, 'NewLast');
 
       api.put.mockResolvedValue({});
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /save/i }));
 
@@ -740,7 +930,6 @@ describe('Users page', () => {
         expect(screen.getByText('User updated successfully')).toBeInTheDocument();
       });
 
-      // Modal should be closed
       expect(screen.queryByText('Edit User')).not.toBeInTheDocument();
 
       jest.advanceTimersByTime(3000);
@@ -750,30 +939,23 @@ describe('Users page', () => {
     });
 
     it('admin can edit email, studentId, and enabled fields', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       await setupRenderedPage();
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
-      // Edit email
       const emailInput = screen.getByDisplayValue('u1@test.com');
       await user.clear(emailInput);
       await user.type(emailInput, 'new@test.com');
 
-      // Edit studentId
       const studentInput = screen.getByDisplayValue('s1');
       await user.clear(studentInput);
       await user.type(studentInput, 's999');
 
-      // Toggle enabled
       const enabledCheckbox = screen.getByRole('checkbox', { name: /enabled/i });
       await user.click(enabledCheckbox);
 
       api.put.mockResolvedValue({});
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /save/i }));
 
@@ -797,7 +979,6 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
-      // Admin should see role dropdown and enabled checkbox
       expect(screen.getByText('Enabled')).toBeInTheDocument();
       const roleSelects = screen.getAllByRole('combobox');
       const roleSelect = roleSelects.find((el) => el.querySelector('option[value="admin"]'));
@@ -815,7 +996,6 @@ describe('Users page', () => {
 
       await user.click(screen.getByRole('button', { name: /edit user profile/i }));
 
-      // Assignment managers cannot change role but can toggle enabled
       const modal = screen.getByText('Edit User').closest('div');
       expect(within(modal).queryByLabelText(/role/i)).not.toBeInTheDocument();
       expect(within(modal).getByText('Enabled')).toBeInTheDocument();
@@ -847,9 +1027,6 @@ describe('Users page', () => {
       await user.selectOptions(roleSelect, 'assignment_manager');
 
       api.put.mockResolvedValue({});
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /save/i }));
 
@@ -876,9 +1053,6 @@ describe('Users page', () => {
       await user.click(enabledCheckbox);
 
       api.put.mockResolvedValue({});
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /save/i }));
 
@@ -894,42 +1068,35 @@ describe('Users page', () => {
   describe('CSV Export', () => {
     const multiUsers = [
       {
+        ...initialUsers[0],
         id: 'u0000000-0000-0000-0000-000000000001',
         username: 'admin1',
         first_name: 'Ad',
         last_name: 'Min',
         email: 'admin@test.com',
         role_name: 'admin',
-        group_name: null,
         student_id: null,
         role_id: 1,
-        enabled: true,
       },
       {
+        ...initialUsers[0],
         id: 'u0000000-0000-0000-0000-000000000002',
-        username: 'nogroup',
+        username: 'nosubject',
         first_name: 'No',
-        last_name: 'Group',
-        email: 'nogroup@test.com',
-        role_name: 'user',
-        group_name: null,
+        last_name: 'Subject',
+        email: 'nosubject@test.com',
         student_id: 's2',
-        group_id: null,
-        role_id: 3,
-        enabled: true,
       },
       {
+        ...initialUsers[0],
         id: 'u0000000-0000-0000-0000-000000000003',
-        username: 'grouped',
+        username: 'enrolled',
         first_name: 'In',
-        last_name: 'Group',
-        email: 'grouped@test.com',
-        role_name: 'user',
-        group_name: 'Team A',
+        last_name: 'Subject',
+        email: 'enrolled@test.com',
         student_id: 's3',
-        group_id: 'g0000000-0000-0000-0000-000000000001',
-        role_id: 3,
-        enabled: true,
+        subjects: [SUBJECT_A],
+        memberships: [MEMBERSHIP_1],
       },
     ];
 
@@ -938,19 +1105,7 @@ describe('Users page', () => {
     let anchorClick;
 
     const setupRenderedPage = async () => {
-      api.get
-        .mockResolvedValueOnce({ data: { users: multiUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
-      });
+      await renderPage({ users: multiUsers });
     };
 
     beforeEach(() => {
@@ -973,8 +1128,8 @@ describe('Users page', () => {
     it('shows per-section export buttons', async () => {
       await setupRenderedPage();
       expect(screen.getByRole('button', { name: /export administrators/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /export users without a group/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /export users in a group/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /export users without a subject/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /export users in subjects/i })).toBeInTheDocument();
     });
 
     it('triggers download when Export All is clicked', async () => {
@@ -1004,35 +1159,35 @@ describe('Users page', () => {
       expect(createObjectURL).toHaveBeenCalledTimes(1);
       const text = await readBlob(createObjectURL.mock.calls[0][0]);
       expect(text).toContain('admin1');
-      expect(text).not.toContain('nogroup');
-      expect(text).not.toContain('grouped');
+      expect(text).not.toContain('nosubject');
+      expect(text).not.toContain('enrolled');
     });
 
-    it('exports only ungrouped users when section export is clicked', async () => {
+    it('exports only subject-less users when section export is clicked', async () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /export users without a group/i }));
+      await user.click(screen.getByRole('button', { name: /export users without a subject/i }));
 
       const text = await readBlob(createObjectURL.mock.calls[0][0]);
-      expect(text).toContain('nogroup');
+      expect(text).toContain('nosubject');
       expect(text).not.toContain('admin1');
-      expect(text).not.toContain('grouped');
+      expect(text).not.toContain('enrolled');
     });
 
-    it('exports only grouped users when section export is clicked', async () => {
+    it('exports only enrolled users when section export is clicked', async () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
-      await user.click(screen.getByRole('button', { name: /export users in a group/i }));
+      await user.click(screen.getByRole('button', { name: /export users in subjects/i }));
 
       const text = await readBlob(createObjectURL.mock.calls[0][0]);
-      expect(text).toContain('grouped');
+      expect(text).toContain('enrolled');
       expect(text).not.toContain('admin1');
-      expect(text).not.toContain('nogroup');
+      expect(text).not.toContain('nosubject');
     });
 
-    it('CSV includes correct headers and data', async () => {
+    it('CSV includes Subjects and Groups columns with joined values', async () => {
       const user = userEvent.setup();
       await setupRenderedPage();
 
@@ -1040,22 +1195,18 @@ describe('Users page', () => {
 
       const text = await readBlob(createObjectURL.mock.calls[0][0]);
       const lines = text.split('\n');
-      expect(lines[0]).toBe('Username,First Name,Last Name,Email,Role,Group,Student ID');
+      expect(lines[0]).toBe('Username,First Name,Last Name,Email,Role,Subjects,Groups,Student ID');
       expect(text).toContain('admin@test.com');
-      expect(text).toContain('Team A');
+      expect(text).toContain('Subject A');
+      expect(text).toContain('Assignment 1:Group 1');
+      expect(text).not.toContain('Group,Student ID');
     });
   });
 
   // ── Delete user ────────────────────────────────────────────────────────
   describe('Delete user', () => {
     const setupDeletePage = async (users = initialUsers) => {
-      api.get.mockResolvedValueOnce({ data: { users } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-      await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
+      await renderPage({ users });
     };
 
     it('shows Delete User button for other users when admin', async () => {
@@ -1069,7 +1220,6 @@ describe('Users page', () => {
         { ...initialUsers[0], id: 'u0000000-0000-0000-0000-000000000099', username: 'myself', email: 'm@t.com' },
       ];
       await setupDeletePage(usersWithSelf);
-      // only u1 (not myself) should have the button
       expect(screen.getAllByRole('button', { name: /delete user/i })).toHaveLength(1);
     });
 
@@ -1093,28 +1243,28 @@ describe('Users page', () => {
       expect(screen.getByText('This action cannot be undone.')).toBeInTheDocument();
     });
 
-    it('shows group warning when user being deleted is in a group', async () => {
-      const userInGroup = {
+    it('warns and lists memberships when the user being deleted has group memberships', async () => {
+      const userWithMemberships = {
         ...initialUsers[0],
-        group_id: 'g0000000-0000-0000-0000-000000000002',
-        group_name: 'Group A',
+        subjects: [SUBJECT_A],
+        memberships: [MEMBERSHIP_1],
       };
       const user = userEvent.setup();
-      await setupDeletePage([userInGroup]);
+      await setupDeletePage([userWithMemberships]);
 
       await user.click(screen.getByRole('button', { name: /delete user/i }));
 
-      const modal = screen.getByText(/will be unassigned/i).closest('.bg-white');
-      expect(modal).toHaveTextContent(/group a/i);
+      const modal = screen.getByText(/will be removed/i).closest('.bg-white');
+      expect(modal).toHaveTextContent('Subject A › Assignment 1 › Group 1');
     });
 
-    it('does not show warning when user is not in a group', async () => {
+    it('does not show warning when user has no memberships', async () => {
       const user = userEvent.setup();
-      await setupDeletePage([{ ...initialUsers[0], group_id: null, group_name: null }]);
+      await setupDeletePage([{ ...initialUsers[0], subjects: [SUBJECT_A], memberships: [] }]);
 
       await user.click(screen.getByRole('button', { name: /delete user/i }));
 
-      expect(screen.queryByText(/will be unassigned/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/will be removed/i)).not.toBeInTheDocument();
     });
 
     it('delete modal has scrollable layout so action buttons remain accessible with many items', async () => {
@@ -1124,8 +1274,8 @@ describe('Users page', () => {
         id: `u0000000-0000-0000-0000-0000000000${String(i + 10).padStart(2, '0')}`,
         username: `user${i}`,
         email: `user${i}@test.com`,
-        group_id: 'g0000000-0000-0000-0000-000000000002',
-        group_name: 'Group A',
+        subjects: [SUBJECT_A],
+        memberships: [MEMBERSHIP_1],
       }));
       await setupDeletePage(manyUsers);
 
@@ -1143,13 +1293,12 @@ describe('Users page', () => {
     });
 
     it('deletes user after confirmation and shows success', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       await setupDeletePage();
       api.delete.mockResolvedValueOnce({});
-      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /delete user/i }));
+      mockApiGet({ users: [] });
       await user.click(screen.getByRole('button', { name: /delete 1 user$/i }));
 
       await waitFor(() => {
@@ -1172,8 +1321,7 @@ describe('Users page', () => {
     });
 
     it('shows error when delete fails', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       await setupDeletePage();
       api.delete.mockRejectedValue({ response: { data: { error: 'Cannot delete user' } } });
 
@@ -1212,7 +1360,7 @@ describe('Users page', () => {
       ];
       await setupDeletePage(twoUsers);
 
-      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a subject/i }));
 
       expect(screen.getByRole('button', { name: /delete \(2\)/i })).toBeInTheDocument();
     });
@@ -1225,26 +1373,24 @@ describe('Users page', () => {
       ];
       await setupDeletePage(usersWithSelf);
 
-      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a subject/i }));
 
-      // 'me' is the current user and must be excluded — only 1 user selected
       expect(screen.getByRole('button', { name: /delete \(1\)/i })).toBeInTheDocument();
     });
 
     it('bulk deletes all selected users and shows success', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       const twoUsers = [
         { ...initialUsers[0], id: 'u1', username: 'user1', email: 'u1@t.com' },
         { ...initialUsers[0], id: 'u2', username: 'user2', email: 'u2@t.com' },
       ];
       await setupDeletePage(twoUsers);
 
-      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a subject/i }));
       await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
       api.delete.mockResolvedValue({});
-      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
+      mockApiGet({ users: [] });
 
       await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
 
@@ -1275,53 +1421,18 @@ describe('Users page', () => {
     };
 
     it('shows "Send Setup Email" button when pending users exist', async () => {
-      api.get
-        .mockResolvedValueOnce({ data: { users: [pendingUser] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /send setup email/i })).toBeInTheDocument();
-      });
+      await renderPage({ users: [pendingUser] });
+      expect(screen.getByRole('button', { name: /send setup email/i })).toBeInTheDocument();
     });
 
     it('does not show "Send Setup Email" button when no pending users exist', async () => {
-      api.get
-        .mockResolvedValueOnce({ data: { users: [activeUser] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
-      });
+      await renderPage({ users: [activeUser] });
       expect(screen.queryByRole('button', { name: /send setup email/i })).not.toBeInTheDocument();
     });
 
     it('shows confirmation modal when clicking Send Setup Emails button', async () => {
       const user = userEvent.setup();
-      api.get
-        .mockResolvedValueOnce({ data: { users: [pendingUser] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /send setup email/i })).toBeInTheDocument();
-      });
+      await renderPage({ users: [pendingUser] });
 
       await user.click(screen.getByRole('button', { name: /send setup email/i }));
 
@@ -1332,19 +1443,7 @@ describe('Users page', () => {
 
     it('cancels sending when Cancel is clicked in confirmation modal', async () => {
       const user = userEvent.setup();
-      api.get
-        .mockResolvedValueOnce({ data: { users: [pendingUser] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /send setup email/i })).toBeInTheDocument();
-      });
+      await renderPage({ users: [pendingUser] });
 
       await user.click(screen.getByRole('button', { name: /send setup email/i }));
       await user.click(screen.getByRole('button', { name: /cancel/i }));
@@ -1354,22 +1453,9 @@ describe('Users page', () => {
     });
 
     it('calls send-setup-emails API for all pending users after confirming', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-      api.get
-        .mockResolvedValueOnce({ data: { users: [pendingUser, activeUser] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      const user = userEvent.setup();
+      await renderPage({ users: [pendingUser, activeUser] });
       api.post.mockResolvedValue({ data: { sent: 1, errors: [] } });
-
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /send setup email/i })).toBeInTheDocument();
-      });
 
       await user.click(screen.getByRole('button', { name: /send setup email/i }));
       await user.click(screen.getByRole('button', { name: /^send$/i }));
@@ -1380,30 +1466,16 @@ describe('Users page', () => {
     });
 
     it('sends only to selected pending users when selection is active', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       const pendingUser2 = {
         ...pendingUser,
         id: 'u0000000-0000-0000-0000-000000000012',
         username: 'pending2',
         email: 'pending2@test.com',
       };
-      api.get
-        .mockResolvedValueOnce({ data: { users: [pendingUser, pendingUser2] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      await renderPage({ users: [pendingUser, pendingUser2] });
       api.post.mockResolvedValue({ data: { sent: 1, errors: [] } });
 
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/manage users/i)).toBeInTheDocument();
-      });
-
-      // Select just the first pending user
       const checkbox = screen.getByRole('checkbox', { name: /select pending1/i });
       await user.click(checkbox);
 
@@ -1421,41 +1493,29 @@ describe('Users page', () => {
   describe('User search', () => {
     const searchUsers = [
       {
+        ...initialUsers[0],
         id: 'u1',
         username: 'jdoe',
         email: 'jdoe@example.com',
         first_name: 'John',
         last_name: 'Doe',
         student_id: 'S001',
-        role_name: 'user',
-        group_name: null,
-        group_id: null,
-        enabled: true,
         status: 'active',
       },
       {
+        ...initialUsers[0],
         id: 'u2',
         username: 'msmith',
         email: 'msmith@example.com',
         first_name: 'Mary',
         last_name: 'Smith',
         student_id: 'S002',
-        role_name: 'user',
-        group_name: null,
-        group_id: null,
-        enabled: true,
         status: 'active',
       },
     ];
 
     const renderSearchPage = async () => {
-      api.get.mockResolvedValueOnce({ data: { users: searchUsers } }).mockResolvedValueOnce({ data: { groups: [] } });
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-      await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
+      await renderPage({ users: searchUsers });
     };
 
     it('shows all users when search is empty', async () => {
@@ -1521,23 +1581,16 @@ describe('Users page', () => {
   // ── handleDeleteConfirmed routing (single vs bulk) ─────────────────────
   describe('handleDeleteConfirmed routing (single vs bulk)', () => {
     const setupDeletePage = async (users = initialUsers) => {
-      api.get.mockResolvedValueOnce({ data: { users } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-      await waitFor(() => expect(screen.getByText(/manage users/i)).toBeInTheDocument());
+      await renderPage({ users });
     };
 
     it('single delete still uses DELETE /users/:id', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       await setupDeletePage();
       api.delete.mockResolvedValueOnce({});
-      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
 
       await user.click(screen.getByRole('button', { name: /delete user/i }));
+      mockApiGet({ users: [] });
       await user.click(screen.getByRole('button', { name: /delete 1 user$/i }));
 
       await waitFor(() => {
@@ -1549,19 +1602,18 @@ describe('Users page', () => {
     });
 
     it('multi-delete uses DELETE /users/bulk with correct ids array', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       const twoUsers = [
         { ...initialUsers[0], id: 'u1', username: 'user1', email: 'u1@t.com' },
         { ...initialUsers[0], id: 'u2', username: 'user2', email: 'u2@t.com' },
       ];
       await setupDeletePage(twoUsers);
 
-      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a subject/i }));
       await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
       api.delete.mockResolvedValueOnce({});
-      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
+      mockApiGet({ users: [] });
 
       await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
 
@@ -1574,19 +1626,18 @@ describe('Users page', () => {
     });
 
     it('success toast is shown after bulk delete', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       const twoUsers = [
         { ...initialUsers[0], id: 'u1', username: 'user1', email: 'u1@t.com' },
         { ...initialUsers[0], id: 'u2', username: 'user2', email: 'u2@t.com' },
       ];
       await setupDeletePage(twoUsers);
 
-      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a subject/i }));
       await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
       api.delete.mockResolvedValueOnce({});
-      api.get.mockResolvedValueOnce({ data: { users: [] } }).mockResolvedValueOnce({ data: { groups: initialGroups } });
+      mockApiGet({ users: [] });
 
       await user.click(screen.getByRole('button', { name: /delete 2 users/i }));
 
@@ -1594,15 +1645,14 @@ describe('Users page', () => {
     });
 
     it('error toast is shown when bulk delete fails', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
       const twoUsers = [
         { ...initialUsers[0], id: 'u1', username: 'user1', email: 'u1@t.com' },
         { ...initialUsers[0], id: 'u2', username: 'user2', email: 'u2@t.com' },
       ];
       await setupDeletePage(twoUsers);
 
-      await user.click(screen.getByRole('checkbox', { name: /select all users without a group/i }));
+      await user.click(screen.getByRole('checkbox', { name: /select all users without a subject/i }));
       await user.click(screen.getByRole('button', { name: /delete \(2\)/i }));
 
       api.delete.mockRejectedValue({ response: { data: { error: 'Bulk user delete failed' } } });
@@ -1615,49 +1665,23 @@ describe('Users page', () => {
 
   describe('data freshness on navigation and tab visibility', () => {
     it('re-fetches data when the browser tab becomes visible', async () => {
-      const staleUser = { ...initialUsers[0], group_name: null, group_id: null };
-      const freshUser = {
-        ...initialUsers[0],
-        group_name: 'Group A',
-        group_id: 'g0000000-0000-0000-0000-000000000002',
-      };
+      const staleUser = { ...initialUsers[0], subjects: [] };
+      const freshUser = { ...initialUsers[0], subjects: [SUBJECT_A], memberships: [MEMBERSHIP_1] };
 
-      // Initial load — user has no group
-      api.get
-        .mockResolvedValueOnce({ data: { users: [staleUser] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      await renderPage({ users: [staleUser] });
+      expect(screen.getByText('—')).toBeInTheDocument();
 
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => expect(screen.getByText('Not assigned')).toBeInTheDocument());
-
-      // Simulate another tab assigning the user to a group, then this tab regaining focus
-      api.get
-        .mockResolvedValueOnce({ data: { users: [freshUser] } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
+      // Simulate another tab enrolling the user, then this tab regaining focus
+      mockApiGet({ users: [freshUser] });
 
       Object.defineProperty(document, 'hidden', { value: false, configurable: true, writable: true });
       document.dispatchEvent(new Event('visibilitychange'));
 
-      await waitFor(() => expect(screen.getByText('Group A')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByTitle('Subject A › Assignment 1 › Group 1')).toBeInTheDocument());
     });
 
     it('does not re-fetch when the tab becomes hidden', async () => {
-      api.get
-        .mockResolvedValueOnce({ data: { users: initialUsers } })
-        .mockResolvedValueOnce({ data: { groups: initialGroups } });
-
-      render(
-        <MemoryRouter>
-          <Users />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => expect(screen.getByText('u1')).toBeInTheDocument());
+      await renderPage();
 
       const callsBefore = api.get.mock.calls.length;
 

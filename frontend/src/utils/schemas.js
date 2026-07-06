@@ -79,6 +79,11 @@ export const groupNameSchema = sanitizedString.pipe(
   z.string().min(1, 'Group name is required').max(100, 'Group name must be at most 100 characters')
 );
 
+const subjectNameSchema = nameSchema('Subject name');
+const assignmentNameSchema = nameSchema('Assignment name');
+
+const uuidArraySchema = z.array(z.string().uuid('Invalid ID format'));
+
 // ── Endpoint schemas ─────────────────────────────────────────────────────────
 
 export const loginSchema = z.object({
@@ -94,16 +99,32 @@ export const registerSchema = z.object({
   studentId: studentIdSchema,
 });
 
-export const createUserSchema = z.object({
-  username: usernameSchema,
-  email: emailSchema,
-  firstName: nameSchema('First name'),
-  lastName: nameSchema('Last name'),
-  studentId: studentIdSchema,
-  role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
-  groupId: z.preprocess((v) => (v === '' ? null : v), z.string().uuid().optional().nullable()),
-  sendSetupEmail: z.boolean().optional(),
-});
+export const createUserSchema = z
+  .object({
+    username: usernameSchema,
+    email: emailSchema,
+    firstName: nameSchema('First name'),
+    lastName: nameSchema('Last name'),
+    studentId: studentIdSchema,
+    role: z.enum(['admin', 'assignment_manager', 'user']).optional(),
+    // role 'user': subjects to enrol in, plus optional immediate group
+    // placement (assignment ∈ subjectIds — enforced by the backend).
+    subjectIds: uuidArraySchema.optional(),
+    assignmentId: z.preprocess((v) => (v === '' ? null : v), z.string().uuid().optional().nullable()),
+    groupId: z.preprocess((v) => (v === '' ? null : v), z.string().uuid().optional().nullable()),
+    // role 'assignment_manager': assignments the new AM will manage.
+    assignmentIds: uuidArraySchema.optional(),
+    sendSetupEmail: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.groupId && !data.assignmentId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['groupId'],
+        message: 'Select an assignment first',
+      });
+    }
+  });
 
 export const updateUserSchema = z.object({
   email: emailSchema.optional(),
@@ -119,7 +140,17 @@ export const changePasswordSchema = z.object({
 });
 
 export const createGroupSchema = z.object({
+  assignmentId: z.string().uuid('Invalid assignment ID'),
   name: groupNameSchema,
+});
+
+export const createSubjectSchema = z.object({
+  name: subjectNameSchema,
+});
+
+export const createAssignmentSchema = z.object({
+  subjectId: z.string().uuid('Invalid subject ID'),
+  name: assignmentNameSchema,
 });
 
 export const updateGroupSchema = z.object({

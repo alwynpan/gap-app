@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '@/utils/api';
-import { Pencil, UserPlus, Check, X, Download, Trash2, Upload, Mail } from 'lucide-react';
+import { Pencil, UserPlus, BookOpen, Download, Trash2, Upload, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
 import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
+import AssignGroupModal from '../components/AssignGroupModal.jsx';
+import SubjectMembershipModal from '../components/SubjectMembershipModal.jsx';
+import CascadingAssignmentSelect from '../components/CascadingAssignmentSelect.jsx';
 import { parseBody, createUserSchema, updateUserSchema } from '../utils/schemas.js';
 import { API_BASE } from '../config.js';
 
@@ -15,23 +18,30 @@ const emptyNewUser = {
   lastName: '',
   email: '',
   studentId: '',
-  groupId: '',
   role: 'user',
   sendSetupEmail: false,
 };
+
+const emptySelection = { subjectId: '', assignmentId: '', groupId: '' };
+
+/** Format a user's group memberships as "Subject › Assignment › Group" lines. */
+const membershipLines = (u) =>
+  (u.memberships || []).map((m) => `${m.subject_name} › ${m.assignment_name} › ${m.group_name}`);
 
 function Users() {
   const { user, isAdmin, isAssignmentManager } = useAuth();
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [selectedGroup, setSelectedGroup] = useState('');
+  const [warning, setWarning] = useState('');
+  const [assignModalUser, setAssignModalUser] = useState(null);
+  const [membershipModalUser, setMembershipModalUser] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newUser, setNewUser] = useState({ ...emptyNewUser });
+  const [createSelection, setCreateSelection] = useState({ ...emptySelection });
   const [editingUser, setEditingUser] = useState(null);
   const [formError, setFormError] = useState('');
   const [sendingEmails, setSendingEmails] = useState(false);
@@ -47,11 +57,12 @@ function Users() {
   // Filters
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [filterGroup, setFilterGroup] = useState('');
+  const [filterSubject, setFilterSubject] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
   const successTimeoutRef = useRef(null);
   const errorTimeoutRef = useRef(null);
+  const warningTimeoutRef = useRef(null);
 
   const location = useLocation();
 
@@ -75,12 +86,12 @@ function Users() {
 
   const fetchData = async () => {
     try {
-      const [usersRes, groupsRes] = await Promise.all([
+      const [usersRes, subjectsRes] = await Promise.all([
         api.get(`${API_BASE}/users`),
-        api.get(`${API_BASE}/groups/enabled`),
+        api.get(`${API_BASE}/subjects`),
       ]);
       setUsers(usersRes.data.users || []);
-      setGroups(groupsRes.data.groups || []);
+      setSubjects(subjectsRes.data.subjects || []);
     } catch (_err) {
       setError('Failed to load data');
     } finally {
@@ -88,32 +99,33 @@ function Users() {
     }
   };
 
-  const handleGroupChange = async (userId, groupId) => {
-    try {
-      await api.put(`${API_BASE}/users/${userId}/group`, { groupId });
-      showSuccess('User group updated successfully');
-      fetchData();
-    } catch (err) {
-      showError(err.response?.data?.error || 'Failed to update group');
-    }
-  };
-
-  const handleAssignGroup = async () => {
-    if (!selectedUser) {
-      return;
-    }
-
-    const groupId = selectedGroup === '' ? null : selectedGroup;
-    await handleGroupChange(selectedUser, groupId);
-    setSelectedUser(null);
-    setSelectedGroup('');
-  };
-
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setFormError('');
 
-    const { data: body, error: validationError } = parseBody(createUserSchema, newUser);
+    if (newUser.role === 'user' && !createSelection.subjectId) {
+      setFormError('Subject is required');
+      return;
+    }
+
+    const candidate = {
+      username: newUser.username,
+      email: newUser.email,
+      firstName: newUser.firstName,
+      lastName: newUser.lastName,
+      studentId: newUser.studentId,
+      role: newUser.role,
+      sendSetupEmail: newUser.sendSetupEmail,
+      ...(newUser.role === 'user' && {
+        subjectIds: [createSelection.subjectId],
+        assignmentId: createSelection.assignmentId,
+        groupId: createSelection.groupId,
+      }),
+      ...(newUser.role === 'assignment_manager' &&
+        createSelection.assignmentId && { assignmentIds: [createSelection.assignmentId] }),
+    };
+
+    const { data: body, error: validationError } = parseBody(createUserSchema, candidate);
     if (validationError) {
       setFormError(validationError);
       return;
@@ -121,18 +133,25 @@ function Users() {
 
     setCreating(true);
     try {
-      await api.post(`${API_BASE}/users`, {
+      const res = await api.post(`${API_BASE}/users`, {
         username: body.username,
         email: body.email,
         firstName: body.firstName || undefined,
         lastName: body.lastName || undefined,
         studentId: body.studentId || undefined,
-        groupId: body.groupId || undefined,
         role: body.role,
         sendSetupEmail: body.sendSetupEmail,
+        ...(body.subjectIds && { subjectIds: body.subjectIds }),
+        ...(body.assignmentId && { assignmentId: body.assignmentId }),
+        ...(body.groupId && { groupId: body.groupId }),
+        ...(body.assignmentIds && { assignmentIds: body.assignmentIds }),
       });
       showSuccess('User created successfully');
+      if (res.data?.warning) {
+        showWarning(res.data.warning);
+      }
       setNewUser({ ...emptyNewUser });
+      setCreateSelection({ ...emptySelection });
       setShowCreateModal(false);
       fetchData();
     } catch (err) {
@@ -218,6 +237,7 @@ function Users() {
       roleName: u.role_name || 'user',
       originalRoleName: u.role_name || 'user',
       enabled: u.enabled !== false,
+      memberships: u.memberships || [],
     });
   };
 
@@ -235,6 +255,14 @@ function Users() {
     }
     setError(msg);
     errorTimeoutRef.current = setTimeout(() => setError(''), 3000);
+  };
+
+  const showWarning = (msg) => {
+    if (warningTimeoutRef.current) {
+      clearTimeout(warningTimeoutRef.current);
+    }
+    setWarning(msg);
+    warningTimeoutRef.current = setTimeout(() => setWarning(''), 6000);
   };
 
   // ── Selection helpers ──────────────────────────────────────────────────
@@ -349,14 +377,15 @@ function Users() {
       const str = val === null || val === undefined ? '' : String(val);
       return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str.replace(/"/g, '""')}"` : str;
     };
-    const headers = ['Username', 'First Name', 'Last Name', 'Email', 'Role', 'Group', 'Student ID'];
+    const headers = ['Username', 'First Name', 'Last Name', 'Email', 'Role', 'Subjects', 'Groups', 'Student ID'];
     const rows = exportUsers.map((u) => [
       csvEscape(u.username),
       csvEscape(u.first_name),
       csvEscape(u.last_name),
       csvEscape(u.email),
       csvEscape(formatRoleName(u.role_name)),
-      csvEscape(u.group_name),
+      csvEscape((u.subjects || []).map((s) => s.name).join(', ')),
+      csvEscape((u.memberships || []).map((m) => `${m.assignment_name}:${m.group_name}`).join(', ')),
       csvEscape(u.student_id),
     ]);
     const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -381,10 +410,7 @@ function Users() {
     if (filterStatus && u.status !== filterStatus) {
       return false;
     }
-    if (filterGroup === 'none' && u.group_id) {
-      return false;
-    }
-    if (filterGroup && filterGroup !== 'none' && u.group_id !== filterGroup) {
+    if (filterSubject && !(u.subjects || []).some((s) => s.id === filterSubject)) {
       return false;
     }
     if (searchTerm) {
@@ -401,11 +427,11 @@ function Users() {
   });
 
   const adminUsers = filteredUsers.filter((u) => u.role_name === 'admin' || u.role_name === 'assignment_manager');
-  const ungroupedUsers = filteredUsers.filter((u) => u.role_name === 'user' && !u.group_id);
-  const groupedUsers = filteredUsers.filter((u) => u.role_name === 'user' && !!u.group_id);
+  const noSubjectUsers = filteredUsers.filter((u) => u.role_name === 'user' && (u.subjects || []).length === 0);
+  const subjectUsers = filteredUsers.filter((u) => u.role_name === 'user' && (u.subjects || []).length > 0);
 
   const selectedUsers = users.filter((u) => selectedIds.has(u.id));
-  const deleteModalWithGroup = (deleteModal ?? []).filter((u) => !!u.group_id);
+  const deleteModalWithMemberships = (deleteModal ?? []).filter((u) => (u.memberships || []).length > 0);
 
   const renderTable = (sectionUsers, emptyMessage) => (
     <div className="bg-white shadow overflow-x-auto rounded-lg">
@@ -426,7 +452,7 @@ function Users() {
               Role
             </th>
             <th className="w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Current Group
+              Subjects
             </th>
             <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Status
@@ -490,8 +516,8 @@ function Users() {
                 {u.role_name === 'admin' || u.role_name === 'assignment_manager' ? (
                   <div className="text-sm">&nbsp;</div>
                 ) : (
-                  <div className="text-sm text-gray-900 truncate" title={u.group_name || 'Not assigned'}>
-                    {u.group_name || 'Not assigned'}
+                  <div className="text-sm text-gray-900 truncate" title={membershipLines(u).join('\n')}>
+                    {(u.subjects || []).map((s) => s.name).join(', ') || '—'}
                   </div>
                 )}
               </td>
@@ -509,89 +535,67 @@ function Users() {
                 </span>
               </td>
               <td className="px-4 py-4">
-                {selectedUser === u.id ? (
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedGroup}
-                      onChange={(e) => setSelectedGroup(e.target.value)}
-                      className="min-w-0 flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm"
-                      aria-label="Assign to group"
-                    >
-                      <option value="">No Group</option>
-                      {groups
-                        .filter((g) => g.max_members === null || g.member_count < g.max_members)
-                        .map((g) => (
-                          <option key={g.id} value={g.id}>
-                            {g.name}
-                          </option>
-                        ))}
-                    </select>
-                    <button
-                      onClick={handleAssignGroup}
-                      aria-label="Save"
-                      className="text-primary-600 hover:text-primary-800"
-                    >
-                      <Check className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedUser(null);
-                        setSelectedGroup('');
-                      }}
-                      aria-label="Cancel"
-                      className="text-gray-500 hover:text-gray-700"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1">
-                    {/* Edit User Profile button for admins, assignment managers (non-admins), and users editing their own profile */}
-                    {(isAdmin || (isAssignmentManager && u.role_name !== 'admin') || u.id === user?.id) && (
-                      <div className="relative group">
-                        <button
-                          onClick={() => openEditModal(u)}
-                          aria-label="Edit User Profile"
-                          className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                          Edit User Profile
-                        </span>
-                      </div>
-                    )}
-                    {/* Assign Group button only visible for users with role 'user' */}
-                    {u.role_name === 'user' && (
-                      <div className="relative group">
-                        <button
-                          onClick={() => setSelectedUser(u.id)}
-                          aria-label="Assign Group"
-                          className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
-                        >
-                          <UserPlus className="h-4 w-4" />
-                        </button>
-                        <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                          Assign Group
-                        </span>
-                      </div>
-                    )}
-                    {isAdmin && u.id !== user?.id && (
-                      <div className="relative group">
-                        <button
-                          onClick={() => handleDeleteUser(u.id)}
-                          aria-label="Delete User"
-                          className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                        <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                          Delete User
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="flex items-center gap-1">
+                  {/* Edit User Profile button for admins, assignment managers (non-admins), and users editing their own profile */}
+                  {(isAdmin || (isAssignmentManager && u.role_name !== 'admin') || u.id === user?.id) && (
+                    <div className="relative group">
+                      <button
+                        onClick={() => openEditModal(u)}
+                        aria-label="Edit User Profile"
+                        className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        Edit User Profile
+                      </span>
+                    </div>
+                  )}
+                  {/* Assign Group opens the modal; admins and assignment managers only (backend enforces AM scope) */}
+                  {(isAdmin || isAssignmentManager) && u.role_name === 'user' && (
+                    <div className="relative group">
+                      <button
+                        onClick={() => setAssignModalUser(u)}
+                        aria-label="Assign Group"
+                        className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                      </button>
+                      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        Assign Group
+                      </span>
+                    </div>
+                  )}
+                  {/* Manage Subjects is admin only */}
+                  {isAdmin && u.role_name === 'user' && (
+                    <div className="relative group">
+                      <button
+                        onClick={() => setMembershipModalUser(u)}
+                        aria-label="Manage Subjects"
+                        className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+                      >
+                        <BookOpen className="h-4 w-4" />
+                      </button>
+                      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        Manage Subjects
+                      </span>
+                    </div>
+                  )}
+                  {isAdmin && u.id !== user?.id && (
+                    <div className="relative group">
+                      <button
+                        onClick={() => handleDeleteUser(u.id)}
+                        aria-label="Delete User"
+                        className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        Delete User
+                      </span>
+                    </div>
+                  )}
+                </div>
               </td>
             </tr>
           ))}
@@ -738,6 +742,12 @@ function Users() {
             </div>
           )}
 
+          {warning && (
+            <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-md text-sm">
+              {warning}
+            </div>
+          )}
+
           {/* Filters */}
           <div className="mb-6 flex flex-wrap items-center gap-3">
             <input
@@ -772,25 +782,24 @@ function Users() {
               <option value="pending">Pending</option>
             </select>
             <select
-              value={filterGroup}
-              onChange={(e) => setFilterGroup(e.target.value)}
-              aria-label="Filter by group"
+              value={filterSubject}
+              onChange={(e) => setFilterSubject(e.target.value)}
+              aria-label="Filter by subject"
               className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="">All Groups</option>
-              <option value="none">Unassigned</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
+              <option value="">All subjects</option>
+              {subjects.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
                 </option>
               ))}
             </select>
-            {(filterRole || filterStatus || filterGroup || searchTerm) && (
+            {(filterRole || filterStatus || filterSubject || searchTerm) && (
               <button
                 onClick={() => {
                   setFilterRole('');
                   setFilterStatus('');
-                  setFilterGroup('');
+                  setFilterSubject('');
                   setSearchTerm('');
                 }}
                 className="text-sm text-gray-500 hover:text-primary-600 underline"
@@ -809,22 +818,22 @@ function Users() {
             'Export Administrators'
           )}
 
-          {/* Section 2: Unassigned users */}
+          {/* Section 2: Users not enrolled in any subject */}
           {renderSection(
-            'Users without a group',
-            ungroupedUsers,
-            'All users are assigned to a group',
-            () => exportToCsv(ungroupedUsers, 'users-without-group.csv'),
-            'Export Users without a group'
+            'Users without a subject',
+            noSubjectUsers,
+            'All users belong to a subject',
+            () => exportToCsv(noSubjectUsers, 'users-without-subject.csv'),
+            'Export Users without a subject'
           )}
 
-          {/* Section 3: Assigned users */}
+          {/* Section 3: Users enrolled in at least one subject */}
           {renderSection(
-            'Users in a group',
-            groupedUsers,
-            'No users have been assigned to a group yet',
-            () => exportToCsv(groupedUsers, 'users-in-group.csv'),
-            'Export Users in a group'
+            'Users in subjects',
+            subjectUsers,
+            'No users belong to a subject yet',
+            () => exportToCsv(subjectUsers, 'users-in-subjects.csv'),
+            'Export Users in subjects'
           )}
         </div>
       </main>
@@ -898,7 +907,10 @@ function Users() {
                 </label>
                 <select
                   value={newUser.role}
-                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                  onChange={(e) => {
+                    setNewUser({ ...newUser, role: e.target.value });
+                    setCreateSelection({ ...emptySelection });
+                  }}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="user">User</option>
@@ -918,21 +930,30 @@ function Users() {
                       placeholder="Enter student ID"
                     />
                   </div>
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Group (Optional)</label>
-                    <select
-                      value={newUser.groupId}
-                      onChange={(e) => setNewUser({ ...newUser, groupId: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    >
-                      <option value="">No Group</option>
-                      {groups.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <p className="mb-2 text-xs text-gray-500">
+                    Subject is required. Assignment and group allow immediate placement (optional).
+                  </p>
+                  <CascadingAssignmentSelect
+                    subjects={subjects}
+                    value={createSelection}
+                    onChange={setCreateSelection}
+                    showGroup
+                    disabled={creating}
+                  />
+                </>
+              )}
+              {newUser.role === 'assignment_manager' && (
+                <>
+                  <p className="mb-2 text-xs text-gray-500">
+                    Optionally scope the manager to an assignment (pick a subject to narrow the list).
+                  </p>
+                  <CascadingAssignmentSelect
+                    subjects={subjects}
+                    value={createSelection}
+                    onChange={setCreateSelection}
+                    showGroup={false}
+                    disabled={creating}
+                  />
                 </>
               )}
               <div className="mb-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
@@ -956,6 +977,7 @@ function Users() {
                   onClick={() => {
                     setShowCreateModal(false);
                     setNewUser({ ...emptyNewUser });
+                    setCreateSelection({ ...emptySelection });
                   }}
                   className="px-4 py-2 text-gray-700 hover:text-gray-900"
                 >
@@ -1047,6 +1069,20 @@ function Users() {
                     className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
                     placeholder="Enter student ID"
                   />
+                </div>
+              )}
+              {editingUser.roleName === 'user' && (
+                <div className="mb-3">
+                  <span className="block text-sm font-medium text-gray-700 mb-1">Memberships</span>
+                  {editingUser.memberships.length > 0 ? (
+                    <ul className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 space-y-0.5">
+                      {membershipLines({ memberships: editingUser.memberships }).map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">None</p>
+                  )}
                 </div>
               )}
               {isAdmin && editingUser.username !== 'admin' && (
@@ -1142,16 +1178,16 @@ function Users() {
               </h3>
             </div>
             <div className="flex-1 overflow-y-auto px-6 py-3">
-              {deleteModalWithGroup.length > 0 && (
+              {deleteModalWithMemberships.length > 0 && (
                 <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
                   <p className="font-medium mb-1">
-                    {deleteModalWithGroup.length} user{deleteModalWithGroup.length > 1 ? 's are' : ' is'} in a group and
-                    will be unassigned:
+                    {deleteModalWithMemberships.length} user{deleteModalWithMemberships.length > 1 ? 's have' : ' has'}{' '}
+                    group memberships that will be removed:
                   </p>
                   <ul className="list-disc list-inside space-y-0.5">
-                    {deleteModalWithGroup.map((u) => (
+                    {deleteModalWithMemberships.map((u) => (
                       <li key={u.id}>
-                        {u.username} <span className="text-yellow-600">({u.group_name})</span>
+                        {u.username} <span className="text-yellow-600">({membershipLines(u).join('; ')})</span>
                       </li>
                     ))}
                   </ul>
@@ -1178,6 +1214,30 @@ function Users() {
             </div>
           </div>
         </div>
+      )}
+      {/* Assign Group Modal */}
+      {assignModalUser && (
+        <AssignGroupModal
+          user={assignModalUser}
+          subjects={subjects}
+          onClose={() => setAssignModalUser(null)}
+          onAssigned={() => {
+            showSuccess('User group updated successfully');
+            fetchData();
+          }}
+        />
+      )}
+      {/* Manage Subjects Modal */}
+      {membershipModalUser && (
+        <SubjectMembershipModal
+          user={membershipModalUser}
+          subjects={subjects}
+          onClose={() => setMembershipModalUser(null)}
+          onChanged={() => {
+            showSuccess('Subjects updated successfully');
+            fetchData();
+          }}
+        />
       )}
     </div>
   );

@@ -1,12 +1,29 @@
 'use strict';
 
 const { buildTestServer, closeTestServer } = require('./helpers/server');
-const { cleanDatabase, createUser, createGroup, loginAs } = require('./helpers/db');
+const {
+  cleanDatabase,
+  createUser,
+  createSubject,
+  createAssignment,
+  createGroup,
+  addUserToSubject,
+  assignManager,
+  addUserToGroup,
+  loginAs,
+  getPool,
+} = require('./helpers/db');
 
 let app;
 let adminToken;
-let amToken;
-let userToken;
+let amToken; // manages `assignment`
+let am2Token; // manages nothing
+let userToken; // member of `subject`
+let am1;
+let am2;
+let user1;
+let subject;
+let assignment;
 
 beforeAll(async () => {
   app = await buildTestServer();
@@ -20,61 +37,27 @@ beforeEach(async () => {
   await cleanDatabase();
   adminToken = await loginAs(app, 'admin', 'AdminPass123!');
 
-  await createUser({ username: 'am1', email: 'am1@test.com', role: 'assignment_manager' });
+  subject = await createSubject({ name: 'BaseSubject' });
+  assignment = await createAssignment({ subjectId: subject.id, name: 'A1' });
+
+  am1 = await createUser({ username: 'am1', email: 'am1@test.com', role: 'assignment_manager' });
+  await assignManager(am1.id, assignment.id);
   amToken = await loginAs(app, 'am1', 'TestPass123!');
 
-  await createUser({ username: 'user1', email: 'user1@test.com', role: 'user' });
+  am2 = await createUser({ username: 'am2', email: 'am2@test.com', role: 'assignment_manager' });
+  am2Token = await loginAs(app, 'am2', 'TestPass123!');
+
+  user1 = await createUser({ username: 'user1', email: 'user1@test.com', role: 'user' });
+  await addUserToSubject(user1.id, subject.id);
   userToken = await loginAs(app, 'user1', 'TestPass123!');
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/groups
-// ---------------------------------------------------------------------------
-describe('GET /api/groups', () => {
-  it('authenticated user can list groups', async () => {
-    await createGroup({ name: 'Alpha' });
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/groups',
-      headers: { authorization: `Bearer ${userToken}` },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(Array.isArray(body.groups)).toBe(true);
-    expect(body.groups.some((g) => g.name === 'Alpha')).toBe(true);
-  });
-
-  it('returns 401 without token', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/groups' });
-    expect(res.statusCode).toBe(401);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/groups/enabled
-// ---------------------------------------------------------------------------
-describe('GET /api/groups/enabled', () => {
-  it('returns only enabled groups', async () => {
-    await createGroup({ name: 'EnabledGroup', enabled: true });
-    await createGroup({ name: 'DisabledGroup', enabled: false });
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/groups/enabled',
-      headers: { authorization: `Bearer ${userToken}` },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.groups.every((g) => g.enabled === true)).toBe(true);
-    expect(body.groups.some((g) => g.name === 'DisabledGroup')).toBe(false);
-  });
 });
 
 // ---------------------------------------------------------------------------
 // GET /api/groups/:id
 // ---------------------------------------------------------------------------
 describe('GET /api/groups/:id', () => {
-  it('returns group with member list', async () => {
-    const g = await createGroup({ name: 'DetailGroup' });
+  it('subject member gets group with hierarchy info and member list', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'DetailGroup' });
     const res = await app.inject({
       method: 'GET',
       url: `/api/groups/${g.id}`,
@@ -83,7 +66,43 @@ describe('GET /api/groups/:id', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.group.name).toBe('DetailGroup');
+    expect(body.group.assignmentId).toBe(assignment.id);
+    expect(body.group.subjectId).toBe(subject.id);
     expect(Array.isArray(body.members)).toBe(true);
+  });
+
+  it('admin and managing AM can view the group', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'StaffGroup' });
+    for (const token of [adminToken, amToken]) {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/groups/${g.id}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+  });
+
+  it('non-member user gets 403', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'PrivateGroup' });
+    await createUser({ username: 'outsider', email: 'outsider@test.com' });
+    const outsiderToken = await loginAs(app, 'outsider', 'TestPass123!');
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/groups/${g.id}`,
+      headers: { authorization: `Bearer ${outsiderToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('non-managing AM (not a subject member) gets 403', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'AMScopedGroup' });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/groups/${g.id}`,
+      headers: { authorization: `Bearer ${am2Token}` },
+    });
+    expect(res.statusCode).toBe(403);
   });
 
   it('returns 404 for non-existent group', async () => {
@@ -109,70 +128,111 @@ describe('GET /api/groups/:id', () => {
 // POST /api/groups
 // ---------------------------------------------------------------------------
 describe('POST /api/groups', () => {
-  it('admin creates a group', async () => {
+  it('admin creates a group in an assignment', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/groups',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'NewGroup' },
+      payload: { assignmentId: assignment.id, name: 'NewGroup' },
     });
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
     expect(body.group.name).toBe('NewGroup');
     expect(body.group.enabled).toBe(true);
+    expect(body.group.assignmentId).toBe(assignment.id);
   });
 
-  it('admin creates group with maxMembers', async () => {
+  it('admin creates group with maxMembers and disabled state', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/groups',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'LimitedGroup', maxMembers: 5 },
+      payload: { assignmentId: assignment.id, name: 'LimitedGroup', maxMembers: 5, enabled: false },
     });
     expect(res.statusCode).toBe(201);
-    expect(JSON.parse(res.body).group.maxMembers).toBe(5);
+    const body = JSON.parse(res.body);
+    expect(body.group.maxMembers).toBe(5);
+    expect(body.group.enabled).toBe(false);
   });
 
-  it('admin creates disabled group', async () => {
+  it('returns 409 for duplicate group name within the assignment', async () => {
+    await createGroup({ assignmentId: assignment.id, name: 'DupGroup' });
     const res = await app.inject({
       method: 'POST',
       url: '/api/groups',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'DisabledAtCreate', enabled: false },
-    });
-    expect(res.statusCode).toBe(201);
-    expect(JSON.parse(res.body).group.enabled).toBe(false);
-  });
-
-  it('returns 409 for duplicate group name', async () => {
-    await createGroup({ name: 'DupGroup' });
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'DupGroup' },
+      payload: { assignmentId: assignment.id, name: 'DupGroup' },
     });
     expect(res.statusCode).toBe(409);
   });
 
-  it('assignment_manager cannot create groups', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups',
-      headers: { authorization: `Bearer ${amToken}` },
-      payload: { name: 'AMGroup' },
-    });
-    expect(res.statusCode).toBe(403);
-  });
-
-  it('returns 400 for missing name', async () => {
+  it('allows the same group name in a different assignment', async () => {
+    await createGroup({ assignmentId: assignment.id, name: 'SharedName' });
+    const a2 = await createAssignment({ subjectId: subject.id, name: 'A2' });
     const res = await app.inject({
       method: 'POST',
       url: '/api/groups',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: {},
+      payload: { assignmentId: a2.id, name: 'SharedName' },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('managing AM can create a group in their assignment', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/groups',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { assignmentId: assignment.id, name: 'AMGroup' },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('AM cannot create a group in an assignment they do not manage', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/groups',
+      headers: { authorization: `Bearer ${am2Token}` },
+      payload: { assignmentId: assignment.id, name: 'ForbiddenGroup' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('regular user cannot create groups', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/groups',
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: { assignmentId: assignment.id, name: 'UserGroup' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns 400 for missing name or assignmentId', async () => {
+    const noName = await app.inject({
+      method: 'POST',
+      url: '/api/groups',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { assignmentId: assignment.id },
+    });
+    expect(noName.statusCode).toBe(400);
+    const noAssignment = await app.inject({
+      method: 'POST',
+      url: '/api/groups',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'NoAssignment' },
+    });
+    expect(noAssignment.statusCode).toBe(400);
+  });
+
+  it('returns 404 for unknown assignment', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/groups',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { assignmentId: '00000000-0000-0000-0000-000000000000', name: 'Orphan' },
+    });
+    expect(res.statusCode).toBe(404);
   });
 });
 
@@ -185,19 +245,21 @@ describe('POST /api/groups/bulk', () => {
       method: 'POST',
       url: '/api/groups/bulk',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: [{ name: 'Bulk1' }, { name: 'Bulk2', maxMembers: 10 }, { name: 'Bulk3', enabled: false }],
+      payload: {
+        assignmentId: assignment.id,
+        groups: [{ name: 'Bulk1' }, { name: 'Bulk2', maxMembers: 10 }, { name: 'Bulk3', enabled: false }],
+      },
     });
     expect(res.statusCode).toBe(201);
-    const body = JSON.parse(res.body);
-    expect(body.groups).toHaveLength(3);
+    expect(JSON.parse(res.body).groups).toHaveLength(3);
   });
 
-  it('returns 400 for empty array', async () => {
+  it('returns 400 for empty groups array', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/groups/bulk',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: [],
+      payload: { assignmentId: assignment.id, groups: [] },
     });
     expect(res.statusCode).toBe(400);
   });
@@ -207,21 +269,39 @@ describe('POST /api/groups/bulk', () => {
       method: 'POST',
       url: '/api/groups/bulk',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: [{ name: 'DupBulk' }, { name: 'DupBulk' }],
+      payload: { assignmentId: assignment.id, groups: [{ name: 'DupBulk' }, { name: 'dupbulk' }] },
     });
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).error).toMatch(/duplicate/i);
   });
 
   it('returns 409 when a name conflicts with an existing group', async () => {
-    await createGroup({ name: 'ExistingGroup' });
+    await createGroup({ assignmentId: assignment.id, name: 'ExistingGroup' });
     const res = await app.inject({
       method: 'POST',
       url: '/api/groups/bulk',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: [{ name: 'ExistingGroup' }, { name: 'NewOne' }],
+      payload: { assignmentId: assignment.id, groups: [{ name: 'ExistingGroup' }, { name: 'NewOne' }] },
     });
     expect(res.statusCode).toBe(409);
+  });
+
+  it('managing AM can bulk create; unmanaged AM gets 403', async () => {
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/api/groups/bulk',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { assignmentId: assignment.id, groups: [{ name: 'AMBulk1' }] },
+    });
+    expect(ok.statusCode).toBe(201);
+
+    const forbidden = await app.inject({
+      method: 'POST',
+      url: '/api/groups/bulk',
+      headers: { authorization: `Bearer ${am2Token}` },
+      payload: { assignmentId: assignment.id, groups: [{ name: 'AMBulk2' }] },
+    });
+    expect(forbidden.statusCode).toBe(403);
   });
 
   it('regular user cannot bulk create groups', async () => {
@@ -229,7 +309,7 @@ describe('POST /api/groups/bulk', () => {
       method: 'POST',
       url: '/api/groups/bulk',
       headers: { authorization: `Bearer ${userToken}` },
-      payload: [{ name: 'UserGroup' }],
+      payload: { assignmentId: assignment.id, groups: [{ name: 'UserBulk' }] },
     });
     expect(res.statusCode).toBe(403);
   });
@@ -239,41 +319,38 @@ describe('POST /api/groups/bulk', () => {
 // PUT /api/groups/:id
 // ---------------------------------------------------------------------------
 describe('PUT /api/groups/:id', () => {
-  it('admin updates group name', async () => {
-    const g = await createGroup({ name: 'OldName' });
+  it('admin updates group name and enabled state', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'OldName' });
     const res = await app.inject({
       method: 'PUT',
       url: `/api/groups/${g.id}`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'NewName', enabled: true },
+      payload: { name: 'NewName', enabled: false },
     });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).group.name).toBe('NewName');
+    const body = JSON.parse(res.body);
+    expect(body.group.name).toBe('NewName');
+    expect(body.group.enabled).toBe(false);
   });
 
-  it('admin disables a group', async () => {
-    const g = await createGroup({ name: 'Disableable' });
+  it('returns 409 when renaming to an existing name in the assignment', async () => {
+    await createGroup({ assignmentId: assignment.id, name: 'TakenName' });
+    const g = await createGroup({ assignmentId: assignment.id, name: 'RenameMe' });
     const res = await app.inject({
       method: 'PUT',
       url: `/api/groups/${g.id}`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'Disableable', enabled: false },
+      payload: { name: 'TakenName' },
     });
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).group.enabled).toBe(false);
+    expect(res.statusCode).toBe(409);
   });
 
   it('returns 400 when maxMembers is less than current member count', async () => {
-    const g = await createGroup({ name: 'ShrinkGroup', maxMembers: 5 });
-    // Add 3 members directly
+    const g = await createGroup({ assignmentId: assignment.id, name: 'ShrinkGroup', maxMembers: 5 });
     for (let i = 0; i < 3; i++) {
       const u = await createUser({ username: `shrink${i}`, email: `shrink${i}@test.com` });
-      await app.inject({
-        method: 'PUT',
-        url: `/api/users/${u.id}/group`,
-        headers: { authorization: `Bearer ${adminToken}` },
-        payload: { groupId: g.id },
-      });
+      await addUserToSubject(u.id, subject.id);
+      await addUserToGroup(u.id, g.id, assignment.id);
     }
     const res = await app.inject({
       method: 'PUT',
@@ -283,6 +360,23 @@ describe('PUT /api/groups/:id', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).error).toMatch(/members/i);
+  });
+
+  it('setting maxMembers exactly equal to current member count succeeds', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'BoundaryGroup', maxMembers: 10 });
+    for (let i = 0; i < 3; i++) {
+      const u = await createUser({ username: `bnd${i}`, email: `bnd${i}@test.com` });
+      await addUserToSubject(u.id, subject.id);
+      await addUserToGroup(u.id, g.id, assignment.id);
+    }
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/groups/${g.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'BoundaryGroup', enabled: true, maxMembers: 3 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).group.max_members).toBe(3);
   });
 
   it('returns 404 for non-existent group', async () => {
@@ -295,15 +389,23 @@ describe('PUT /api/groups/:id', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('assignment_manager cannot update groups', async () => {
-    const g = await createGroup({ name: 'AMUpdateTarget' });
-    const res = await app.inject({
+  it('managing AM can update; unmanaged AM gets 403', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'AMUpdateTarget' });
+    const ok = await app.inject({
       method: 'PUT',
       url: `/api/groups/${g.id}`,
       headers: { authorization: `Bearer ${amToken}` },
+      payload: { name: 'AMUpdated', enabled: true },
+    });
+    expect(ok.statusCode).toBe(200);
+
+    const forbidden = await app.inject({
+      method: 'PUT',
+      url: `/api/groups/${g.id}`,
+      headers: { authorization: `Bearer ${am2Token}` },
       payload: { name: 'Hacked', enabled: true },
     });
-    expect(res.statusCode).toBe(403);
+    expect(forbidden.statusCode).toBe(403);
   });
 });
 
@@ -311,14 +413,41 @@ describe('PUT /api/groups/:id', () => {
 // DELETE /api/groups/:id
 // ---------------------------------------------------------------------------
 describe('DELETE /api/groups/:id', () => {
-  it('admin deletes a group', async () => {
-    const g = await createGroup({ name: 'DeleteMe' });
+  it('admin deletes a group; memberships cascade but users survive', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'DeleteMe' });
+    await addUserToGroup(user1.id, g.id, assignment.id);
+
     const res = await app.inject({
       method: 'DELETE',
       url: `/api/groups/${g.id}`,
       headers: { authorization: `Bearer ${adminToken}` },
     });
     expect(res.statusCode).toBe(200);
+
+    const db = getPool();
+    const memberships = await db.query('SELECT COUNT(*)::int AS c FROM user_groups WHERE group_id = $1', [g.id]);
+    expect(memberships.rows[0].c).toBe(0);
+    const users = await db.query('SELECT COUNT(*)::int AS c FROM users WHERE id = $1', [user1.id]);
+    expect(users.rows[0].c).toBe(1);
+  });
+
+  it('managing AM can delete; unmanaged AM gets 403', async () => {
+    const g1 = await createGroup({ assignmentId: assignment.id, name: 'AMDel1' });
+    const g2 = await createGroup({ assignmentId: assignment.id, name: 'AMDel2' });
+
+    const forbidden = await app.inject({
+      method: 'DELETE',
+      url: `/api/groups/${g1.id}`,
+      headers: { authorization: `Bearer ${am2Token}` },
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    const ok = await app.inject({
+      method: 'DELETE',
+      url: `/api/groups/${g2.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+    });
+    expect(ok.statusCode).toBe(200);
   });
 
   it('returns 404 for non-existent group', async () => {
@@ -331,7 +460,7 @@ describe('DELETE /api/groups/:id', () => {
   });
 
   it('regular user cannot delete groups', async () => {
-    const g = await createGroup({ name: 'Protected' });
+    const g = await createGroup({ assignmentId: assignment.id, name: 'Protected' });
     const res = await app.inject({
       method: 'DELETE',
       url: `/api/groups/${g.id}`,
@@ -346,8 +475,8 @@ describe('DELETE /api/groups/:id', () => {
 // ---------------------------------------------------------------------------
 describe('DELETE /api/groups/bulk', () => {
   it('admin bulk deletes groups', async () => {
-    const g1 = await createGroup({ name: 'BulkDel1' });
-    const g2 = await createGroup({ name: 'BulkDel2' });
+    const g1 = await createGroup({ assignmentId: assignment.id, name: 'BulkDel1' });
+    const g2 = await createGroup({ assignmentId: assignment.id, name: 'BulkDel2' });
     const res = await app.inject({
       method: 'DELETE',
       url: '/api/groups/bulk',
@@ -358,24 +487,64 @@ describe('DELETE /api/groups/bulk', () => {
     expect(JSON.parse(res.body).deleted).toBe(2);
   });
 
-  it('returns 400 for empty ids', async () => {
-    const res = await app.inject({
+  it('returns 400 for empty ids and invalid UUIDs', async () => {
+    const empty = await app.inject({
       method: 'DELETE',
       url: '/api/groups/bulk',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: { ids: [] },
     });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('returns 400 for invalid UUIDs', async () => {
-    const res = await app.inject({
+    expect(empty.statusCode).toBe(400);
+    const invalid = await app.inject({
       method: 'DELETE',
       url: '/api/groups/bulk',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: { ids: ['not-valid'] },
     });
-    expect(res.statusCode).toBe(400);
+    expect(invalid.statusCode).toBe(400);
+  });
+
+  it('managing AM can bulk delete groups of their assignment', async () => {
+    const g1 = await createGroup({ assignmentId: assignment.id, name: 'AMBulkDel1' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/groups/bulk',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { ids: [g1.id] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).deleted).toBe(1);
+  });
+
+  it('AM bulk delete including a group of an unmanaged assignment returns 403', async () => {
+    const a2 = await createAssignment({ subjectId: subject.id, name: 'A2' });
+    const managed = await createGroup({ assignmentId: assignment.id, name: 'ManagedG' });
+    const unmanaged = await createGroup({ assignmentId: a2.id, name: 'UnmanagedG' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/groups/bulk',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { ids: [managed.id, unmanaged.id] },
+    });
+    expect(res.statusCode).toBe(403);
+
+    // Nothing was deleted
+    const db = getPool();
+    const remaining = await db.query('SELECT COUNT(*)::int AS c FROM groups WHERE id = ANY($1)', [
+      [managed.id, unmanaged.id],
+    ]);
+    expect(remaining.rows[0].c).toBe(2);
+  });
+
+  it('regular user cannot bulk delete groups', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'UserBulkDel' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/groups/bulk',
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: { ids: [g.id] },
+    });
+    expect(res.statusCode).toBe(403);
   });
 });
 
@@ -383,8 +552,8 @@ describe('DELETE /api/groups/bulk', () => {
 // POST /api/groups/:id/join
 // ---------------------------------------------------------------------------
 describe('POST /api/groups/:id/join', () => {
-  it('user joins an enabled group', async () => {
-    const g = await createGroup({ name: 'Joinable', enabled: true });
+  it('subject member joins an enabled group', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'Joinable' });
     const res = await app.inject({
       method: 'POST',
       url: `/api/groups/${g.id}/join`,
@@ -394,8 +563,36 @@ describe('POST /api/groups/:id/join', () => {
     expect(JSON.parse(res.body).groupId).toBe(g.id);
   });
 
+  it('non-subject-member joining returns 403', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'MembersOnly' });
+    await createUser({ username: 'stranger', email: 'stranger@test.com' });
+    const strangerToken = await loginAs(app, 'stranger', 'TestPass123!');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/groups/${g.id}/join`,
+      headers: { authorization: `Bearer ${strangerToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toMatch(/not a member of this subject/i);
+  });
+
+  it('a user disabled after login cannot join (stale JWT) — 403 Account is disabled', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'NoDisabledJoin' });
+    // user1 logs in first, then is disabled; the JWT remains valid
+    await getPool().query('UPDATE users SET enabled = false WHERE id = $1', [user1.id]);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/groups/${g.id}/join`,
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('Account is disabled');
+    const { rows } = await getPool().query('SELECT 1 FROM user_groups WHERE user_id = $1', [user1.id]);
+    expect(rows).toHaveLength(0);
+  });
+
   it('returns 400 for disabled group', async () => {
-    const g = await createGroup({ name: 'Disabled', enabled: false });
+    const g = await createGroup({ assignmentId: assignment.id, name: 'Disabled', enabled: false });
     const res = await app.inject({
       method: 'POST',
       url: `/api/groups/${g.id}/join`,
@@ -405,37 +602,61 @@ describe('POST /api/groups/:id/join', () => {
     expect(JSON.parse(res.body).error).toMatch(/disabled/i);
   });
 
-  it('returns 400 when user is already in a group', async () => {
-    const g1 = await createGroup({ name: 'FirstGroup' });
-    const g2 = await createGroup({ name: 'SecondGroup' });
-    // Join first group
-    await app.inject({
+  it('returns 409 when already in a group for the same assignment', async () => {
+    const g1 = await createGroup({ assignmentId: assignment.id, name: 'FirstGroup' });
+    const g2 = await createGroup({ assignmentId: assignment.id, name: 'SecondGroup' });
+    const join1 = await app.inject({
       method: 'POST',
       url: `/api/groups/${g1.id}/join`,
       headers: { authorization: `Bearer ${userToken}` },
     });
-    // Try to join second group
+    expect(join1.statusCode).toBe(200);
+
     const res = await app.inject({
       method: 'POST',
       url: `/api/groups/${g2.id}/join`,
       headers: { authorization: `Bearer ${userToken}` },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(409);
     expect(JSON.parse(res.body).error).toMatch(/already in a group/i);
   });
 
+  it('same user can join groups in two different assignments of the subject', async () => {
+    const a2 = await createAssignment({ subjectId: subject.id, name: 'A2' });
+    const g1 = await createGroup({ assignmentId: assignment.id, name: 'A1Group' });
+    const g2 = await createGroup({ assignmentId: a2.id, name: 'A2Group' });
+
+    const join1 = await app.inject({
+      method: 'POST',
+      url: `/api/groups/${g1.id}/join`,
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(join1.statusCode).toBe(200);
+
+    const join2 = await app.inject({
+      method: 'POST',
+      url: `/api/groups/${g2.id}/join`,
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(join2.statusCode).toBe(200);
+
+    const db = getPool();
+    const rows = await db.query('SELECT COUNT(*)::int AS c FROM user_groups WHERE user_id = $1', [user1.id]);
+    expect(rows.rows[0].c).toBe(2);
+  });
+
   it('returns 409 when group is at capacity', async () => {
-    const g = await createGroup({ name: 'FullGroup', maxMembers: 1 });
-    // First user fills the group
-    await createUser({ username: 'filler', email: 'filler@test.com' });
+    const g = await createGroup({ assignmentId: assignment.id, name: 'FullGroup', maxMembers: 1 });
+    const filler = await createUser({ username: 'filler', email: 'filler@test.com' });
+    await addUserToSubject(filler.id, subject.id);
     const fToken = await loginAs(app, 'filler', 'TestPass123!');
-    await app.inject({
+    const fill = await app.inject({
       method: 'POST',
       url: `/api/groups/${g.id}/join`,
       headers: { authorization: `Bearer ${fToken}` },
     });
+    expect(fill.statusCode).toBe(200);
 
-    // user1 tries to join full group
     const res = await app.inject({
       method: 'POST',
       url: `/api/groups/${g.id}/join`,
@@ -454,10 +675,42 @@ describe('POST /api/groups/:id/join', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('returns 401 without token', async () => {
-    const g = await createGroup({ name: 'NoAuthGroup' });
-    const res = await app.inject({ method: 'POST', url: `/api/groups/${g.id}/join` });
-    expect(res.statusCode).toBe(401);
+  it('returns 401 without token and 400 for invalid UUID', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'NoAuthGroup' });
+    const noAuth = await app.inject({ method: 'POST', url: `/api/groups/${g.id}/join` });
+    expect(noAuth.statusCode).toBe(401);
+    const badId = await app.inject({
+      method: 'POST',
+      url: '/api/groups/not-a-uuid/join',
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(badId.statusCode).toBe(400);
+  });
+
+  it('group_join_locked blocks regular users but not an AM who is a subject member', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'LockedGroup' });
+    await addUserToSubject(am1.id, subject.id);
+    await app.inject({
+      method: 'PUT',
+      url: '/api/config/group_join_locked',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { value: 'true' },
+    });
+
+    const userRes = await app.inject({
+      method: 'POST',
+      url: `/api/groups/${g.id}/join`,
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(userRes.statusCode).toBe(403);
+    expect(JSON.parse(userRes.body).error).toMatch(/locked/i);
+
+    const amRes = await app.inject({
+      method: 'POST',
+      url: `/api/groups/${g.id}/join`,
+      headers: { authorization: `Bearer ${amToken}` },
+    });
+    expect(amRes.statusCode).toBe(200);
   });
 });
 
@@ -466,7 +719,7 @@ describe('POST /api/groups/:id/join', () => {
 // ---------------------------------------------------------------------------
 describe('POST /api/groups/:id/leave', () => {
   it('user leaves their group', async () => {
-    const g = await createGroup({ name: 'LeaveGroup', enabled: true });
+    const g = await createGroup({ assignmentId: assignment.id, name: 'LeaveGroup' });
     await app.inject({
       method: 'POST',
       url: `/api/groups/${g.id}/join`,
@@ -479,10 +732,14 @@ describe('POST /api/groups/:id/leave', () => {
       headers: { authorization: `Bearer ${userToken}` },
     });
     expect(res.statusCode).toBe(200);
+
+    const db = getPool();
+    const rows = await db.query('SELECT COUNT(*)::int AS c FROM user_groups WHERE user_id = $1', [user1.id]);
+    expect(rows.rows[0].c).toBe(0);
   });
 
   it('returns 400 when user is not a member of this group', async () => {
-    const g = await createGroup({ name: 'NotMemberGroup' });
+    const g = await createGroup({ assignmentId: assignment.id, name: 'NotMemberGroup' });
     const res = await app.inject({
       method: 'POST',
       url: `/api/groups/${g.id}/leave`,
@@ -491,216 +748,41 @@ describe('POST /api/groups/:id/leave', () => {
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).error).toMatch(/not a member/i);
   });
-});
 
-// ---------------------------------------------------------------------------
-// POST /api/groups/import-mappings
-// ---------------------------------------------------------------------------
-describe('POST /api/groups/import-mappings', () => {
-  it('admin imports user-group mappings', async () => {
-    const g = await createGroup({ name: 'MappingGroup', enabled: true });
-    await createUser({ username: 'mapuser', email: 'mapuser@test.com' });
+  it('a user disabled after login cannot leave (stale JWT) — 403 Account is disabled', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'NoDisabledLeave' });
+    await addUserToGroup(user1.id, g.id, assignment.id);
+    await getPool().query('UPDATE users SET enabled = false WHERE id = $1', [user1.id]);
     const res = await app.inject({
       method: 'POST',
-      url: '/api/groups/import-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        rows: [{ email: 'mapuser@test.com', groupName: 'MappingGroup' }],
-      },
+      url: `/api/groups/${g.id}/leave`,
+      headers: { authorization: `Bearer ${userToken}` },
     });
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).imported).toBe(1);
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('Account is disabled');
+    const { rows } = await getPool().query('SELECT 1 FROM user_groups WHERE user_id = $1', [user1.id]);
+    expect(rows).toHaveLength(1);
   });
 
-  it('skips row when user not found', async () => {
-    await createGroup({ name: 'SkipGroup', enabled: true });
+  it('returns 400 when the user is in a different group of the same assignment', async () => {
+    const g1 = await createGroup({ assignmentId: assignment.id, name: 'ActualGroup' });
+    const g2 = await createGroup({ assignmentId: assignment.id, name: 'WrongGroup' });
+    await addUserToGroup(user1.id, g1.id, assignment.id);
     const res = await app.inject({
       method: 'POST',
-      url: '/api/groups/import-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { rows: [{ email: 'ghost@test.com', groupName: 'SkipGroup' }] },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.imported).toBe(0);
-    expect(body.skipped.some((s) => s.reason === 'User not found')).toBe(true);
-  });
-
-  it('skips row when group not found', async () => {
-    await createUser({ username: 'orphan', email: 'orphan@test.com' });
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups/import-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { rows: [{ email: 'orphan@test.com', groupName: 'GhostGroup' }] },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).skipped.some((s) => s.reason === 'Group not found')).toBe(true);
-  });
-
-  it('skips admin users in mappings', async () => {
-    const g = await createGroup({ name: 'AdminMap' });
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups/import-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { rows: [{ email: 'admin@gap.local', groupName: g.name }] },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.imported).toBe(0);
-    expect(body.skipped[0].reason).toMatch(/admin/i);
-  });
-
-  it('returns 400 for empty rows', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups/import-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { rows: [] },
+      url: `/api/groups/${g2.id}/leave`,
+      headers: { authorization: `Bearer ${userToken}` },
     });
     expect(res.statusCode).toBe(400);
   });
 
-  it('regular user cannot import mappings', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups/import-mappings',
-      headers: { authorization: `Bearer ${userToken}` },
-      payload: { rows: [{ email: 'a@test.com', groupName: 'G' }] },
-    });
-    expect(res.statusCode).toBe(403);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/groups/export-mappings
-// ---------------------------------------------------------------------------
-describe('GET /api/groups/export-mappings', () => {
-  it('admin exports user-group mappings', async () => {
-    const g = await createGroup({ name: 'ExportGroup', enabled: true });
-    const u = await createUser({ username: 'exportuser', email: 'export@test.com' });
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${u.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g.id },
-    });
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/groups/export-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(Array.isArray(body.mappings)).toBe(true);
-    expect(body.mappings.some((m) => m.email === 'export@test.com' && m.groupName === 'ExportGroup')).toBe(true);
-  });
-
-  it('assignment_manager can export mappings', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/groups/export-mappings',
-      headers: { authorization: `Bearer ${amToken}` },
-    });
-    expect(res.statusCode).toBe(200);
-  });
-
-  it('returns empty array when no mappings exist', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/groups/export-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.mappings).toEqual([]);
-  });
-
-  it('regular user cannot export mappings', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/groups/export-mappings',
-      headers: { authorization: `Bearer ${userToken}` },
-    });
-    expect(res.statusCode).toBe(403);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/groups/:id/join — disabled user
-// ---------------------------------------------------------------------------
-describe('POST /api/groups/:id/join — disabled user', () => {
-  it('disabled user attempting to join returns 403', async () => {
-    const g = await createGroup({ name: 'DisabledJoinGroup', enabled: true });
-    // Create user as enabled, get token, then disable the account
-    const u = await createUser({ username: 'disableduser', email: 'disabled@test.com' });
-    const disabledToken = await loginAs(app, 'disableduser', 'TestPass123!');
-
-    // Disable the user via admin
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { email: u.email, firstName: 'Dis', lastName: 'Abled', enabled: false },
-    });
-
-    const res = await app.inject({
-      method: 'POST',
-      url: `/api/groups/${g.id}/join`,
-      headers: { authorization: `Bearer ${disabledToken}` },
-    });
-    expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).error).toMatch(/disabled/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/groups/:id/leave — disabled user and locked system
-// ---------------------------------------------------------------------------
-describe('POST /api/groups/:id/leave — disabled user and locked system', () => {
-  it('disabled user attempting to leave returns 403', async () => {
-    const g = await createGroup({ name: 'DisabledLeaveGroup', enabled: true });
-    // Create user as enabled, join group, then disable
-    const u = await createUser({ username: 'disleave', email: 'disleave@test.com' });
-    const tempToken = await loginAs(app, 'disleave', 'TestPass123!');
-
-    // Join the group while enabled
-    await app.inject({
-      method: 'POST',
-      url: `/api/groups/${g.id}/join`,
-      headers: { authorization: `Bearer ${tempToken}` },
-    });
-
-    // Disable the user via admin
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { email: u.email, firstName: 'Dis', lastName: 'Leave', enabled: false },
-    });
-
-    // Try to leave while disabled (token still valid but account disabled)
-    const res = await app.inject({
-      method: 'POST',
-      url: `/api/groups/${g.id}/leave`,
-      headers: { authorization: `Bearer ${tempToken}` },
-    });
-    expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).error).toMatch(/disabled/i);
-  });
-
   it('user attempting to leave when group_join_locked=true returns 403', async () => {
-    const g = await createGroup({ name: 'LockedLeaveGroup', enabled: true });
-
-    // Join the group first
+    const g = await createGroup({ assignmentId: assignment.id, name: 'LockedLeaveGroup' });
     await app.inject({
       method: 'POST',
       url: `/api/groups/${g.id}/join`,
       headers: { authorization: `Bearer ${userToken}` },
     });
-
-    // Lock group joining
     await app.inject({
       method: 'PUT',
       url: '/api/config/group_join_locked',
@@ -708,7 +790,6 @@ describe('POST /api/groups/:id/leave — disabled user and locked system', () =>
       payload: { value: 'true' },
     });
 
-    // Try to leave while locked
     const res = await app.inject({
       method: 'POST',
       url: `/api/groups/${g.id}/leave`,
@@ -716,118 +797,6 @@ describe('POST /api/groups/:id/leave — disabled user and locked system', () =>
     });
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body).error).toMatch(/locked/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// RBAC: AM on admin-only group endpoints
-// ---------------------------------------------------------------------------
-describe('RBAC: AM on admin-only group endpoints', () => {
-  it('DELETE /api/groups/:id with AM token returns 403', async () => {
-    const g = await createGroup({ name: 'AMDeleteTarget' });
-    const res = await app.inject({
-      method: 'DELETE',
-      url: `/api/groups/${g.id}`,
-      headers: { authorization: `Bearer ${amToken}` },
-    });
-    expect(res.statusCode).toBe(403);
-  });
-
-  it('POST /api/groups/bulk with AM token returns 403', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups/bulk',
-      headers: { authorization: `Bearer ${amToken}` },
-      payload: [{ name: 'AMBulkGroup' }],
-    });
-    expect(res.statusCode).toBe(403);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// PUT /api/groups/:id — maxMembers boundary
-// ---------------------------------------------------------------------------
-describe('PUT /api/groups/:id — maxMembers boundary', () => {
-  it('setting maxMembers exactly equal to current member count succeeds', async () => {
-    const g = await createGroup({ name: 'BoundaryGroup', maxMembers: 10 });
-    // Add exactly 3 members
-    for (let i = 0; i < 3; i++) {
-      const u = await createUser({ username: `bnd${i}`, email: `bnd${i}@test.com` });
-      await app.inject({
-        method: 'PUT',
-        url: `/api/users/${u.id}/group`,
-        headers: { authorization: `Bearer ${adminToken}` },
-        payload: { groupId: g.id },
-      });
-    }
-    // Set maxMembers = 3 (exactly the current count)
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/api/groups/${g.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'BoundaryGroup', enabled: true, maxMembers: 3 },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).group.max_members).toBe(3);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/groups/import-mappings — full group error path
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// POST /api/groups/import-mappings — skip-action rows
-// ---------------------------------------------------------------------------
-describe('POST /api/groups/import-mappings — skip-action rows', () => {
-  it('rows with action=skip appear in the skipped response', async () => {
-    await createGroup({ name: 'SkipActionGroup', enabled: true });
-    await createUser({ username: 'skipuser', email: 'skipuser@test.com' });
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups/import-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        rows: [
-          { email: 'skipuser@test.com', groupName: 'SkipActionGroup' },
-          { email: 'skipped@test.com', groupName: 'SkipActionGroup', action: 'skip', skipReason: 'Duplicate entry' },
-        ],
-      },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.imported).toBe(1);
-    expect(body.skipped.some((s) => s.email === 'skipped@test.com' && s.reason === 'Duplicate entry')).toBe(true);
-  });
-
-  it('skip-action row with no skipReason defaults to "Skipped"', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups/import-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        rows: [{ email: 'noop@test.com', groupName: 'AnyGroup', action: 'skip' }],
-      },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.skipped).toHaveLength(1);
-    expect(body.skipped[0].reason).toBe('Skipped');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/groups/:id/join and /leave — invalid UUID in path
-// ---------------------------------------------------------------------------
-describe('POST /api/groups/:id/join and /leave — invalid UUID', () => {
-  it('join with invalid UUID returns 400', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups/not-a-uuid/join',
-      headers: { authorization: `Bearer ${userToken}` },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toMatch(/invalid/i);
   });
 
   it('leave with invalid UUID returns 400', async () => {
@@ -837,185 +806,46 @@ describe('POST /api/groups/:id/join and /leave — invalid UUID', () => {
       headers: { authorization: `Bearer ${userToken}` },
     });
     expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toMatch(/invalid/i);
   });
 });
 
-describe('POST /api/groups/import-mappings — full group error path', () => {
-  it('importing a user mapping to a full group records an error', async () => {
-    const g = await createGroup({ name: 'FullImportGroup', maxMembers: 1 });
-    // Fill the group with one member
-    const filler = await createUser({ username: 'filler', email: 'filler@test.com' });
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${filler.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g.id },
-    });
-
-    // Try to import another user into the full group
-    await createUser({ username: 'overflow', email: 'overflow@test.com' });
+// ---------------------------------------------------------------------------
+// PUT /api/users/:id/group — universal subject-membership rule & replace
+// ---------------------------------------------------------------------------
+describe('PUT /api/users/:id/group — placement rules', () => {
+  it('admin placing a non-subject-member returns 403 (universal rule)', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'RuleGroup' });
+    const outsider = await createUser({ username: 'outsider', email: 'outsider@test.com' });
     const res = await app.inject({
-      method: 'POST',
-      url: '/api/groups/import-mappings',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        rows: [{ email: 'overflow@test.com', groupName: 'FullImportGroup' }],
-      },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.imported).toBe(0);
-    expect(body.errors.length).toBe(1);
-    expect(body.errors[0].error).toMatch(/full/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// DELETE /api/groups/:id — ON DELETE SET NULL cascade on members
-// ---------------------------------------------------------------------------
-describe('DELETE /api/groups/:id — member detachment (ON DELETE SET NULL)', () => {
-  it('detaches members (group_id null) instead of deleting them when the group is deleted', async () => {
-    const g = await createGroup({ name: 'CascadeGroup' });
-    const m1 = await createUser({ username: 'cascade1', email: 'cascade1@test.com' });
-    const m2 = await createUser({ username: 'cascade2', email: 'cascade2@test.com' });
-
-    // Assign both members to the group
-    for (const m of [m1, m2]) {
-      const assignRes = await app.inject({
-        method: 'PUT',
-        url: `/api/users/${m.id}/group`,
-        headers: { authorization: `Bearer ${adminToken}` },
-        payload: { groupId: g.id },
-      });
-      expect(assignRes.statusCode).toBe(200);
-    }
-
-    // Delete the group
-    const delRes = await app.inject({
-      method: 'DELETE',
-      url: `/api/groups/${g.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(delRes.statusCode).toBe(200);
-
-    // Each member must still exist with group_id now null
-    for (const m of [m1, m2]) {
-      const getRes = await app.inject({
-        method: 'GET',
-        url: `/api/users/${m.id}`,
-        headers: { authorization: `Bearer ${adminToken}` },
-      });
-      expect(getRes.statusCode).toBe(200);
-      expect(JSON.parse(getRes.body).user.group_id).toBeNull();
-    }
-
-    // Both detached members should now appear under groupId=none
-    const noneRes = await app.inject({
-      method: 'GET',
-      url: '/api/users?groupId=none',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(noneRes.statusCode).toBe(200);
-    const ungrouped = JSON.parse(noneRes.body).users;
-    expect(ungrouped.some((u) => u.username === 'cascade1')).toBe(true);
-    expect(ungrouped.some((u) => u.username === 'cascade2')).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// DELETE /api/groups/bulk — ON DELETE SET NULL cascade on members
-// ---------------------------------------------------------------------------
-describe('DELETE /api/groups/bulk — member detachment (ON DELETE SET NULL)', () => {
-  it('bulk delete detaches members of every deleted group rather than deleting them', async () => {
-    const g1 = await createGroup({ name: 'BulkCascade1' });
-    const g2 = await createGroup({ name: 'BulkCascade2' });
-    const m1 = await createUser({ username: 'bulkcasc1', email: 'bulkcasc1@test.com' });
-    const m2 = await createUser({ username: 'bulkcasc2', email: 'bulkcasc2@test.com' });
-
-    await app.inject({
       method: 'PUT',
-      url: `/api/users/${m1.id}/group`,
+      url: `/api/users/${outsider.id}/group`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g1.id },
+      payload: { assignmentId: assignment.id, groupId: g.id },
     });
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${m2.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g2.id },
-    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toMatch(/not a member of this subject/i);
+  });
+
+  it('admin reassigns a user to another group in the same assignment (replace)', async () => {
+    const g1 = await createGroup({ assignmentId: assignment.id, name: 'FromGroup' });
+    const g2 = await createGroup({ assignmentId: assignment.id, name: 'ToGroup' });
+    await addUserToGroup(user1.id, g1.id, assignment.id);
 
     const res = await app.inject({
-      method: 'DELETE',
-      url: '/api/groups/bulk',
+      method: 'PUT',
+      url: `/api/users/${user1.id}/group`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { ids: [g1.id, g2.id] },
+      payload: { assignmentId: assignment.id, groupId: g2.id },
     });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).deleted).toBe(2);
+    expect(JSON.parse(res.body).user.groupId).toBe(g2.id);
 
-    for (const m of [m1, m2]) {
-      const getRes = await app.inject({
-        method: 'GET',
-        url: `/api/users/${m.id}`,
-        headers: { authorization: `Bearer ${adminToken}` },
-      });
-      expect(getRes.statusCode).toBe(200);
-      expect(JSON.parse(getRes.body).user.group_id).toBeNull();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// DELETE /api/groups/:id — scoped deletion / member_count consistency
-// ---------------------------------------------------------------------------
-describe('DELETE /api/groups/:id — scoped deletion preserves other groups', () => {
-  it('deleting a different empty group leaves the populated group and its memberCount intact', async () => {
-    const populated = await createGroup({ name: 'PopulatedGroup' });
-    const empty = await createGroup({ name: 'EmptyGroup' });
-    const member = await createUser({ username: 'scopedmember', email: 'scoped@test.com' });
-
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${member.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: populated.id },
-    });
-
-    // Delete the unrelated empty group
-    const delEmpty = await app.inject({
-      method: 'DELETE',
-      url: `/api/groups/${empty.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(delEmpty.statusCode).toBe(200);
-
-    // The populated group is untouched and still reports its single member
-    const getPopulated = await app.inject({
-      method: 'GET',
-      url: `/api/groups/${populated.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(getPopulated.statusCode).toBe(200);
-    const populatedBody = JSON.parse(getPopulated.body);
-    expect(populatedBody.group.memberCount).toBe(1);
-    expect(populatedBody.members).toHaveLength(1);
-
-    // Now delete the populated group; member is detached, not deleted
-    const delPopulated = await app.inject({
-      method: 'DELETE',
-      url: `/api/groups/${populated.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(delPopulated.statusCode).toBe(200);
-
-    const getMember = await app.inject({
-      method: 'GET',
-      url: `/api/users/${member.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(getMember.statusCode).toBe(200);
-    expect(JSON.parse(getMember.body).user.group_id).toBeNull();
+    const db = getPool();
+    const rows = await db.query('SELECT group_id FROM user_groups WHERE user_id = $1 AND assignment_id = $2', [
+      user1.id,
+      assignment.id,
+    ]);
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].group_id).toBe(g2.id);
   });
 });

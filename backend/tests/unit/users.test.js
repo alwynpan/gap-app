@@ -2,6 +2,9 @@
 jest.mock('../../src/models/User');
 jest.mock('../../src/models/Group');
 jest.mock('../../src/models/Role');
+jest.mock('../../src/models/Subject');
+jest.mock('../../src/models/Assignment');
+jest.mock('../../src/models/UserGroup');
 jest.mock('../../src/models/PasswordResetToken', () => ({
   create: jest.fn(),
   findByToken: jest.fn(),
@@ -27,10 +30,19 @@ jest.mock('../../src/utils/logger', () => ({
 const User = require('../../src/models/User');
 const Group = require('../../src/models/Group');
 const Role = require('../../src/models/Role');
+const Subject = require('../../src/models/Subject');
+const Assignment = require('../../src/models/Assignment');
+const UserGroup = require('../../src/models/UserGroup');
 const PasswordResetToken = require('../../src/models/PasswordResetToken');
 const { sendPasswordResetEmail, sendPasswordSetupEmail } = require('../../src/services/email');
 
 describe('Users Routes', () => {
+  const SUBJECT_ID = '30000000-0000-4000-8000-000000000001';
+  const SUBJECT_ID_2 = '30000000-0000-4000-8000-000000000002';
+  const ASSIGNMENT_ID = '40000000-0000-4000-8000-000000000001';
+  const ASSIGNMENT_ID_2 = '40000000-0000-4000-8000-000000000002';
+  const GROUP_ID = '10000000-0000-4000-8000-000000000001';
+
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -42,6 +54,8 @@ describe('Users Routes', () => {
     delete: jest.fn(),
     checkRole: jest.fn().mockResolvedValue(options.checkRoleResult ?? true),
     requireAdmin: jest.fn().mockResolvedValue(options.requireAdminResult ?? true),
+    requireAssignmentManager: jest.fn().mockResolvedValue(options.requireAssignmentManagerResult ?? true),
+    assertManagesAssignment: jest.fn().mockResolvedValue(options.assertManagesAssignmentResult ?? true),
   });
 
   const captureHandlers = (mockFastify) => {
@@ -89,20 +103,182 @@ describe('Users Routes', () => {
       ]);
     });
 
-    it('returns all users successfully', async () => {
+    it('returns all users enriched with subjects and memberships (batch queries)', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findAll.mockResolvedValue([
         { id: '00000000-0000-4000-8000-000000000001', username: 'user1', email: 'user1@test.com' },
+        { id: '00000000-0000-4000-8000-000000000002', username: 'user2', email: 'user2@test.com' },
+      ]);
+      Subject.findForUsers.mockResolvedValue([
+        { user_id: '00000000-0000-4000-8000-000000000001', id: SUBJECT_ID, name: 'Subject A' },
+      ]);
+      UserGroup.findMembershipsForUsers.mockResolvedValue([
+        {
+          user_id: '00000000-0000-4000-8000-000000000001',
+          assignment_id: ASSIGNMENT_ID,
+          assignment_name: 'A1',
+          subject_id: SUBJECT_ID,
+          subject_name: 'Subject A',
+          group_id: GROUP_ID,
+          group_name: 'Team Alpha',
+        },
       ]);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users_get']({}, mockReply);
+      await handlers['/users_get']({ user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' } }, mockReply);
       expect(User.findAll).toHaveBeenCalled();
+      expect(Subject.findForUsers).toHaveBeenCalledWith([
+        '00000000-0000-4000-8000-000000000001',
+        '00000000-0000-4000-8000-000000000002',
+      ]);
+      expect(UserGroup.findMembershipsForUsers).toHaveBeenCalledWith([
+        '00000000-0000-4000-8000-000000000001',
+        '00000000-0000-4000-8000-000000000002',
+      ]);
       expect(mockReply.send).toHaveBeenCalledWith({
-        users: [{ id: '00000000-0000-4000-8000-000000000001', username: 'user1', email: 'user1@test.com' }],
+        users: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            username: 'user1',
+            email: 'user1@test.com',
+            subjects: [{ id: SUBJECT_ID, name: 'Subject A' }],
+            memberships: [
+              {
+                assignment_id: ASSIGNMENT_ID,
+                assignment_name: 'A1',
+                subject_id: SUBJECT_ID,
+                subject_name: 'Subject A',
+                group_id: GROUP_ID,
+                group_name: 'Team Alpha',
+              },
+            ],
+          },
+          {
+            id: '00000000-0000-4000-8000-000000000002',
+            username: 'user2',
+            email: 'user2@test.com',
+            subjects: [],
+            memberships: [],
+          },
+        ],
       });
+    });
+
+    it('passes subjectId, assignmentId and groupId filters through to User.findAll', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findAll.mockResolvedValue([]);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' },
+          query: { subjectId: SUBJECT_ID, assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID },
+        },
+        mockReply
+      );
+      expect(User.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ subjectId: SUBJECT_ID, assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID })
+      );
+    });
+
+    it('rejects invalid subjectId filter', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get'](
+        { user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' }, query: { subjectId: 'not-a-uuid' } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid subjectId filter' });
+      expect(User.findAll).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid assignmentId filter', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get'](
+        { user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' }, query: { assignmentId: 'nope' } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid assignmentId filter' });
+      expect(User.findAll).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when groupId is 'none' without assignmentId", async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get'](
+        { user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' }, query: { groupId: 'none' } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'assignmentId is required when filtering ungrouped users' });
+      expect(User.findAll).not.toHaveBeenCalled();
+    });
+
+    it("allows groupId 'none' when assignmentId is provided", async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findAll.mockResolvedValue([]);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' },
+          query: { groupId: 'none', assignmentId: ASSIGNMENT_ID },
+        },
+        mockReply
+      );
+      expect(User.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ groupId: 'none', assignmentId: ASSIGNMENT_ID })
+      );
+      expect(mockReply.send).toHaveBeenCalledWith({ users: [] });
+    });
+
+    it('scopes results with managedBy for assignment_manager callers', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findAll.mockResolvedValue([]);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get'](
+        { user: { id: '00000000-0000-4000-8000-000000000042', role: 'assignment_manager' }, query: {} },
+        mockReply
+      );
+      expect(User.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ managedBy: '00000000-0000-4000-8000-000000000042' })
+      );
+    });
+
+    it('does not set managedBy for admin callers', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findAll.mockResolvedValue([]);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_get'](
+        { user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' }, query: {} },
+        mockReply
+      );
+      const filters = User.findAll.mock.calls[0][0];
+      expect(filters.managedBy).toBeUndefined();
     });
 
     it('rejects invalid status filter', async () => {
@@ -170,7 +346,7 @@ describe('Users Routes', () => {
       expect(mockFastify.checkRole).toHaveBeenCalledWith(request, mockReply, ['admin', 'assignment_manager']);
     });
 
-    it('returns user by id', async () => {
+    it('returns user by id enriched with subjects and memberships', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       User.findById.mockResolvedValue({
@@ -179,13 +355,34 @@ describe('Users Routes', () => {
         email: 'test@test.com',
         password_hash: 'hash',
       });
+      const subjects = [{ id: SUBJECT_ID, name: 'Subject 1' }];
+      const memberships = [
+        {
+          assignment_id: ASSIGNMENT_ID,
+          assignment_name: 'Assignment 1',
+          subject_id: SUBJECT_ID,
+          subject_name: 'Subject 1',
+          group_id: GROUP_ID,
+          group_name: 'Group 1',
+        },
+      ];
+      Subject.findForUser.mockResolvedValue(subjects);
+      UserGroup.findMembershipsForUser.mockResolvedValue(memberships);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id_get']({ params: { id: '00000000-0000-4000-8000-000000000001' } }, mockReply);
       expect(User.findById).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
+      expect(Subject.findForUser).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
+      expect(UserGroup.findMembershipsForUser).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
       expect(mockReply.send).toHaveBeenCalledWith({
-        user: { id: '00000000-0000-4000-8000-000000000001', username: 'testuser', email: 'test@test.com' },
+        user: {
+          id: '00000000-0000-4000-8000-000000000001',
+          username: 'testuser',
+          email: 'test@test.com',
+          subjects,
+          memberships,
+        },
       });
     });
 
@@ -256,6 +453,16 @@ describe('Users Routes', () => {
   });
 
   describe('POST /users', () => {
+    beforeEach(() => {
+      User.findByUsername.mockResolvedValue(null);
+      User.findByEmail.mockResolvedValue(null);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
+      Subject.findById.mockResolvedValue({ id: SUBJECT_ID, name: 'Subject 1' });
+      Subject.addUsers.mockResolvedValue(1);
+      UserGroup.assignUserToGroup.mockResolvedValue();
+      Assignment.managesAnyInSubject.mockResolvedValue(true);
+    });
+
     it('rejects unauthenticated request in preHandler', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
@@ -295,6 +502,7 @@ describe('Users Routes', () => {
       email: 'new@test.com',
       firstName: 'Test',
       lastName: 'User',
+      subjectIds: ['30000000-0000-4000-8000-000000000001'],
     };
 
     it('rejects when firstName is missing', async () => {
@@ -414,9 +622,10 @@ describe('Users Routes', () => {
         firstName: 'Test',
         lastName: 'User',
         studentId: 'S123',
-        groupId: undefined,
         roleId: '20000000-0000-4000-8000-000000000003',
       });
+      // Enrols the new user in every selected subject
+      expect(Subject.addUsers).toHaveBeenCalledWith(SUBJECT_ID, ['00000000-0000-4000-8000-000000000001']);
       // Always sends setup email
       expect(PasswordResetToken.create).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', 'setup', 24);
       expect(sendPasswordSetupEmail).toHaveBeenCalled();
@@ -633,45 +842,196 @@ describe('Users Routes', () => {
       expect(User.create).not.toHaveBeenCalled();
     });
 
-    it('rejects creating user in a full group', async () => {
+    it('rejects role user without subjectIds', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Full Group',
-        max_members: 2,
-        member_count: 2,
-      });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
 
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      const { subjectIds: _subjectIds, ...bodyWithoutSubjects } = validCreateBody;
+      await handlers['/users_post']({ user: { role: 'admin' }, body: bodyWithoutSubjects }, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Subject is required' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects role user with empty subjectIds array', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { ...validCreateBody, groupId: '10000000-0000-4000-8000-000000000001' } },
+        { user: { role: 'admin' }, body: { ...validCreateBody, subjectIds: [] } },
         mockReply
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group is full' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Subject is required' });
       expect(User.create).not.toHaveBeenCalled();
     });
 
-    it('allows creating user in a group with capacity', async () => {
+    it('returns 404 when a subject does not exist', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      User.findByUsername.mockResolvedValue(null);
-      User.findByEmail.mockResolvedValue(null);
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Group',
-        max_members: 5,
-        member_count: 4,
+      Subject.findById.mockResolvedValue(null);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post']({ user: { role: 'admin' }, body: validCreateBody }, mockReply);
+
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Subject not found' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when an assignment manager creates a user in a subject they do not manage', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Assignment.managesAnyInSubject.mockResolvedValue(false);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { id: '00000000-0000-4000-8000-000000000099', role: 'assignment_manager' }, body: validCreateBody },
+        mockReply
+      );
+
+      expect(Assignment.managesAnyInSubject).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000099',
+        validCreateBody.subjectIds[0]
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Forbidden: You do not manage any assignment in this subject',
       });
-      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000003', name: 'user' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('allows an assignment manager to create a user in a subject they manage', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Assignment.managesAnyInSubject.mockResolvedValue(true);
+      User.create.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'newuser',
+        email: 'new@test.com',
+      });
+      PasswordResetToken.create.mockResolvedValue({ token: 'setup-token' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { id: '00000000-0000-4000-8000-000000000099', role: 'assignment_manager' }, body: validCreateBody },
+        mockReply
+      );
+
+      expect(User.create).toHaveBeenCalled();
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+    });
+
+    it('returns 400 when groupId is provided without assignmentId', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'admin' }, body: { ...validCreateBody, groupId: GROUP_ID } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'assignmentId is required when groupId is provided' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the placement assignment does not exist', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Assignment.findById.mockResolvedValue(null);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'admin' }, body: { ...validCreateBody, assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Assignment not found' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when the assignment does not belong to the selected subjects', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, subject_id: SUBJECT_ID_2 });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'admin' }, body: { ...validCreateBody, assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Assignment does not belong to the selected subjects' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the placement group does not exist', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, subject_id: SUBJECT_ID });
+      Group.findById.mockResolvedValue(null);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'admin' }, body: { ...validCreateBody, assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group not found' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when the group does not belong to the selected assignment', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, subject_id: SUBJECT_ID });
+      Group.findById.mockResolvedValue({ id: GROUP_ID, assignment_id: ASSIGNMENT_ID_2 });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'admin' }, body: { ...validCreateBody, assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID } },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group does not belong to the selected assignment' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('creates user and places them in the requested group', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, subject_id: SUBJECT_ID });
+      Group.findById.mockResolvedValue({ id: GROUP_ID, assignment_id: ASSIGNMENT_ID });
       User.create.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000001',
         username: 'newuser',
@@ -679,18 +1039,157 @@ describe('Users Routes', () => {
         student_id: null,
       });
       PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
-
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users_post'](
-        { body: { ...validCreateBody, groupId: '10000000-0000-4000-8000-000000000001' } },
+        { user: { role: 'admin' }, body: { ...validCreateBody, assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID } },
+        mockReply
+      );
+
+      expect(UserGroup.assignUserToGroup).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', GROUP_ID, {
+        replace: true,
+      });
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+      expect(mockReply.send).toHaveBeenCalledWith(expect.not.objectContaining({ warning: expect.anything() }));
+    });
+
+    it('returns 201 with a warning when group placement fails', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, subject_id: SUBJECT_ID });
+      Group.findById.mockResolvedValue({ id: GROUP_ID, assignment_id: ASSIGNMENT_ID });
+      User.create.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'newuser',
+        email: 'new@test.com',
+        student_id: null,
+      });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
+      const fullErr = new Error('Group is full');
+      fullErr.statusCode = 409;
+      UserGroup.assignUserToGroup.mockRejectedValue(fullErr);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        { user: { role: 'admin' }, body: { ...validCreateBody, assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID } },
         mockReply
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(201);
-      expect(User.create).toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'User created successfully',
+          warning: 'User created but group placement failed: Group is full',
+        })
+      );
+    });
+
+    it('creates assignment manager with assignmentIds and calls Assignment.addManagers', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000002', name: 'assignment_manager' });
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, subject_id: SUBJECT_ID });
+      Assignment.addManagers.mockResolvedValue(1);
+      User.create.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000005',
+        username: 'newam',
+        email: 'am@test.com',
+        student_id: null,
+      });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: {
+            username: 'newam',
+            email: 'am@test.com',
+            firstName: 'Test',
+            lastName: 'User',
+            role: 'assignment_manager',
+            assignmentIds: [ASSIGNMENT_ID],
+          },
+        },
+        mockReply
+      );
+
+      expect(Assignment.findById).toHaveBeenCalledWith(ASSIGNMENT_ID);
+      expect(Assignment.addManagers).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000005', [ASSIGNMENT_ID]);
+      expect(Subject.addUsers).not.toHaveBeenCalled();
+      expect(mockReply.code).toHaveBeenCalledWith(201);
+    });
+
+    it('returns 404 when an assignment manager assignmentId does not exist', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000002', name: 'assignment_manager' });
+      Assignment.findById.mockResolvedValue(null);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: {
+            username: 'newam',
+            email: 'am@test.com',
+            firstName: 'Test',
+            lastName: 'User',
+            role: 'assignment_manager',
+            assignmentIds: [ASSIGNMENT_ID],
+          },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Assignment not found' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('ignores subjectIds and placement fields for assignment_manager role', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: '20000000-0000-4000-8000-000000000002', name: 'assignment_manager' });
+      User.create.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000005',
+        username: 'newam',
+        email: 'am@test.com',
+        student_id: null,
+      });
+      PasswordResetToken.create.mockResolvedValue({ token: 'tok' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users_post'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          body: {
+            username: 'newam',
+            email: 'am@test.com',
+            firstName: 'Test',
+            lastName: 'User',
+            role: 'assignment_manager',
+            subjectIds: [SUBJECT_ID],
+            assignmentId: ASSIGNMENT_ID,
+            groupId: GROUP_ID,
+          },
+        },
+        mockReply
+      );
+
+      expect(Subject.addUsers).not.toHaveBeenCalled();
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
+      expect(mockReply.code).toHaveBeenCalledWith(201);
     });
 
     it('handles error when creating user', async () => {
@@ -735,6 +1234,7 @@ describe('Users Routes', () => {
             firstName: 'Test',
             lastName: 'User',
             studentId: 'S12345',
+            subjectIds: [SUBJECT_ID],
           },
         },
         mockReply
@@ -765,6 +1265,7 @@ describe('Users Routes', () => {
             password: 'password123',
             firstName: 'Test',
             lastName: 'User',
+            subjectIds: [SUBJECT_ID],
           },
         },
         mockReply
@@ -787,33 +1288,46 @@ describe('Users Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
     });
 
-    it('returns reply when role check fails in preHandler', async () => {
-      const mockFastify = createMockFastify({ checkRoleResult: false });
-      const handlers = captureHandlers(mockFastify);
-      const usersRoutes = require('../../src/routes/users');
-      usersRoutes(mockFastify, {});
-      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      const request = {
-        user: { id: '00000000-0000-4000-8000-000000000002', role: 'user' },
-        params: { id: '00000000-0000-4000-8000-000000000001' },
-      };
-      const result = await handlers['/users/:id/group_put_pre'](request, mockReply);
-      expect(mockFastify.checkRole).toHaveBeenCalledWith(request, mockReply, ['admin', 'assignment_manager']);
-      expect(result).toBe(mockReply);
+    const TARGET_USER_ID = '00000000-0000-4000-8000-000000000001';
+
+    const makeGroupRequest = (body) => ({
+      user: { id: '00000000-0000-4000-8000-000000000009', role: 'assignment_manager' },
+      params: { id: TARGET_USER_ID },
+      body,
     });
 
-    it('returns 400 when groupId is missing', async () => {
+    const setupGroupMocks = () => {
+      User.findById.mockResolvedValue({ id: TARGET_USER_ID, username: 'test' });
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, subject_id: SUBJECT_ID, name: 'Assignment 1' });
+      Group.findById.mockResolvedValue({ id: GROUP_ID, assignment_id: ASSIGNMENT_ID, name: 'Group 1' });
+      UserGroup.assignUserToGroup.mockResolvedValue();
+      UserGroup.remove.mockResolvedValue({ user_id: TARGET_USER_ID, assignment_id: ASSIGNMENT_ID });
+    };
+
+    it('returns 400 for invalid UUID in :id param', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id/group_put'](
-        { params: { id: '00000000-0000-4000-8000-000000000001' }, body: {} },
+        { params: { id: 'not-a-uuid' }, body: { assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID } },
         mockReply
       );
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'groupId is required' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid ID format' });
+    });
+
+    it('returns 400 when assignmentId is missing from the body', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/group_put'](makeGroupRequest({ groupId: GROUP_ID }), mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
     });
 
     it('returns 400 when groupId is a non-null non-UUID string', async () => {
@@ -823,19 +1337,18 @@ describe('Users Routes', () => {
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000001' },
-          body: { groupId: 'not-a-uuid' },
-        },
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: 'not-a-uuid' }),
         mockReply
       );
       expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid groupId format' });
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid group ID' });
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
     });
 
-    it('returns 404 when user not found', async () => {
+    it('returns 404 when target user not found', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
+      setupGroupMocks();
       User.findById.mockResolvedValue(null);
 
       const usersRoutes = require('../../src/routes/users');
@@ -843,165 +1356,178 @@ describe('Users Routes', () => {
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000999' },
-          body: { groupId: '10000000-0000-4000-8000-000000000001' },
-        },
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }),
         mockReply
       );
 
       expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'User not found' });
     });
 
-    it('returns 404 when group not found (via assignUserToGroup)', async () => {
+    it('returns reply when requireAssignmentManager fails', async () => {
+      const mockFastify = createMockFastify({ requireAssignmentManagerResult: false });
+      const handlers = captureHandlers(mockFastify);
+      setupGroupMocks();
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      const request = makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID });
+      const result = await handlers['/users/:id/group_put'](request, mockReply);
+
+      expect(mockFastify.requireAssignmentManager).toHaveBeenCalledWith(request, mockReply);
+      expect(result).toBe(mockReply);
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
+    });
+
+    it('returns reply when assertManagesAssignment fails', async () => {
+      const mockFastify = createMockFastify({ assertManagesAssignmentResult: false });
+      const handlers = captureHandlers(mockFastify);
+      setupGroupMocks();
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      const request = makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID });
+      const result = await handlers['/users/:id/group_put'](request, mockReply);
+
+      expect(mockFastify.assertManagesAssignment).toHaveBeenCalledWith(request, mockReply, ASSIGNMENT_ID);
+      expect(result).toBe(mockReply);
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when assignment not found', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        username: 'test',
-      });
-      const notFoundErr = new Error('Group not found');
-      notFoundErr.statusCode = 404;
-      Group.assignUserToGroup.mockRejectedValue(notFoundErr);
+      setupGroupMocks();
+      Assignment.findById.mockResolvedValue(null);
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000001' },
-          body: { groupId: '10000000-0000-4000-8000-000000000999' },
-        },
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }),
         mockReply
       );
 
-      expect(Group.assignUserToGroup).toHaveBeenCalledWith(
-        '00000000-0000-4000-8000-000000000001',
-        '10000000-0000-4000-8000-000000000999'
-      );
       expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Assignment not found' });
     });
 
-    it('updates user group successfully', async () => {
+    it('removes user from group when groupId is null', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      Group.assignUserToGroup.mockResolvedValue();
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        username: 'test',
-        group_id: '10000000-0000-4000-8000-000000000002',
-      });
+      setupGroupMocks();
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000001' },
-          body: { groupId: '10000000-0000-4000-8000-000000000002' },
-        },
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: null }),
         mockReply
       );
 
-      expect(Group.assignUserToGroup).toHaveBeenCalledWith(
-        '00000000-0000-4000-8000-000000000001',
-        '10000000-0000-4000-8000-000000000002'
-      );
-      expect(mockReply.send).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'User group updated successfully' })
-      );
+      expect(UserGroup.remove).toHaveBeenCalledWith(TARGET_USER_ID, ASSIGNMENT_ID);
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'User removed from group',
+        user: { id: TARGET_USER_ID, username: 'test', assignmentId: ASSIGNMENT_ID, groupId: null },
+      });
     });
 
-    it('sets user group to null', async () => {
+    it('returns 404 when group not found', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      User.updateGroup.mockResolvedValue();
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        username: 'test',
-        group_id: null,
-      });
+      setupGroupMocks();
+      Group.findById.mockResolvedValue(null);
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000001' },
-          body: { groupId: null },
-        },
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }),
         mockReply
       );
 
-      expect(User.updateGroup).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', null);
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group not found' });
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
     });
 
-    it('rejects assigning user to a full group (via assignUserToGroup)', async () => {
+    it('returns 400 when group belongs to a different assignment', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        username: 'test',
-      });
-      const fullErr = new Error('Group is full');
-      fullErr.statusCode = 409;
-      Group.assignUserToGroup.mockRejectedValue(fullErr);
+      setupGroupMocks();
+      Group.findById.mockResolvedValue({ id: GROUP_ID, assignment_id: ASSIGNMENT_ID_2, name: 'Other Group' });
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000001' },
-          body: { groupId: '10000000-0000-4000-8000-000000000002' },
-        },
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }),
         mockReply
       );
 
-      expect(Group.assignUserToGroup).toHaveBeenCalled();
-      expect(mockReply.code).toHaveBeenCalledWith(409);
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group does not belong to the selected assignment' });
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
     });
 
-    it('allows assigning user to group with unlimited capacity', async () => {
+    it('assigns user to group successfully with replace semantics', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      Group.assignUserToGroup.mockResolvedValue();
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        username: 'test',
-        group_id: '10000000-0000-4000-8000-000000000002',
-      });
+      setupGroupMocks();
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000001' },
-          body: { groupId: '10000000-0000-4000-8000-000000000002' },
-        },
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }),
         mockReply
       );
 
-      expect(Group.assignUserToGroup).toHaveBeenCalled();
-      expect(mockReply.send).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'User group updated successfully' })
-      );
+      expect(UserGroup.assignUserToGroup).toHaveBeenCalledWith(TARGET_USER_ID, GROUP_ID, { replace: true });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: 'User group updated successfully',
+        user: { id: TARGET_USER_ID, username: 'test', assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID },
+      });
     });
 
-    it('handles error when updating group', async () => {
+    it('maps 403 subject-membership error from assignUserToGroup', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        username: 'test',
-      });
-      Group.assignUserToGroup.mockRejectedValue(new Error('Database error'));
+      setupGroupMocks();
+      const err = new Error('User is not a member of this subject');
+      err.statusCode = 403;
+      UserGroup.assignUserToGroup.mockRejectedValue(err);
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/group_put'](
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }),
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'User is not a member of this subject' });
+    });
+
+    it('maps 409 group-full error from assignUserToGroup', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      setupGroupMocks();
+      const err = new Error('Group is full');
+      err.statusCode = 409;
+      UserGroup.assignUserToGroup.mockRejectedValue(err);
       const { logger: mockLogger } = require('../../src/utils/logger');
 
       const usersRoutes = require('../../src/routes/users');
@@ -1009,15 +1535,55 @@ describe('Users Routes', () => {
 
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
       await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000001' },
-          body: { groupId: '10000000-0000-4000-8000-000000000002' },
-        },
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }),
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(409);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group is full' });
+      expect(mockLogger.error).not.toHaveBeenCalled();
+    });
+
+    it('maps 404 error from assignUserToGroup', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      setupGroupMocks();
+      const err = new Error('Group not found');
+      err.statusCode = 404;
+      UserGroup.assignUserToGroup.mockRejectedValue(err);
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/group_put'](
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }),
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
+    it('returns 500 on unexpected error', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      setupGroupMocks();
+      UserGroup.assignUserToGroup.mockRejectedValue(new Error('Database error'));
+      const { logger: mockLogger } = require('../../src/utils/logger');
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id/group_put'](
+        makeGroupRequest({ assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID }),
         mockReply
       );
 
       expect(mockLogger.error).toHaveBeenCalled();
       expect(mockReply.code).toHaveBeenCalledWith(500);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Failed to update user group' });
     });
   });
 
@@ -1160,7 +1726,6 @@ describe('Users Routes', () => {
         firstName: undefined,
         lastName: undefined,
         studentId: undefined,
-        groupId: undefined,
         roleId: 'a0000000-0000-0000-0000-000000000001',
         enabled: false,
         status: 'inactive',
@@ -1868,63 +2433,6 @@ describe('Users Routes', () => {
     });
   });
 
-  describe('PUT /users/:id/group - error handling', () => {
-    it('handles error when assigning user to group', async () => {
-      const mockFastify = createMockFastify();
-      const handlers = captureHandlers(mockFastify);
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        username: 'test',
-      });
-      Group.assignUserToGroup.mockRejectedValue(new Error('Database error'));
-      const { logger: mockLogger } = require('../../src/utils/logger');
-
-      const usersRoutes = require('../../src/routes/users');
-      usersRoutes(mockFastify, {});
-
-      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000001' },
-          body: { groupId: '10000000-0000-4000-8000-000000000002' },
-        },
-        mockReply
-      );
-
-      expect(mockLogger.error).toHaveBeenCalled();
-      expect(mockReply.code).toHaveBeenCalledWith(500);
-    });
-
-    it('propagates a sub-500 statusCode error (e.g. 409 Group is full)', async () => {
-      const mockFastify = createMockFastify();
-      const handlers = captureHandlers(mockFastify);
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        username: 'test',
-      });
-      const fullErr = new Error('Group is full');
-      fullErr.statusCode = 409;
-      Group.assignUserToGroup.mockRejectedValue(fullErr);
-      const { logger: mockLogger } = require('../../src/utils/logger');
-
-      const usersRoutes = require('../../src/routes/users');
-      usersRoutes(mockFastify, {});
-
-      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      await handlers['/users/:id/group_put'](
-        {
-          params: { id: '00000000-0000-4000-8000-000000000001' },
-          body: { groupId: '10000000-0000-4000-8000-000000000002' },
-        },
-        mockReply
-      );
-
-      expect(mockReply.code).toHaveBeenCalledWith(409);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Group is full' });
-      expect(mockLogger.error).not.toHaveBeenCalled();
-    });
-  });
-
   describe('PUT /users/:id - error handling', () => {
     it('handles database error when fetching user in preHandler', async () => {
       const mockFastify = createMockFastify();
@@ -2279,15 +2787,190 @@ describe('Users Routes', () => {
   });
 
   describe('POST /users/import', () => {
-    const makeImportRequest = (body) => ({
-      user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-      body,
+    const makeImportRequest = (body, user = { id: '00000000-0000-4000-8000-000000000001', role: 'admin' }) => ({
+      user,
+      body: { subjectId: SUBJECT_ID, ...body },
     });
 
     beforeEach(() => {
       User.findByUsernames.mockResolvedValue([]);
       User.findByEmails.mockResolvedValue([]);
       User.findByStudentIds.mockResolvedValue([]);
+      Subject.findById.mockResolvedValue({ id: SUBJECT_ID, name: 'Subject 1' });
+      Subject.addUsers.mockResolvedValue(0);
+      Assignment.managesAnyInSubject.mockResolvedValue(true);
+    });
+
+    it('returns 400 when subjectId is missing', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          subjectId: undefined,
+          users: [{ username: 'u', email: 'e@e.com', firstName: 'F', lastName: 'L' }],
+        }),
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Subject is required' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when subjectId is not a valid UUID', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          subjectId: 'not-a-uuid',
+          users: [{ username: 'u', email: 'e@e.com', firstName: 'F', lastName: 'L' }],
+        }),
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Subject is required' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the subject does not exist', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Subject.findById.mockResolvedValue(null);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/import_post'](
+        makeImportRequest({ users: [{ username: 'u', email: 'e@e.com', firstName: 'F', lastName: 'L' }] }),
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Subject not found' });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when assignment manager does not manage any assignment in the subject', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Assignment.managesAnyInSubject.mockResolvedValue(false);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      const amUser = { id: '00000000-0000-4000-8000-000000000042', role: 'assignment_manager' };
+      await handlers['/users/import_post'](
+        makeImportRequest({ users: [{ username: 'u', email: 'e@e.com', firstName: 'F', lastName: 'L' }] }, amUser),
+        mockReply
+      );
+      expect(Assignment.managesAnyInSubject).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000042', SUBJECT_ID);
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Forbidden: You do not manage any assignment in this subject',
+      });
+      expect(User.create).not.toHaveBeenCalled();
+    });
+
+    it('allows assignment manager who manages an assignment in the subject', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.create.mockResolvedValue({ id: 'u2', username: 'newuser', email: 'new@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      const amUser = { id: '00000000-0000-4000-8000-000000000042', role: 'assignment_manager' };
+      await handlers['/users/import_post'](
+        makeImportRequest(
+          { users: [{ username: 'newuser', email: 'new@test.com', firstName: 'New', lastName: 'User' }] },
+          amUser
+        ),
+        mockReply
+      );
+      expect(mockReply.send).toHaveBeenCalledWith({ imported: 1, skipped: 0, errors: [] });
+    });
+
+    it('does not check subject management for admin callers', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.create.mockResolvedValue({ id: 'u2', username: 'newuser', email: 'new@test.com' });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'newuser', email: 'new@test.com', firstName: 'New', lastName: 'User' }],
+        }),
+        mockReply
+      );
+      expect(Assignment.managesAnyInSubject).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({ imported: 1, skipped: 0, errors: [] });
+    });
+
+    it('enrols created and overwritten users in the subject with a single addUsers call', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      const existingUser = {
+        id: 'u-existing',
+        username: 'existing',
+        email: 'ex@test.com',
+        student_id: null,
+        role_name: 'user',
+      };
+      User.findByUsernames.mockResolvedValue([existingUser]);
+      User.create.mockResolvedValue({ id: 'u-new', username: 'newuser', email: 'new@test.com' });
+      User.update.mockResolvedValue({ ...existingUser });
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [
+            { username: 'newuser', email: 'new@test.com', firstName: 'New', lastName: 'User' },
+            { username: 'existing', email: 'ex@test.com', firstName: 'Ex', lastName: 'User' },
+          ],
+          conflictAction: 'overwrite',
+        }),
+        mockReply
+      );
+
+      expect(Subject.addUsers).toHaveBeenCalledTimes(1);
+      expect(Subject.addUsers).toHaveBeenCalledWith(SUBJECT_ID, ['u-new', 'u-existing']);
+      expect(mockReply.send).toHaveBeenCalledWith({ imported: 2, skipped: 0, errors: [] });
+    });
+
+    it('does not enrol users when nothing was imported', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      Role.findByName.mockResolvedValue({ id: 'r1', name: 'user' });
+      User.findByUsernames.mockResolvedValue([
+        {
+          id: 'u-existing',
+          username: 'existing',
+          email: 'ex@test.com',
+          student_id: null,
+          role_name: 'user',
+        },
+      ]);
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await handlers['/users/import_post'](
+        makeImportRequest({
+          users: [{ username: 'existing', email: 'ex@test.com', firstName: 'Ex', lastName: 'User' }],
+          conflictAction: 'skip',
+        }),
+        mockReply
+      );
+
+      expect(Subject.addUsers).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith({ imported: 0, skipped: 1, errors: [] });
     });
 
     it('rejects unauthenticated request', async () => {
@@ -2357,6 +3040,7 @@ describe('Users Routes', () => {
       expect(User.create).toHaveBeenCalledWith(
         expect.objectContaining({ username: 'newuser', email: 'new@test.com', password: null })
       );
+      expect(Subject.addUsers).toHaveBeenCalledWith(SUBJECT_ID, ['00000000-0000-4000-8000-000000000002']);
       expect(mockReply.send).toHaveBeenCalledWith({ imported: 1, skipped: 0, errors: [] });
     });
 

@@ -70,8 +70,14 @@ pnpm --filter gap-frontend lint:fix     # Auto-fix frontend lint issues
 - `backend/src/middleware/auth.js` — Fastify plugin: registers `@fastify/jwt`, provides `verifyToken` decorator
 - `backend/src/middleware/rbac.js` — Fastify plugin: `checkRole` checks if user's role is in the allowed list (admin
   always passes); also provides `requireAdmin` and `requireAssignmentManager` helpers
-- `backend/src/models/` — Data access layer (User, Group, Role) using raw SQL via `pg` pool
-- `backend/src/routes/` — Route handlers registered as Fastify plugins (auth, users, groups)
+- `backend/src/models/` — Data access layer (User, Subject, Assignment, Group, UserGroup, Role) using raw SQL via `pg`
+  pool
+- `backend/src/routes/` — Route handlers registered as Fastify plugins (auth, users, subjects, assignments, groups,
+  config)
+- Data hierarchy: subjects → assignments → groups. Users enrol in subjects (`user_subjects` m2m); group membership is
+  per assignment (`user_groups`, at most one group per user per assignment); AM scoping via `assignment_managers` m2m.
+  Group placement requires membership of the parent subject — enforced in `UserGroup.assignUserToGroup` for all callers,
+  including admins.
 - `backend/src/config/` — Environment config and database pool setup
 - `backend/Dockerfile` — Production image (pnpm deploy multi-stage); `backend/Dockerfile.dev` — Dev image
 
@@ -87,14 +93,22 @@ pnpm --filter gap-frontend lint:fix     # Auto-fix frontend lint issues
 
 - `frontend/src/context/AuthContext.jsx` — Global auth state (JWT token, user info, login/logout)
 - `frontend/src/components/ProtectedRoute.jsx` — Route guard that checks auth and role
-- `frontend/src/pages/` — Page components (Login, Register, Dashboard, Users, Groups)
+- `frontend/src/pages/` — Page components (Login, Register, Dashboard, Users, Subjects, SubjectDetail, Groups)
+- Routes: `/subjects`, `/subjects/:subjectId`, `/subjects/:subjectId/assignments/:assignmentId` (groups); `/groups`
+  redirects to `/subjects`
 - Uses `@` path alias mapped to `src/` (configured in vite and jest)
 
 ### Three-Tier Role System
 
-- **Admin** — Full CRUD on users and groups
-- **Assignment Manager** — View users, assign users to groups
-- **User** — View own profile and groups
+- **Admin** — Full CRUD on subjects, assignments, groups, and users; enrols users in subjects
+- **Assignment Manager** — Scoped via `assignment_managers`: create/update/delete groups and assign subject members to
+  groups only in managed assignments; sees/imports users only for subjects where they manage an assignment
+- **User** — View own profile/subjects; self join/leave one group per assignment within enrolled subjects (global join
+  lock applies)
+
+Deleting subjects/assignments uses two-step typed confirmation in the UI; cascades assignments → groups → memberships,
+never user accounts. Migration 013 destructively drops legacy flat groups and `users.group_id` (user accounts
+preserved).
 
 ### Testing Setup
 

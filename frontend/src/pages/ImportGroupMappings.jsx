@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/utils/api';
 import { ArrowLeft, ArrowRight, Check, AlertTriangle } from 'lucide-react';
 import Header from '../components/Header.jsx';
 import CsvDropzone from '../components/CsvDropzone.jsx';
+import CascadingAssignmentSelect from '../components/CascadingAssignmentSelect.jsx';
 import { parseCsv, downloadCsv } from '../utils/csv.js';
 import { API_BASE } from '../config.js';
 
@@ -27,7 +28,17 @@ function autoDetectColumns(headers) {
 
 function ImportGroupMappings() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState(1);
+
+  // Target assignment (Subject → Assignment cascade), preselected from query params
+  const [subjects, setSubjects] = useState([]);
+  const [subjectsError, setSubjectsError] = useState('');
+  const [selection, setSelection] = useState(() => ({
+    subjectId: searchParams.get('subjectId') || '',
+    assignmentId: searchParams.get('assignmentId') || '',
+    groupId: '',
+  }));
 
   // Step 1 state
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -51,11 +62,32 @@ function ImportGroupMappings() {
   const countdownRef = useRef(null);
 
   useEffect(() => {
-    if (step === 2 && csvRows.length > 0) {
+    let cancelled = false;
+    api
+      .get(`${API_BASE}/subjects`)
+      .then((res) => {
+        if (!cancelled) {
+          setSubjects(res.data.subjects || []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSubjectsError('Failed to load subjects. Please reload the page.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Rebuild the preview when entering step 2 or when the target assignment
+  // changes (group names must be re-validated against the new assignment).
+  useEffect(() => {
+    if (step === 2 && csvRows.length > 0 && selection.assignmentId) {
       buildPreview();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [step, selection.assignmentId]);
 
   const processFile = (file) => {
     setFileError('');
@@ -98,7 +130,10 @@ function ImportGroupMappings() {
   const buildPreview = async () => {
     setLoadingPreview(true);
     try {
-      const [usersRes, groupsRes] = await Promise.all([api.get(`${API_BASE}/users`), api.get(`${API_BASE}/groups`)]);
+      const [usersRes, groupsRes] = await Promise.all([
+        api.get(`${API_BASE}/users`),
+        api.get(`${API_BASE}/assignments/${selection.assignmentId}/groups`),
+      ]);
       const userEmailSet = new Map((usersRes.data.users || []).map((u) => [u.email.toLowerCase(), u]));
       const groupNameSet = new Map((groupsRes.data.groups || []).map((g) => [g.name.toLowerCase(), g]));
 
@@ -109,7 +144,7 @@ function ImportGroupMappings() {
         const userExists = user !== undefined;
         const groupExists = groupNameSet.has(groupName.toLowerCase());
         const isPrivilegedUser = user && (user.role_name === 'admin' || user.role_name === 'assignment_manager');
-        const alreadyInGroup = user && user.group_id !== null && user.group_id !== undefined;
+        const alreadyInGroup = user && (user.memberships || []).some((m) => m.assignment_id === selection.assignmentId);
 
         let status = 'import';
         let statusLabel = 'Import';
@@ -193,9 +228,8 @@ function ImportGroupMappings() {
         email: r.email,
         groupName: r.groupName,
         action: r.action,
-        skipReason: r.skipReason,
       }));
-      const res = await api.post(`${API_BASE}/groups/import-mappings`, { rows });
+      const res = await api.post(`${API_BASE}/assignments/${selection.assignmentId}/import-mappings`, { rows });
       setImportResult(res.data);
 
       // Auto-download skipped rows CSV
@@ -263,8 +297,34 @@ function ImportGroupMappings() {
             ))}
           </div>
 
+          {/* Target assignment (Subject → Assignment cascade) */}
+          {step < 3 && (
+            <div className="bg-white rounded-lg shadow p-6 mb-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Target Assignment</h3>
+              <p className="text-gray-600 text-sm mb-4">
+                Choose the subject and assignment these group mappings belong to.
+              </p>
+              <div className="max-w-md">
+                <CascadingAssignmentSelect
+                  subjects={subjects}
+                  value={selection}
+                  onChange={setSelection}
+                  showGroup={false}
+                  disabled={importing}
+                />
+              </div>
+              {subjectsError && <p className="text-sm text-red-600">{subjectsError}</p>}
+            </div>
+          )}
+
+          {step < 3 && !selection.assignmentId && (
+            <div className="bg-white rounded-lg shadow p-6 text-sm text-gray-500">
+              Select a subject and assignment to continue.
+            </div>
+          )}
+
           {/* Step 1: Upload */}
-          {step === 1 && (
+          {step === 1 && selection.assignmentId && (
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Upload CSV File</h3>
               <p className="text-gray-600 text-sm mb-4">
@@ -343,7 +403,7 @@ function ImportGroupMappings() {
           )}
 
           {/* Step 2: Preview */}
-          {step === 2 && (
+          {step === 2 && selection.assignmentId && (
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-2">Preview</h3>
 

@@ -14,6 +14,8 @@ import ImportUsers from './pages/ImportUsers.jsx';
 import Groups from './pages/Groups.jsx';
 import ImportGroupMappings from './pages/ImportGroupMappings.jsx';
 import Settings from './pages/Settings.jsx';
+import Subjects from './pages/Subjects.jsx';
+import SubjectDetail from './pages/SubjectDetail.jsx';
 
 function PublicRoute({ children }) {
   const { user } = useAuth();
@@ -89,15 +91,34 @@ function AppRoutes() {
         }
       />
 
-      {/* Admin Only Routes */}
+      {/* Subject / Assignment hierarchy */}
       <Route
-        path="/groups"
+        path="/subjects"
         element={
-          <ProtectedRoute requireAdmin>
+          <ProtectedRoute requireAssignmentManager>
+            <Subjects />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/subjects/:subjectId"
+        element={
+          <ProtectedRoute requireAssignmentManager>
+            <SubjectDetail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/subjects/:subjectId/assignments/:assignmentId"
+        element={
+          <ProtectedRoute requireAssignmentManager>
             <Groups />
           </ProtectedRoute>
         }
       />
+
+      {/* Legacy groups routes — keep bookmark compatibility */}
+      <Route path="/groups" element={<Navigate to="/subjects" replace />} />
       <Route
         path="/groups/import"
         element={

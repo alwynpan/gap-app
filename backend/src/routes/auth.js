@@ -1,5 +1,8 @@
 const User = require('../models/User');
 const Role = require('../models/Role');
+const Subject = require('../models/Subject');
+const Assignment = require('../models/Assignment');
+const UserGroup = require('../models/UserGroup');
 const PasswordResetToken = require('../models/PasswordResetToken');
 const { sendPasswordResetEmail, sendPasswordSetupEmail } = require('../services/email');
 const config = require('../config/index');
@@ -138,15 +141,19 @@ async function authRoutes(fastify, _options) {
           return reply.code(401).send({ error: 'Invalid credentials' });
         }
 
-        // Generate JWT token
+        // Generate JWT token — identity claims only, hierarchy data stays out
         const token = await fastify.generateToken({
           id: user.id,
           username: user.username,
           email: user.email,
           role: user.role_name,
-          groupId: user.group_id,
-          groupName: user.group_name,
         });
+
+        const [subjects, memberships, managedAssignments] = await Promise.all([
+          Subject.findForUser(user.id),
+          UserGroup.findMembershipsForUser(user.id),
+          user.role_name === 'assignment_manager' ? Assignment.findManagedBy(user.id) : Promise.resolve([]),
+        ]);
 
         return reply.send({
           message: 'Login successful',
@@ -158,9 +165,10 @@ async function authRoutes(fastify, _options) {
             firstName: user.first_name,
             lastName: user.last_name,
             role: user.role_name,
-            groupId: user.group_id,
-            groupName: user.group_name,
             studentId: user.student_id,
+            subjects: subjects.map((s) => ({ id: s.id, name: s.name })),
+            memberships,
+            managedAssignments,
           },
         });
       } catch (error) {
@@ -192,6 +200,12 @@ async function authRoutes(fastify, _options) {
           return reply.code(401).send({ error: 'User not found' });
         }
 
+        const [subjects, memberships, managedAssignments] = await Promise.all([
+          Subject.findForUser(freshUser.id),
+          UserGroup.findMembershipsForUser(freshUser.id),
+          freshUser.role_name === 'assignment_manager' ? Assignment.findManagedBy(freshUser.id) : Promise.resolve([]),
+        ]);
+
         return reply.send({
           user: {
             id: freshUser.id,
@@ -200,9 +214,10 @@ async function authRoutes(fastify, _options) {
             firstName: freshUser.first_name,
             lastName: freshUser.last_name,
             role: freshUser.role_name,
-            groupId: freshUser.group_id,
-            groupName: freshUser.group_name,
             studentId: freshUser.student_id,
+            subjects: subjects.map((s) => ({ id: s.id, name: s.name })),
+            memberships,
+            managedAssignments,
           },
         });
       } catch (error) {

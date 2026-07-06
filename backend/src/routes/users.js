@@ -1,6 +1,9 @@
 const User = require('../models/User');
 const Group = require('../models/Group');
 const Role = require('../models/Role');
+const Subject = require('../models/Subject');
+const Assignment = require('../models/Assignment');
+const UserGroup = require('../models/UserGroup');
 const PasswordResetToken = require('../models/PasswordResetToken');
 const { sendPasswordSetupEmail } = require('../services/email');
 const {
@@ -8,6 +11,7 @@ const {
   parseBody,
   createUserSchema,
   updateUserSchema,
+  updateUserGroupSchema,
   changePasswordSchema,
   importUserRowSchema,
   validateUUID,
@@ -22,7 +26,9 @@ const MAX_IMPORT_SIZE = Number.isNaN(_parsed) ? 2000 : _parsed;
 async function usersRoutes(fastify, _options) {
   const isDev = config.app.nodeEnv === 'development';
 
-  // Get all users (admin/assignment_manager only) — supports ?role=, ?status=, ?groupId= filters
+  // Get all users (admin/assignment_manager only) — supports ?role=, ?status=,
+  // ?subjectId=, ?assignmentId= and ?groupId= (uuid or 'none') filters.
+  // Assignment managers only see users enrolled in subjects they manage.
   fastify.get(
     '/users',
     {
@@ -38,7 +44,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const { role, status, groupId } = request.query || {};
+        const { role, status, subjectId, assignmentId, groupId } = request.query || {};
 
         const VALID_STATUSES = ['active', 'inactive', 'pending'];
         if (status !== undefined && !VALID_STATUSES.includes(status)) {
@@ -47,12 +53,60 @@ async function usersRoutes(fastify, _options) {
         if (role !== undefined && !ROLE_VALUES.includes(role)) {
           return reply.code(400).send({ error: 'Invalid role filter' });
         }
+        if (subjectId !== undefined && !validateUUID(subjectId)) {
+          return reply.code(400).send({ error: 'Invalid subjectId filter' });
+        }
+        if (assignmentId !== undefined && !validateUUID(assignmentId)) {
+          return reply.code(400).send({ error: 'Invalid assignmentId filter' });
+        }
         if (groupId !== undefined && groupId !== 'none' && !validateUUID(groupId)) {
           return reply.code(400).send({ error: 'Invalid groupId filter' });
         }
+        if (groupId === 'none' && assignmentId === undefined) {
+          return reply.code(400).send({ error: 'assignmentId is required when filtering ungrouped users' });
+        }
 
-        const users = await User.findAll({ role, status, groupId });
-        return reply.send({ users });
+        const filters = { role, status, subjectId, assignmentId, groupId };
+        // AM scoping: assignment managers only see users in subjects they manage
+        if (request.user?.role === 'assignment_manager') {
+          filters.managedBy = request.user.id;
+        }
+
+        const users = await User.findAll(filters);
+
+        // Attach subject enrolments and group memberships in two batch queries
+        const userIds = users.map((u) => u.id);
+        let subjectRows = [];
+        let membershipRows = [];
+        if (userIds.length > 0) {
+          [subjectRows, membershipRows] = await Promise.all([
+            Subject.findForUsers(userIds),
+            UserGroup.findMembershipsForUsers(userIds),
+          ]);
+        }
+        const subjectsByUser = new Map();
+        for (const row of subjectRows) {
+          const { user_id: uid, ...subject } = row;
+          if (!subjectsByUser.has(uid)) {
+            subjectsByUser.set(uid, []);
+          }
+          subjectsByUser.get(uid).push(subject);
+        }
+        const membershipsByUser = new Map();
+        for (const row of membershipRows) {
+          const { user_id: uid, ...membership } = row;
+          if (!membershipsByUser.has(uid)) {
+            membershipsByUser.set(uid, []);
+          }
+          membershipsByUser.get(uid).push(membership);
+        }
+        const enriched = users.map((u) => ({
+          ...u,
+          subjects: subjectsByUser.get(u.id) || [],
+          memberships: membershipsByUser.get(u.id) || [],
+        }));
+
+        return reply.send({ users: enriched });
       } catch (error) {
         logger.error('Get users error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve users' });
@@ -90,9 +144,13 @@ async function usersRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
-        // Remove password hash from response
+        // Remove password hash from response and enrich with hierarchy data
         const { password_hash: _password_hash, ...userWithoutPassword } = user;
-        return reply.send({ user: userWithoutPassword });
+        const [subjects, memberships] = await Promise.all([
+          Subject.findForUser(userId),
+          UserGroup.findMembershipsForUser(userId),
+        ]);
+        return reply.send({ user: { ...userWithoutPassword, subjects, memberships } });
       } catch (error) {
         logger.error('Get user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve user' });
@@ -123,7 +181,18 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: validationError });
         }
 
-        const { username, email, firstName, lastName, studentId, groupId, role } = body;
+        const {
+          username,
+          email,
+          firstName,
+          lastName,
+          studentId,
+          role,
+          subjectIds,
+          assignmentId,
+          groupId,
+          assignmentIds,
+        } = body;
 
         // Only admins can create admin or assignment_manager users
         if ((role === 'admin' || role === 'assignment_manager') && request.user.role !== 'admin') {
@@ -141,7 +210,7 @@ async function usersRoutes(fastify, _options) {
           return reply.code(409).send({ error: 'Email already exists' });
         }
 
-        // Get role ID by name lookup (needed before group check to know effective role)
+        // Get role ID by name lookup (needed to know the effective role)
         const effectiveRole = role || 'user';
         const roleRecord = await Role.findByName(effectiveRole);
         if (!roleRecord) {
@@ -149,10 +218,9 @@ async function usersRoutes(fastify, _options) {
         }
         const roleId = roleRecord.id;
 
-        // studentId and groupId only apply to regular users
+        // studentId and subject/group placement only apply to regular users
         const isUserRole = effectiveRole === 'user';
         const effectiveStudentId = isUserRole ? studentId : undefined;
-        const effectiveGroupId = isUserRole ? groupId : undefined;
 
         // Check studentId uniqueness
         if (effectiveStudentId) {
@@ -162,15 +230,59 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
-        // If a group is specified, verify it exists and has capacity
-        if (effectiveGroupId) {
-          const group = await Group.findById(effectiveGroupId);
-          if (!group) {
-            return reply.code(404).send({ error: 'Group not found' });
+        // Regular users must be enrolled in at least one subject; optional
+        // immediate group placement requires assignmentId within those subjects.
+        if (isUserRole) {
+          if (!Array.isArray(subjectIds) || subjectIds.length === 0) {
+            return reply.code(400).send({ error: 'Subject is required' });
           }
-          if (group.max_members !== null && group.member_count >= group.max_members) {
-            return reply.code(400).send({ error: 'Group is full' });
+          for (const sid of subjectIds) {
+            const subject = await Subject.findById(sid);
+            if (!subject) {
+              return reply.code(404).send({ error: 'Subject not found' });
+            }
+            // AMs may only enrol users into subjects containing an assignment
+            // they manage (same rule as POST /users/import).
+            if (request.user?.role === 'assignment_manager') {
+              const manages = await Assignment.managesAnyInSubject(request.user.id, sid);
+              if (!manages) {
+                return reply.code(403).send({ error: 'Forbidden: You do not manage any assignment in this subject' });
+              }
+            }
           }
+          if (groupId && !assignmentId) {
+            return reply.code(400).send({ error: 'assignmentId is required when groupId is provided' });
+          }
+          if (assignmentId) {
+            const assignment = await Assignment.findById(assignmentId);
+            if (!assignment) {
+              return reply.code(404).send({ error: 'Assignment not found' });
+            }
+            if (!subjectIds.includes(assignment.subject_id)) {
+              return reply.code(400).send({ error: 'Assignment does not belong to the selected subjects' });
+            }
+          }
+          if (groupId) {
+            const group = await Group.findById(groupId);
+            if (!group) {
+              return reply.code(404).send({ error: 'Group not found' });
+            }
+            if (group.assignment_id !== assignmentId) {
+              return reply.code(400).send({ error: 'Group does not belong to the selected assignment' });
+            }
+          }
+        }
+
+        // Assignment managers may be given assignments to manage at creation time
+        let managedAssignmentIds = [];
+        if (effectiveRole === 'assignment_manager' && Array.isArray(assignmentIds) && assignmentIds.length > 0) {
+          for (const aid of assignmentIds) {
+            const assignment = await Assignment.findById(aid);
+            if (!assignment) {
+              return reply.code(404).send({ error: 'Assignment not found' });
+            }
+          }
+          managedAssignmentIds = assignmentIds;
         }
 
         // Always create user as pending — password must be set via the email link
@@ -181,9 +293,26 @@ async function usersRoutes(fastify, _options) {
           firstName,
           lastName,
           studentId: effectiveStudentId,
-          groupId: effectiveGroupId,
           roleId,
         });
+
+        let placementWarning;
+        if (isUserRole) {
+          for (const sid of subjectIds) {
+            await Subject.addUsers(sid, [newUser.id]);
+          }
+          if (groupId) {
+            try {
+              await UserGroup.assignUserToGroup(newUser.id, groupId, { replace: true });
+            } catch (placementError) {
+              // Don't fail the request — the user was created and enrolled successfully
+              logger.error('Group placement failed after user creation', { err: placementError.message });
+              placementWarning = `User created but group placement failed: ${placementError.message}`;
+            }
+          }
+        } else if (managedAssignmentIds.length > 0) {
+          await Assignment.addManagers(newUser.id, managedAssignmentIds);
+        }
 
         // Only admins can suppress the setup email; assignment managers always trigger it
         const shouldSendEmail = request.user?.role === 'admin' ? body.sendSetupEmail !== false : true;
@@ -198,7 +327,7 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
-        return reply.code(201).send({
+        const response = {
           message: 'User created successfully',
           user: {
             id: newUser.id,
@@ -207,7 +336,11 @@ async function usersRoutes(fastify, _options) {
             status: newUser.status,
             studentId: newUser.student_id,
           },
-        });
+        };
+        if (placementWarning) {
+          response.warning = placementWarning;
+        }
+        return reply.code(201).send(response);
       } catch (error) {
         if (error.code === '23505') {
           if (error.constraint?.includes('student_id')) {
@@ -227,17 +360,14 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Update user's group assignment (admin/assignment_manager only)
+  // Update user's group placement for one assignment (admin, or an assignment
+  // manager who manages that assignment). groupId null removes the placement.
   fastify.put(
     '/users/:id/group',
     {
       preHandler: async (request, reply) => {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
-        }
-        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
-        if (!allowed) {
-          return reply;
         }
       },
     },
@@ -247,14 +377,10 @@ async function usersRoutes(fastify, _options) {
         if (!validateUUID(userId)) {
           return reply.code(400).send({ error: 'Invalid ID format' });
         }
-        const { groupId } = request.body;
 
-        if (groupId === undefined) {
-          return reply.code(400).send({ error: 'groupId is required' });
-        }
-
-        if (groupId !== null && !validateUUID(groupId)) {
-          return reply.code(400).send({ error: 'Invalid groupId format' });
+        const { data: body, error: validationError } = parseBody(updateUserGroupSchema, request.body);
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
         }
 
         // Verify user exists
@@ -263,19 +389,53 @@ async function usersRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
-        // If groupId is not null, assign inside a transaction with row-level lock (H2)
-        if (groupId !== null) {
-          await Group.assignUserToGroup(userId, groupId);
-        } else {
-          await User.updateGroup(userId, null);
+        // Role guard, then assignment-scoped guard (admin always passes both)
+        const allowed = await fastify.requireAssignmentManager(request, reply);
+        if (!allowed) {
+          return reply;
         }
+        const managesOk = await fastify.assertManagesAssignment(request, reply, body.assignmentId);
+        if (!managesOk) {
+          return reply;
+        }
+
+        const assignment = await Assignment.findById(body.assignmentId);
+        if (!assignment) {
+          return reply.code(404).send({ error: 'Assignment not found' });
+        }
+
+        if (body.groupId === null) {
+          await UserGroup.remove(userId, body.assignmentId);
+          return reply.send({
+            message: 'User removed from group',
+            user: {
+              id: user.id,
+              username: user.username,
+              assignmentId: body.assignmentId,
+              groupId: null,
+            },
+          });
+        }
+
+        const group = await Group.findById(body.groupId);
+        if (!group) {
+          return reply.code(404).send({ error: 'Group not found' });
+        }
+        if (group.assignment_id !== body.assignmentId) {
+          return reply.code(400).send({ error: 'Group does not belong to the selected assignment' });
+        }
+
+        // Atomic placement — enforces subject membership (403), capacity (409)
+        // and existence (404) under a row-level lock on the group.
+        await UserGroup.assignUserToGroup(userId, body.groupId, { replace: true });
 
         return reply.send({
           message: 'User group updated successfully',
           user: {
             id: user.id,
             username: user.username,
-            groupId: groupId,
+            assignmentId: body.assignmentId,
+            groupId: body.groupId,
           },
         });
       } catch (error) {
@@ -332,7 +492,7 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: validationError });
         }
 
-        const { email, firstName, lastName, studentId, role, enabled, username, groupId } = body;
+        const { email, firstName, lastName, studentId, role, enabled, username } = body;
 
         // Reuse the user already fetched in preHandler (M3)
         const user = request.targetUser;
@@ -365,10 +525,6 @@ async function usersRoutes(fastify, _options) {
         }
 
         if (isAdmin) {
-          // Only include groupId for regular users
-          if (user.role_name === 'user' && groupId !== undefined) {
-            updates.groupId = groupId;
-          }
           // Resolve role name to roleId if provided and changed
           if (role !== undefined && role !== user.role_name) {
             const roleRecord = await Role.findByName(role);
@@ -561,8 +717,11 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const { users: usersToImport, conflictAction = 'skip', sendSetupEmail = false } = request.body || {};
+        const { users: usersToImport, conflictAction = 'skip', sendSetupEmail = false, subjectId } = request.body || {};
 
+        if (!subjectId || !validateUUID(subjectId)) {
+          return reply.code(400).send({ error: 'Subject is required' });
+        }
         if (conflictAction !== 'skip' && conflictAction !== 'overwrite') {
           return reply.code(400).send({ error: "Invalid 'conflictAction'. Allowed values are 'skip' or 'overwrite'." });
         }
@@ -578,6 +737,20 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: `Import exceeds maximum of ${MAX_IMPORT_SIZE} rows` });
         }
 
+        const subject = await Subject.findById(subjectId);
+        if (!subject) {
+          return reply.code(404).send({ error: 'Subject not found' });
+        }
+
+        // Assignment managers may only import into subjects containing an
+        // assignment they manage
+        if (request.user.role === 'assignment_manager') {
+          const manages = await Assignment.managesAnyInSubject(request.user.id, subjectId);
+          if (!manages) {
+            return reply.code(403).send({ error: 'Forbidden: You do not manage any assignment in this subject' });
+          }
+        }
+
         const roleRecord = await Role.findByName('user');
         if (!roleRecord) {
           return reply.code(500).send({ error: 'User role not found' });
@@ -586,6 +759,7 @@ async function usersRoutes(fastify, _options) {
         let imported = 0;
         let skipped = 0;
         const errors = [];
+        const enrolledUserIds = [];
 
         // First pass: parse all rows and collect unique keys for batch lookup
         const parsedRows = [];
@@ -690,6 +864,7 @@ async function usersRoutes(fastify, _options) {
                   studentIdMap.set(studentId, updatedEntry);
                 }
               }
+              enrolledUserIds.push(existing.id);
               imported++;
               continue;
             }
@@ -733,6 +908,7 @@ async function usersRoutes(fastify, _options) {
             if (studentId) {
               studentIdMap.set(studentId, newEntry);
             }
+            enrolledUserIds.push(newUser.id);
 
             if (sendSetupEmail) {
               try {
@@ -749,6 +925,11 @@ async function usersRoutes(fastify, _options) {
             const reason = rowError.code === '23505' ? 'Duplicate entry' : 'Processing failed';
             errors.push({ row: rowNum, identifier: rowLabel, reason });
           }
+        }
+
+        // Enrol every created/overwritten user in the target subject in one call
+        if (enrolledUserIds.length > 0) {
+          await Subject.addUsers(subjectId, enrolledUserIds);
         }
 
         errors.sort((a, b) => a.row - b.row);

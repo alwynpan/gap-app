@@ -1,11 +1,26 @@
 'use strict';
 
 const { buildTestServer, closeTestServer } = require('./helpers/server');
-const { cleanDatabase, createUser, loginAs, getPool } = require('./helpers/db');
+const {
+  cleanDatabase,
+  createUser,
+  createSubject,
+  createAssignment,
+  createGroup,
+  addUserToSubject,
+  assignManager,
+  addUserToGroup,
+  loginAs,
+  getPool,
+} = require('./helpers/db');
 const config = require('../../src/config/index');
 
 let app;
 let adminToken;
+
+function decodeJwtPayload(token) {
+  return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+}
 
 beforeAll(async () => {
   app = await buildTestServer();
@@ -37,6 +52,61 @@ describe('POST /api/auth/login', () => {
     expect(body.token).toBeDefined();
     expect(body.user.username).toBe('admin');
     expect(body.user.role).toBe('admin');
+  });
+
+  it('login payload includes subjects/memberships/managedAssignments and no group claims', async () => {
+    const subject = await createSubject({ name: 'LoginSubject' });
+    const assignment = await createAssignment({ subjectId: subject.id, name: 'A1' });
+    const group = await createGroup({ assignmentId: assignment.id, name: 'LoginGroup' });
+    const u = await createUser({ username: 'loginuser', email: 'loginuser@test.com' });
+    await addUserToSubject(u.id, subject.id);
+    await addUserToGroup(u.id, group.id, assignment.id);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'loginuser', password: 'TestPass123!' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+
+    expect(body.user.subjects).toEqual([{ id: subject.id, name: 'LoginSubject' }]);
+    expect(body.user.memberships).toHaveLength(1);
+    expect(body.user.memberships[0]).toMatchObject({
+      assignment_id: assignment.id,
+      group_id: group.id,
+      group_name: 'LoginGroup',
+      subject_id: subject.id,
+    });
+    expect(body.user.managedAssignments).toEqual([]);
+    expect(body.user).not.toHaveProperty('groupId');
+    expect(body.user).not.toHaveProperty('groupName');
+
+    // JWT carries identity claims only — no group/hierarchy data
+    const claims = decodeJwtPayload(body.token);
+    expect(claims).toMatchObject({ id: u.id, username: 'loginuser', role: 'user' });
+    expect(claims).not.toHaveProperty('groupId');
+    expect(claims).not.toHaveProperty('groupName');
+    expect(claims).not.toHaveProperty('subjects');
+    expect(claims).not.toHaveProperty('memberships');
+  });
+
+  it('assignment manager login includes managedAssignments', async () => {
+    const subject = await createSubject({ name: 'AMSubject' });
+    const assignment = await createAssignment({ subjectId: subject.id, name: 'ManagedA' });
+    const am = await createUser({ username: 'am1', email: 'am1@test.com', role: 'assignment_manager' });
+    await assignManager(am.id, assignment.id);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'am1', password: 'TestPass123!' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.user.managedAssignments).toHaveLength(1);
+    expect(body.user.managedAssignments[0].id).toBe(assignment.id);
+    expect(body.user.managedAssignments[0].subject_id).toBe(subject.id);
   });
 
   it('returns 401 for wrong password', async () => {
@@ -79,8 +149,9 @@ describe('POST /api/auth/login', () => {
   });
 
   it('returns 401 for pending user (no password set)', async () => {
+    const subject = await createSubject({ name: 'PendingSubject' });
     // Create user via API so they're pending
-    await app.inject({
+    const createRes = await app.inject({
       method: 'POST',
       url: '/api/users',
       headers: { authorization: `Bearer ${adminToken}` },
@@ -89,9 +160,11 @@ describe('POST /api/auth/login', () => {
         email: 'pending@test.com',
         firstName: 'P',
         lastName: 'User',
+        subjectIds: [subject.id],
         sendSetupEmail: false,
       },
     });
+    expect(createRes.statusCode).toBe(201);
     const res = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
@@ -204,6 +277,30 @@ describe('GET /api/auth/me', () => {
     expect(body.user).not.toHaveProperty('password_hash');
   });
 
+  it('includes subjects/memberships/managedAssignments and no group claims', async () => {
+    const subject = await createSubject({ name: 'MeSubject' });
+    const assignment = await createAssignment({ subjectId: subject.id, name: 'A1' });
+    const group = await createGroup({ assignmentId: assignment.id, name: 'MeGroup' });
+    const u = await createUser({ username: 'meuser', email: 'meuser@test.com' });
+    await addUserToSubject(u.id, subject.id);
+    await addUserToGroup(u.id, group.id, assignment.id);
+    const token = await loginAs(app, 'meuser', 'TestPass123!');
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.user.subjects).toEqual([{ id: subject.id, name: 'MeSubject' }]);
+    expect(body.user.memberships).toHaveLength(1);
+    expect(body.user.memberships[0].group_id).toBe(group.id);
+    expect(body.user.managedAssignments).toEqual([]);
+    expect(body.user).not.toHaveProperty('groupId');
+    expect(body.user).not.toHaveProperty('groupName');
+  });
+
   it('returns 401 without token', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/auth/me' });
     expect(res.statusCode).toBe(401);
@@ -284,6 +381,7 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('creates a setup-type token (not reset) for a pending user', async () => {
+    const subject = await createSubject({ name: 'ForgotSubject' });
     // Create a pending user via the API (sendSetupEmail:false → no token yet, status pending)
     const createRes = await app.inject({
       method: 'POST',
@@ -294,6 +392,7 @@ describe('POST /api/auth/forgot-password', () => {
         email: 'pendingforgot@test.com',
         firstName: 'Pending',
         lastName: 'Forgot',
+        subjectIds: [subject.id],
         sendSetupEmail: false,
       },
     });
@@ -339,14 +438,7 @@ describe('POST /api/auth/set-password', () => {
   });
 
   it('full e2e: register → set-password → login', async () => {
-    // Enable registration
-    await app.inject({
-      method: 'PUT',
-      url: '/api/config/registration_enabled',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { value: 'true' },
-    });
-
+    // Registration is enabled via REGISTRATION_ENABLED=true in setupEnv.js
     // Register a pending user
     const regRes = await app.inject({
       method: 'POST',

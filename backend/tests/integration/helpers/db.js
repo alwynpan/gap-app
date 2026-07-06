@@ -2,7 +2,8 @@
 
 /**
  * Database helpers for integration tests.
- * Provides truncation utilities to keep tests isolated.
+ * Provides truncation utilities and direct-INSERT factories for the
+ * subject → assignment → group hierarchy to keep tests isolated.
  */
 
 const { Pool } = require('pg');
@@ -26,16 +27,20 @@ function getPool() {
 }
 
 /**
- * Truncates test data tables, preserving seed data (roles, admin user).
+ * Deletes test data in FK-safe order, preserving seed data (roles, admin user).
  * Call in beforeEach to guarantee a clean state between tests.
  */
 async function cleanDatabase() {
   const db = getPool();
-  // Order matters: users references groups and roles
   await db.query(`
     DELETE FROM password_reset_tokens WHERE TRUE;
+    DELETE FROM user_groups WHERE TRUE;
+    DELETE FROM assignment_managers WHERE TRUE;
+    DELETE FROM user_subjects WHERE TRUE;
     DELETE FROM users WHERE username != 'admin';
     DELETE FROM groups WHERE TRUE;
+    DELETE FROM assignments WHERE TRUE;
+    DELETE FROM subjects WHERE TRUE;
     DELETE FROM config WHERE TRUE;
   `);
 }
@@ -69,15 +74,72 @@ async function createUser({
 }
 
 /**
- * Create a group directly in the DB.
+ * Create a subject directly in the DB.
  */
-async function createGroup({ name, enabled = true, maxMembers = null }) {
+async function createSubject({ name }) {
   const db = getPool();
-  const { rows } = await db.query('INSERT INTO groups (name, enabled, max_members) VALUES ($1, $2, $3) RETURNING *', [
+  const { rows } = await db.query('INSERT INTO subjects (name) VALUES ($1) RETURNING *', [name]);
+  return rows[0];
+}
+
+/**
+ * Create an assignment directly in the DB.
+ */
+async function createAssignment({ subjectId, name }) {
+  const db = getPool();
+  const { rows } = await db.query('INSERT INTO assignments (subject_id, name) VALUES ($1, $2) RETURNING *', [
+    subjectId,
     name,
-    enabled,
-    maxMembers,
   ]);
+  return rows[0];
+}
+
+/**
+ * Create a group directly in the DB (requires a parent assignment).
+ */
+async function createGroup({ assignmentId, name, enabled = true, maxMembers = null }) {
+  const db = getPool();
+  const { rows } = await db.query(
+    'INSERT INTO groups (assignment_id, name, enabled, max_members) VALUES ($1, $2, $3, $4) RETURNING *',
+    [assignmentId, name, enabled, maxMembers]
+  );
+  return rows[0];
+}
+
+/**
+ * Enrol a user in a subject directly in the DB.
+ */
+async function addUserToSubject(userId, subjectId) {
+  const db = getPool();
+  const { rows } = await db.query('INSERT INTO user_subjects (user_id, subject_id) VALUES ($1, $2) RETURNING *', [
+    userId,
+    subjectId,
+  ]);
+  return rows[0];
+}
+
+/**
+ * Make a user the manager of an assignment directly in the DB.
+ */
+async function assignManager(userId, assignmentId) {
+  const db = getPool();
+  const { rows } = await db.query(
+    'INSERT INTO assignment_managers (user_id, assignment_id) VALUES ($1, $2) RETURNING *',
+    [userId, assignmentId]
+  );
+  return rows[0];
+}
+
+/**
+ * Place a user in a group for an assignment directly in the DB
+ * (bypasses the application-layer subject-membership/capacity checks).
+ */
+async function addUserToGroup(userId, groupId, assignmentId) {
+  const db = getPool();
+  const { rows } = await db.query(
+    'INSERT INTO user_groups (user_id, group_id, assignment_id) VALUES ($1, $2, $3) RETURNING *',
+    [userId, groupId, assignmentId]
+  );
   return rows[0];
 }
 
@@ -101,4 +163,16 @@ async function closePool() {
   }
 }
 
-module.exports = { cleanDatabase, createUser, createGroup, loginAs, closePool, getPool };
+module.exports = {
+  cleanDatabase,
+  createUser,
+  createSubject,
+  createAssignment,
+  createGroup,
+  addUserToSubject,
+  assignManager,
+  addUserToGroup,
+  loginAs,
+  closePool,
+  getPool,
+};

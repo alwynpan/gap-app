@@ -103,8 +103,8 @@ enableGroupJoinLock(page); // Login as admin, navigate to /settings, enable lock
 ```js
 cleanDatabase()                              // DELETE all groups, non-admin users, config
 createUser({ username, email, ... })         // Insert user directly (bypasses email flow)
-createGroup({ name, enabled, ... })          // Insert group directly
-assignUserToGroup(username, groupId)         // Set group_id on user row
+createGroup({ assignmentId, name, enabled, ... }) // Insert group directly under an assignment
+assignUserToGroup(username, groupId)         // Insert user_groups membership row for the group's assignment
 createPasswordResetToken(email, opts)        // Insert hashed reset token; returns raw token for URLs
 closePool()                                  // Close the DB connection pool
 ```

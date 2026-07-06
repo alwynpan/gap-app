@@ -1,7 +1,10 @@
 // Mock models at the top level
 jest.mock('../../src/models/Group');
-jest.mock('../../src/models/User');
+jest.mock('../../src/models/UserGroup');
+jest.mock('../../src/models/Assignment');
+jest.mock('../../src/models/Subject');
 jest.mock('../../src/models/Config');
+jest.mock('../../src/models/User');
 
 jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), trace: jest.fn(), fatal: jest.fn() },
@@ -13,8 +16,40 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 const Group = require('../../src/models/Group');
-const User = require('../../src/models/User');
+const UserGroup = require('../../src/models/UserGroup');
+const Assignment = require('../../src/models/Assignment');
+const Subject = require('../../src/models/Subject');
 const Config = require('../../src/models/Config');
+const User = require('../../src/models/User');
+
+const GROUP_ID = '10000000-0000-4000-8000-000000000001';
+const OTHER_GROUP_ID = '10000000-0000-4000-8000-000000000002';
+const MISSING_GROUP_ID = '10000000-0000-4000-8000-000000000999';
+const ASSIGNMENT_ID = '20000000-0000-4000-8000-000000000001';
+const OTHER_ASSIGNMENT_ID = '20000000-0000-4000-8000-000000000002';
+const SUBJECT_ID = '30000000-0000-4000-8000-000000000001';
+const ADMIN_ID = '00000000-0000-4000-8000-000000000001';
+const AM_ID = '00000000-0000-4000-8000-000000000002';
+const USER_ID = '00000000-0000-4000-8000-000000000010';
+
+const adminUser = () => ({ id: ADMIN_ID, role: 'admin' });
+const amUser = () => ({ id: AM_ID, role: 'assignment_manager' });
+const plainUser = () => ({ id: USER_ID, role: 'user' });
+
+const mockGroupRow = (overrides = {}) => ({
+  id: GROUP_ID,
+  assignment_id: ASSIGNMENT_ID,
+  name: 'Team A',
+  enabled: true,
+  max_members: 5,
+  member_count: 2,
+  assignment_name: 'Assignment 1',
+  subject_id: SUBJECT_ID,
+  subject_name: 'COMP10001',
+  created_at: new Date('2026-01-01T00:00:00Z'),
+  updated_at: new Date('2026-01-02T00:00:00Z'),
+  ...overrides,
+});
 
 describe('Groups Routes', () => {
   beforeEach(() => {
@@ -28,6 +63,7 @@ describe('Groups Routes', () => {
     delete: jest.fn(),
     requireAdmin: jest.fn().mockResolvedValue(true),
     requireAssignmentManager: jest.fn().mockResolvedValue(true),
+    assertManagesAssignment: jest.fn().mockResolvedValue(true),
   });
 
   const captureHandlers = (mockFastify) => {
@@ -61,70 +97,33 @@ describe('Groups Routes', () => {
 
   const mockReply = () => ({ code: jest.fn().mockReturnThis(), send: jest.fn() });
 
-  describe('GET /groups', () => {
-    it('rejects unauthenticated request', () => {
+  const denyManagesAssignment = (mockFastify) => {
+    mockFastify.assertManagesAssignment.mockImplementation(async (request, reply) => {
+      reply.code(403).send({ error: 'Forbidden: You do not manage this assignment' });
+      return false;
+    });
+  };
+
+  describe('removed endpoints', () => {
+    it('does not register GET /groups (listing moved to /assignments/:id/groups)', () => {
       const { handlers } = setupRoute();
-      const reply = mockReply();
-      handlers['/groups_get_pre']({ user: null }, reply);
-      expect(reply.code).toHaveBeenCalledWith(401);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(handlers['/groups_get']).toBeUndefined();
+      expect(handlers['/groups_get_pre']).toBeUndefined();
     });
 
-    it('allows authenticated request', () => {
+    it('does not register GET /groups/enabled', () => {
       const { handlers } = setupRoute();
-      const reply = mockReply();
-      handlers['/groups_get_pre']({ user: { id: '00000000-0000-4000-8000-000000000001' } }, reply);
-      expect(reply.code).not.toHaveBeenCalled();
+      expect(handlers['/groups/enabled_get']).toBeUndefined();
     });
 
-    it('returns all groups successfully', async () => {
+    it('does not register POST /groups/import-mappings', () => {
       const { handlers } = setupRoute();
-      Group.findAll.mockResolvedValue([{ id: '10000000-0000-4000-8000-000000000001', name: 'Team A', enabled: true }]);
-      const reply = mockReply();
-      await handlers['/groups_get']({}, reply);
-      expect(Group.findAll).toHaveBeenCalled();
-      expect(reply.send).toHaveBeenCalledWith({
-        groups: [{ id: '10000000-0000-4000-8000-000000000001', name: 'Team A', enabled: true }],
-      });
+      expect(handlers['/groups/import-mappings_post']).toBeUndefined();
     });
 
-    it('handles error when fetching groups', async () => {
+    it('does not register GET /groups/export-mappings', () => {
       const { handlers } = setupRoute();
-      Group.findAll.mockRejectedValue(new Error('Database error'));
-      const { logger: mockLogger } = require('../../src/utils/logger');
-      const reply = mockReply();
-      await handlers['/groups_get']({}, reply);
-      expect(mockLogger.error).toHaveBeenCalled();
-      expect(reply.code).toHaveBeenCalledWith(500);
-    });
-  });
-
-  describe('GET /groups/enabled', () => {
-    it('rejects unauthenticated request', () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      handlers['/groups/enabled_get_pre']({ user: null }, reply);
-      expect(reply.code).toHaveBeenCalledWith(401);
-    });
-
-    it('returns enabled groups successfully', async () => {
-      const { handlers } = setupRoute();
-      Group.findEnabled.mockResolvedValue([
-        { id: '10000000-0000-4000-8000-000000000001', name: 'Active Team', enabled: true },
-      ]);
-      const reply = mockReply();
-      await handlers['/groups/enabled_get']({}, reply);
-      expect(Group.findEnabled).toHaveBeenCalled();
-    });
-
-    it('handles error when fetching enabled groups', async () => {
-      const { handlers } = setupRoute();
-      Group.findEnabled.mockRejectedValue(new Error('Database error'));
-      const { logger: mockLogger } = require('../../src/utils/logger');
-      const reply = mockReply();
-      await handlers['/groups/enabled_get']({}, reply);
-      expect(mockLogger.error).toHaveBeenCalled();
-      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(handlers['/groups/export-mappings_get']).toBeUndefined();
     });
   });
 
@@ -134,36 +133,20 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       handlers['/groups/:id_get_pre']({ user: null }, reply);
       expect(reply.code).toHaveBeenCalledWith(401);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
     });
 
-    it('returns group by id with members', async () => {
+    it('allows authenticated request through preHandler', () => {
       const { handlers } = setupRoute();
-      const mockGroup = {
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Test Group',
-        enabled: true,
-        max_members: 10,
-        member_count: 3,
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-      const mockMembers = [{ id: '00000000-0000-4000-8000-000000000001', username: 'user1', role_name: 'user' }];
-      Group.findById.mockResolvedValue(mockGroup);
-      Group.getMembers.mockResolvedValue(mockMembers);
       const reply = mockReply();
-      await handlers['/groups/:id_get']({ params: { id: '10000000-0000-4000-8000-000000000001' } }, reply);
-      expect(Group.findById).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001');
-      expect(Group.getMembers).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001');
-      expect(reply.send).toHaveBeenCalledWith({
-        group: expect.objectContaining({ maxMembers: 10, memberCount: 3 }),
-        members: mockMembers,
-      });
+      handlers['/groups/:id_get_pre']({ user: plainUser() }, reply);
+      expect(reply.code).not.toHaveBeenCalled();
     });
 
     it('returns 400 for invalid UUID in path param', async () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
-      await handlers['/groups/:id_get']({ params: { id: 'not-a-uuid' } }, reply);
+      await handlers['/groups/:id_get']({ user: adminUser(), params: { id: 'not-a-uuid' } }, reply);
       expect(reply.code).toHaveBeenCalledWith(400);
       expect(reply.send).toHaveBeenCalledWith({ error: 'Invalid ID format' });
       expect(Group.findById).not.toHaveBeenCalled();
@@ -173,8 +156,84 @@ describe('Groups Routes', () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue(null);
       const reply = mockReply();
-      await handlers['/groups/:id_get']({ params: { id: '10000000-0000-4000-8000-000000000999' } }, reply);
+      await handlers['/groups/:id_get']({ user: adminUser(), params: { id: MISSING_GROUP_ID } }, reply);
       expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
+    it('returns full group mapping with members for admin', async () => {
+      const { handlers } = setupRoute();
+      const row = mockGroupRow();
+      const members = [{ id: USER_ID, username: 'user1', role_name: 'user' }];
+      Group.findById.mockResolvedValue(row);
+      UserGroup.getMembers.mockResolvedValue(members);
+      const reply = mockReply();
+      await handlers['/groups/:id_get']({ user: adminUser(), params: { id: GROUP_ID } }, reply);
+      expect(Group.findById).toHaveBeenCalledWith(GROUP_ID);
+      expect(UserGroup.getMembers).toHaveBeenCalledWith(GROUP_ID);
+      expect(reply.send).toHaveBeenCalledWith({
+        group: {
+          id: GROUP_ID,
+          name: 'Team A',
+          enabled: true,
+          maxMembers: 5,
+          memberCount: 2,
+          assignmentId: ASSIGNMENT_ID,
+          assignmentName: 'Assignment 1',
+          subjectId: SUBJECT_ID,
+          subjectName: 'COMP10001',
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        },
+        members,
+      });
+    });
+
+    it('allows a subject member to view the group', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue(mockGroupRow());
+      Subject.isMember.mockResolvedValue(true);
+      UserGroup.getMembers.mockResolvedValue([]);
+      const reply = mockReply();
+      await handlers['/groups/:id_get']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(Subject.isMember).toHaveBeenCalledWith(SUBJECT_ID, USER_ID);
+      expect(reply.code).not.toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ group: expect.any(Object), members: [] }));
+    });
+
+    it('rejects a plain user who is not a subject member', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue(mockGroupRow());
+      Subject.isMember.mockResolvedValue(false);
+      const reply = mockReply();
+      await handlers['/groups/:id_get']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Forbidden: You do not have access to this group' });
+      expect(UserGroup.getMembers).not.toHaveBeenCalled();
+    });
+
+    it('allows an assignment manager who manages the assignment', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue(mockGroupRow());
+      Subject.isMember.mockResolvedValue(false);
+      Assignment.isManager.mockResolvedValue(true);
+      UserGroup.getMembers.mockResolvedValue([]);
+      const reply = mockReply();
+      await handlers['/groups/:id_get']({ user: amUser(), params: { id: GROUP_ID } }, reply);
+      expect(Assignment.isManager).toHaveBeenCalledWith(AM_ID, ASSIGNMENT_ID);
+      expect(reply.code).not.toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ members: [] }));
+    });
+
+    it('rejects an assignment manager who does not manage the assignment', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue(mockGroupRow());
+      Subject.isMember.mockResolvedValue(false);
+      Assignment.isManager.mockResolvedValue(false);
+      const reply = mockReply();
+      await handlers['/groups/:id_get']({ user: amUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Forbidden: You do not have access to this group' });
     });
 
     it('handles error when fetching group', async () => {
@@ -182,177 +241,141 @@ describe('Groups Routes', () => {
       Group.findById.mockRejectedValue(new Error('Database error'));
       const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
-      await handlers['/groups/:id_get']({ params: { id: '10000000-0000-4000-8000-000000000001' } }, reply);
+      await handlers['/groups/:id_get']({ user: adminUser(), params: { id: GROUP_ID } }, reply);
       expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to retrieve group' });
     });
   });
 
   describe('POST /groups', () => {
+    beforeEach(() => {
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, name: 'Assignment 1', subject_id: SUBJECT_ID });
+      Group.findByName.mockResolvedValue(null);
+    });
+
     it('rejects unauthenticated request', () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
       handlers['/groups_post_pre']({ user: null }, reply);
       expect(reply.code).toHaveBeenCalledWith(401);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
     });
 
-    it('returns reply when admin check fails in preHandler', async () => {
-      const { mockFastify, handlers } = setupRoute();
-      mockFastify.requireAdmin.mockResolvedValue(false);
-      const reply = mockReply();
-      const request = { user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' } };
-      const result = await handlers['/groups_post_pre'](request, reply);
-      expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
-      expect(result).toBe(reply);
-    });
-
-    it('rejects missing group name', async () => {
+    it('rejects invalid body (missing assignmentId)', async () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
-      await handlers['/groups_post'](
-        { user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' }, body: {} },
-        reply
-      );
+      await handlers['/groups_post']({ user: adminUser(), body: { name: 'Team A' } }, reply);
       expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: expect.any(String) });
+      expect(Group.create).not.toHaveBeenCalled();
     });
 
-    it('rejects when group name already exists', async () => {
+    it('rejects invalid body (missing name)', async () => {
       const { handlers } = setupRoute();
-      Group.findByName.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Existing Group',
-        enabled: true,
-      });
       const reply = mockReply();
-      await handlers['/groups_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { name: 'existing group' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(409);
-    });
-
-    it('creates group with enabled=true by default', async () => {
-      const { handlers } = setupRoute();
-      Group.findByName.mockResolvedValue(null);
-      Group.create.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'New Group',
-        enabled: true,
-        max_members: null,
-      });
-      const reply = mockReply();
-      await handlers['/groups_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { name: 'New Group' },
-        },
-        reply
-      );
-      expect(Group.create).toHaveBeenCalledWith('New Group', true, null);
-      expect(reply.code).toHaveBeenCalledWith(201);
-    });
-
-    it('creates group with enabled=false', async () => {
-      const { handlers } = setupRoute();
-      Group.findByName.mockResolvedValue(null);
-      Group.create.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Disabled Group',
-        enabled: false,
-        max_members: null,
-      });
-      const reply = mockReply();
-      await handlers['/groups_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { name: 'Disabled Group', enabled: false },
-        },
-        reply
-      );
-      expect(Group.create).toHaveBeenCalledWith('Disabled Group', false, null);
-    });
-
-    it('creates group with maxMembers', async () => {
-      const { handlers } = setupRoute();
-      Group.findByName.mockResolvedValue(null);
-      Group.create.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Limited',
-        enabled: true,
-        max_members: 5,
-      });
-      const reply = mockReply();
-      await handlers['/groups_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { name: 'Limited', maxMembers: 5 },
-        },
-        reply
-      );
-      expect(Group.create).toHaveBeenCalledWith('Limited', true, 5);
-      expect(reply.code).toHaveBeenCalledWith(201);
-      expect(reply.send).toHaveBeenCalledWith(
-        expect.objectContaining({ group: expect.objectContaining({ maxMembers: 5 }) })
-      );
+      await handlers['/groups_post']({ user: adminUser(), body: { assignmentId: ASSIGNMENT_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
     });
 
     it('rejects invalid maxMembers (non-positive)', async () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
       await handlers['/groups_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { name: 'Bad', maxMembers: 0 },
-        },
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, name: 'Bad', maxMembers: 0 } },
         reply
       );
       expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: expect.any(String) });
     });
 
-    it('rejects invalid maxMembers (NaN)', async () => {
+    it('returns 404 when assignment not found', async () => {
       const { handlers } = setupRoute();
+      Assignment.findById.mockResolvedValue(null);
       const reply = mockReply();
       await handlers['/groups_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { name: 'Bad', maxMembers: 'abc' },
-        },
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, name: 'Team A' } },
         reply
       );
-      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Assignment not found' });
+      expect(Group.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when user does not manage the assignment', async () => {
+      const { mockFastify, handlers } = setupRoute();
+      denyManagesAssignment(mockFastify);
+      const reply = mockReply();
+      const request = { user: plainUser(), body: { assignmentId: ASSIGNMENT_ID, name: 'Team A' } };
+      await handlers['/groups_post'](request, reply);
+      expect(mockFastify.assertManagesAssignment).toHaveBeenCalledWith(request, reply, ASSIGNMENT_ID);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Forbidden: You do not manage this assignment' });
+      expect(Group.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects when group name already exists within the assignment', async () => {
+      const { handlers } = setupRoute();
+      Group.findByName.mockResolvedValue({ id: OTHER_GROUP_ID, name: 'Team A' });
+      const reply = mockReply();
+      await handlers['/groups_post'](
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, name: 'team a' } },
+        reply
+      );
+      expect(Group.findByName).toHaveBeenCalledWith(ASSIGNMENT_ID, 'team a');
+      expect(reply.code).toHaveBeenCalledWith(409);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Group name already exists' });
+    });
+
+    it('creates group with defaults (enabled=true, unlimited members)', async () => {
+      const { handlers } = setupRoute();
+      Group.create.mockResolvedValue({
+        id: GROUP_ID,
+        assignment_id: ASSIGNMENT_ID,
+        name: 'New Group',
+        enabled: true,
+        max_members: null,
+      });
+      const reply = mockReply();
+      await handlers['/groups_post'](
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, name: 'New Group' } },
+        reply
+      );
+      expect(Group.create).toHaveBeenCalledWith(ASSIGNMENT_ID, 'New Group', true, null);
+      expect(reply.code).toHaveBeenCalledWith(201);
+      expect(reply.send).toHaveBeenCalledWith({
+        message: 'Group created successfully',
+        group: { id: GROUP_ID, name: 'New Group', enabled: true, maxMembers: null, assignmentId: ASSIGNMENT_ID },
+      });
+    });
+
+    it('creates group with enabled=false and maxMembers', async () => {
+      const { handlers } = setupRoute();
+      Group.create.mockResolvedValue({
+        id: GROUP_ID,
+        assignment_id: ASSIGNMENT_ID,
+        name: 'Limited',
+        enabled: false,
+        max_members: 5,
+      });
+      const reply = mockReply();
+      await handlers['/groups_post'](
+        { user: amUser(), body: { assignmentId: ASSIGNMENT_ID, name: 'Limited', enabled: false, maxMembers: 5 } },
+        reply
+      );
+      expect(Group.create).toHaveBeenCalledWith(ASSIGNMENT_ID, 'Limited', false, 5);
+      expect(reply.code).toHaveBeenCalledWith(201);
+      expect(reply.send).toHaveBeenCalledWith(
+        expect.objectContaining({ group: expect.objectContaining({ maxMembers: 5, enabled: false }) })
+      );
     });
 
     it('handles error when creating group', async () => {
       const { handlers } = setupRoute();
-      Group.findByName.mockResolvedValue(null);
       Group.create.mockRejectedValue(new Error('Database error'));
       const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { name: 'New Group' },
-        },
-        reply
-      );
-      expect(mockLogger.error).toHaveBeenCalled();
-      expect(reply.code).toHaveBeenCalledWith(500);
-    });
-
-    it('returns 500 when Group.findByName rejects with DB error', async () => {
-      const { handlers } = setupRoute();
-      Group.findByName.mockRejectedValue(new Error('connection refused'));
-      const { logger: mockLogger } = require('../../src/utils/logger');
-      const reply = mockReply();
-      await handlers['/groups_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { name: 'New Group' },
-        },
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, name: 'New Group' } },
         reply
       );
       expect(mockLogger.error).toHaveBeenCalled();
@@ -361,7 +384,162 @@ describe('Groups Routes', () => {
     });
   });
 
+  describe('POST /groups/bulk', () => {
+    beforeEach(() => {
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, name: 'Assignment 1', subject_id: SUBJECT_ID });
+      Group.findByNames.mockResolvedValue([]);
+    });
+
+    it('rejects unauthenticated request', () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      handlers['/groups/bulk_post_pre']({ user: null }, reply);
+      expect(reply.code).toHaveBeenCalledWith(401);
+    });
+
+    it('rejects invalid body (missing assignmentId)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post']({ user: adminUser(), body: { groups: [{ name: 'A' }] } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(Group.bulkCreate).not.toHaveBeenCalled();
+    });
+
+    it('rejects empty groups array', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, groups: [] } },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+    });
+
+    it('rejects batch larger than 2000 groups', async () => {
+      const { handlers } = setupRoute();
+      const groups = Array.from({ length: 2001 }, (_, i) => ({ name: `Group ${i}` }));
+      const reply = mockReply();
+      await handlers['/groups/bulk_post']({ user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, groups } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(Group.bulkCreate).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when assignment not found', async () => {
+      const { handlers } = setupRoute();
+      Assignment.findById.mockResolvedValue(null);
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, groups: [{ name: 'A' }] } },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Assignment not found' });
+    });
+
+    it('returns 403 when user does not manage the assignment', async () => {
+      const { mockFastify, handlers } = setupRoute();
+      denyManagesAssignment(mockFastify);
+      const reply = mockReply();
+      const request = { user: amUser(), body: { assignmentId: ASSIGNMENT_ID, groups: [{ name: 'A' }] } };
+      await handlers['/groups/bulk_post'](request, reply);
+      expect(mockFastify.assertManagesAssignment).toHaveBeenCalledWith(request, reply, ASSIGNMENT_ID);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(Group.bulkCreate).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate names within the batch (case-insensitive)', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, groups: [{ name: 'Team A' }, { name: 'team a' }] } },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Duplicate group names within the batch are not allowed' });
+      expect(Group.bulkCreate).not.toHaveBeenCalled();
+    });
+
+    it('rejects when names already exist in the assignment, listing conflicts', async () => {
+      const { handlers } = setupRoute();
+      Group.findByNames.mockResolvedValue([{ id: OTHER_GROUP_ID, assignment_id: ASSIGNMENT_ID, name: 'Team A' }]);
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: adminUser(),
+          body: { assignmentId: ASSIGNMENT_ID, groups: [{ name: 'Team A' }, { name: 'Team B' }] },
+        },
+        reply
+      );
+      expect(Group.findByNames).toHaveBeenCalledWith(ASSIGNMENT_ID, ['Team A', 'Team B']);
+      expect(reply.code).toHaveBeenCalledWith(409);
+      expect(reply.send).toHaveBeenCalledWith({
+        error: expect.stringContaining('One or more group names already exist'),
+      });
+      expect(reply.send).toHaveBeenCalledWith({ error: expect.stringContaining('Team A') });
+      expect(Group.bulkCreate).not.toHaveBeenCalled();
+    });
+
+    it('creates groups successfully with normalised defaults', async () => {
+      const { handlers } = setupRoute();
+      const created = [
+        { id: GROUP_ID, assignment_id: ASSIGNMENT_ID, name: 'Team A', enabled: true, max_members: null },
+        { id: OTHER_GROUP_ID, assignment_id: ASSIGNMENT_ID, name: 'Team B', enabled: false, max_members: 4 },
+      ];
+      Group.bulkCreate.mockResolvedValue(created);
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        {
+          user: adminUser(),
+          body: {
+            assignmentId: ASSIGNMENT_ID,
+            groups: [{ name: 'Team A' }, { name: 'Team B', enabled: false, maxMembers: 4 }],
+          },
+        },
+        reply
+      );
+      expect(Group.bulkCreate).toHaveBeenCalledWith(ASSIGNMENT_ID, [
+        { name: 'Team A', enabled: true, maxMembers: null },
+        { name: 'Team B', enabled: false, maxMembers: 4 },
+      ]);
+      expect(reply.code).toHaveBeenCalledWith(201);
+      expect(reply.send).toHaveBeenCalledWith({ message: 'Groups created successfully', groups: created });
+    });
+
+    it('returns 409 on unique-violation race during insert', async () => {
+      const { handlers } = setupRoute();
+      const dbErr = new Error('duplicate key value violates unique constraint');
+      dbErr.code = '23505';
+      Group.bulkCreate.mockRejectedValue(dbErr);
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, groups: [{ name: 'Team A' }] } },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(409);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'One or more group names already exist' });
+    });
+
+    it('handles error when bulk creating groups', async () => {
+      const { handlers } = setupRoute();
+      Group.bulkCreate.mockRejectedValue(new Error('Database error'));
+      const { logger: mockLogger } = require('../../src/utils/logger');
+      const reply = mockReply();
+      await handlers['/groups/bulk_post'](
+        { user: adminUser(), body: { assignmentId: ASSIGNMENT_ID, groups: [{ name: 'Team A' }] } },
+        reply
+      );
+      expect(mockLogger.error).toHaveBeenCalled();
+      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to create groups' });
+    });
+  });
+
   describe('PUT /groups/:id', () => {
+    beforeEach(() => {
+      Group.findById.mockResolvedValue(mockGroupRow());
+      Group.findByName.mockResolvedValue(null);
+    });
+
     it('rejects unauthenticated request', () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
@@ -369,17 +547,12 @@ describe('Groups Routes', () => {
       expect(reply.code).toHaveBeenCalledWith(401);
     });
 
-    it('returns reply when admin check fails in preHandler', async () => {
-      const { mockFastify, handlers } = setupRoute();
-      mockFastify.requireAdmin.mockResolvedValue(false);
+    it('returns 400 for invalid UUID', async () => {
+      const { handlers } = setupRoute();
       const reply = mockReply();
-      const request = {
-        user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' },
-        params: { id: '10000000-0000-4000-8000-000000000001' },
-      };
-      const result = await handlers['/groups/:id_put_pre'](request, reply);
-      expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
-      expect(result).toBe(reply);
+      await handlers['/groups/:id_put']({ user: adminUser(), params: { id: 'nope' }, body: { name: 'X' } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Invalid ID format' });
     });
 
     it('returns 404 when group not found', async () => {
@@ -387,214 +560,140 @@ describe('Groups Routes', () => {
       Group.findById.mockResolvedValue(null);
       const reply = mockReply();
       await handlers['/groups/:id_put'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000999' },
-          body: { name: 'New Name' },
-        },
+        { user: adminUser(), params: { id: MISSING_GROUP_ID }, body: { name: 'X' } },
         reply
       );
       expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Group not found' });
     });
 
-    it('updates group successfully', async () => {
+    it('returns 403 when user does not manage the group assignment', async () => {
+      const { mockFastify, handlers } = setupRoute();
+      denyManagesAssignment(mockFastify);
+      const reply = mockReply();
+      const request = { user: plainUser(), params: { id: GROUP_ID }, body: { name: 'X' } };
+      await handlers['/groups/:id_put'](request, reply);
+      expect(mockFastify.assertManagesAssignment).toHaveBeenCalledWith(request, reply, ASSIGNMENT_ID);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(Group.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid body (maxMembers non-positive)', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Old Name',
-        enabled: true,
-        member_count: 0,
-      });
-      Group.update.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'New Name',
-        enabled: false,
-      });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-          body: { name: 'New Name', enabled: false },
-        },
+        { user: adminUser(), params: { id: GROUP_ID }, body: { maxMembers: 0 } },
         reply
       );
-      expect(Group.update).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001', {
-        name: 'New Name',
-        enabled: false,
-      });
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(Group.update).not.toHaveBeenCalled();
     });
 
-    it('updates group with partial fields', async () => {
+    it('rejects rename when name is taken by a different group in the assignment', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Old Name',
-        enabled: true,
-        member_count: 0,
-      });
-      Group.update.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Old Name',
-        enabled: false,
-      });
+      Group.findByName.mockResolvedValue({ id: OTHER_GROUP_ID, name: 'Taken' });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-          body: { enabled: false },
-        },
+        { user: adminUser(), params: { id: GROUP_ID }, body: { name: 'Taken' } },
         reply
       );
-      expect(Group.update).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001', {
-        enabled: false,
-      });
+      expect(Group.findByName).toHaveBeenCalledWith(ASSIGNMENT_ID, 'Taken');
+      expect(reply.code).toHaveBeenCalledWith(409);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Group name already exists' });
+      expect(Group.update).not.toHaveBeenCalled();
     });
 
-    it('updates group with maxMembers', async () => {
+    it('allows rename when the matching name belongs to the same group', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Group',
-        enabled: true,
-        member_count: 2,
-      });
+      Group.findByName.mockResolvedValue({ id: GROUP_ID, name: 'team a' });
+      Group.update.mockResolvedValue({ id: GROUP_ID, name: 'Team A', enabled: true });
+      const reply = mockReply();
+      await handlers['/groups/:id_put'](
+        { user: adminUser(), params: { id: GROUP_ID }, body: { name: 'Team A' } },
+        reply
+      );
+      expect(reply.code).not.toHaveBeenCalledWith(409);
+      expect(Group.update).toHaveBeenCalledWith(GROUP_ID, { name: 'Team A', enabled: undefined });
+    });
+
+    it('rejects maxMembers below current member count with old message', async () => {
+      const { handlers } = setupRoute();
+      Group.getMemberCount.mockResolvedValue(5);
+      const reply = mockReply();
+      await handlers['/groups/:id_put'](
+        { user: adminUser(), params: { id: GROUP_ID }, body: { maxMembers: 3 } },
+        reply
+      );
+      expect(Group.getMemberCount).toHaveBeenCalledWith(GROUP_ID);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Group already has 5 members, cannot set limit to 3' });
+      expect(Group.update).not.toHaveBeenCalled();
+    });
+
+    it('updates group with valid maxMembers', async () => {
+      const { handlers } = setupRoute();
       Group.getMemberCount.mockResolvedValue(2);
-      Group.update.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Group',
-        max_members: 5,
-      });
+      Group.update.mockResolvedValue({ id: GROUP_ID, name: 'Team A', max_members: 5 });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-          body: { maxMembers: 5 },
-        },
+        { user: adminUser(), params: { id: GROUP_ID }, body: { maxMembers: 5 } },
         reply
       );
-      expect(Group.getMemberCount).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001');
-      expect(Group.update).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001', {
+      expect(Group.update).toHaveBeenCalledWith(GROUP_ID, {
+        name: undefined,
+        enabled: undefined,
         maxMembers: 5,
       });
+      expect(reply.send).toHaveBeenCalledWith({
+        message: 'Group updated successfully',
+        group: { id: GROUP_ID, name: 'Team A', max_members: 5 },
+      });
     });
 
-    it('sets maxMembers to null (unlimited)', async () => {
+    it('sets maxMembers to null (unlimited) without member count check', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Group',
-        enabled: true,
-        max_members: 5,
-      });
-      Group.update.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Group',
-        max_members: null,
-      });
+      Group.update.mockResolvedValue({ id: GROUP_ID, name: 'Team A', max_members: null });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-          body: { maxMembers: null },
-        },
+        { user: adminUser(), params: { id: GROUP_ID }, body: { maxMembers: null } },
         reply
       );
-      expect(Group.update).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001', {
+      expect(Group.getMemberCount).not.toHaveBeenCalled();
+      expect(Group.update).toHaveBeenCalledWith(GROUP_ID, {
+        name: undefined,
+        enabled: undefined,
         maxMembers: null,
       });
     });
 
-    it('rejects maxMembers less than current member count', async () => {
+    it('updates enabled flag only', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Group',
-        enabled: true,
-        member_count: 5,
-      });
-      Group.getMemberCount.mockResolvedValue(5);
+      Group.update.mockResolvedValue({ id: GROUP_ID, name: 'Team A', enabled: false });
       const reply = mockReply();
-      await handlers['/groups/:id_put'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-          body: { maxMembers: 3 },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({
-        error: 'Group already has 5 members, cannot set limit to 3',
-      });
-    });
-
-    it('rejects invalid maxMembers (non-positive)', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Group',
-        enabled: true,
-      });
-      const reply = mockReply();
-      await handlers['/groups/:id_put'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-          body: { maxMembers: 0 },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: expect.any(String) });
-    });
-
-    it('rejects invalid maxMembers (NaN)', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Group',
-        enabled: true,
-      });
-      const reply = mockReply();
-      await handlers['/groups/:id_put'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-          body: { maxMembers: 'abc' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
+      await handlers['/groups/:id_put']({ user: amUser(), params: { id: GROUP_ID }, body: { enabled: false } }, reply);
+      expect(Group.update).toHaveBeenCalledWith(GROUP_ID, { name: undefined, enabled: false });
     });
 
     it('handles error when updating group', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Old Name',
-        enabled: true,
-      });
       Group.update.mockRejectedValue(new Error('Database error'));
       const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/:id_put'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-          body: { name: 'New Name' },
-        },
+        { user: adminUser(), params: { id: GROUP_ID }, body: { name: 'New Name' } },
         reply
       );
       expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to update group' });
     });
   });
 
   describe('DELETE /groups/:id', () => {
+    beforeEach(() => {
+      Group.findById.mockResolvedValue(mockGroupRow());
+    });
+
     it('rejects unauthenticated request', () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
@@ -602,50 +701,42 @@ describe('Groups Routes', () => {
       expect(reply.code).toHaveBeenCalledWith(401);
     });
 
-    it('returns reply when admin check fails in preHandler', async () => {
-      const { mockFastify, handlers } = setupRoute();
-      mockFastify.requireAdmin.mockResolvedValue(false);
+    it('returns 400 for invalid UUID', async () => {
+      const { handlers } = setupRoute();
       const reply = mockReply();
-      const request = {
-        user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' },
-        params: { id: '10000000-0000-4000-8000-000000000001' },
-      };
-      const result = await handlers['/groups/:id_delete_pre'](request, reply);
-      expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
-      expect(result).toBe(reply);
+      await handlers['/groups/:id_delete']({ user: adminUser(), params: { id: 'nope' } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Invalid ID format' });
+    });
+
+    it('returns 404 when group not found', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue(null);
+      const reply = mockReply();
+      await handlers['/groups/:id_delete']({ user: adminUser(), params: { id: MISSING_GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Group not found' });
+      expect(Group.delete).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when user does not manage the group assignment', async () => {
+      const { mockFastify, handlers } = setupRoute();
+      denyManagesAssignment(mockFastify);
+      const reply = mockReply();
+      const request = { user: plainUser(), params: { id: GROUP_ID } };
+      await handlers['/groups/:id_delete'](request, reply);
+      expect(mockFastify.assertManagesAssignment).toHaveBeenCalledWith(request, reply, ASSIGNMENT_ID);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(Group.delete).not.toHaveBeenCalled();
     });
 
     it('deletes group successfully', async () => {
       const { handlers } = setupRoute();
-      Group.delete.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Deleted Group',
-        enabled: true,
-      });
+      Group.delete.mockResolvedValue({ id: GROUP_ID, name: 'Team A' });
       const reply = mockReply();
-      await handlers['/groups/:id_delete'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(Group.delete).toHaveBeenCalledWith('10000000-0000-4000-8000-000000000001');
+      await handlers['/groups/:id_delete']({ user: adminUser(), params: { id: GROUP_ID } }, reply);
+      expect(Group.delete).toHaveBeenCalledWith(GROUP_ID);
       expect(reply.send).toHaveBeenCalledWith({ message: 'Group deleted successfully' });
-    });
-
-    it('returns 404 when group not found for deletion', async () => {
-      const { handlers } = setupRoute();
-      Group.delete.mockResolvedValue(null);
-      const reply = mockReply();
-      await handlers['/groups/:id_delete'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000999' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(404);
     });
 
     it('handles error when deleting group', async () => {
@@ -653,21 +744,149 @@ describe('Groups Routes', () => {
       Group.delete.mockRejectedValue(new Error('Database error'));
       const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
-      await handlers['/groups/:id_delete'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
+      await handlers['/groups/:id_delete']({ user: adminUser(), params: { id: GROUP_ID } }, reply);
       expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to delete group' });
+    });
+  });
+
+  describe('DELETE /groups/bulk', () => {
+    it('rejects unauthenticated request', () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      handlers['/groups/bulk_delete_pre']({ user: null }, reply);
+      expect(reply.code).toHaveBeenCalledWith(401);
+    });
+
+    it('returns reply when assignment manager check fails in preHandler', async () => {
+      const { mockFastify, handlers } = setupRoute();
+      mockFastify.requireAssignmentManager.mockResolvedValue(false);
+      const reply = mockReply();
+      const request = { user: plainUser() };
+      const result = await handlers['/groups/bulk_delete_pre'](request, reply);
+      expect(mockFastify.requireAssignmentManager).toHaveBeenCalledWith(request, reply);
+      expect(result).toBe(reply);
+    });
+
+    it('rejects non-array ids', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete']({ user: adminUser(), body: { ids: 'nope' } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
+    });
+
+    it('rejects empty ids array', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete']({ user: adminUser(), body: { ids: [] } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+    });
+
+    it('rejects more than 2000 ids', async () => {
+      const { handlers } = setupRoute();
+      const ids = Array.from({ length: 2001 }, () => GROUP_ID);
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete']({ user: adminUser(), body: { ids } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+    });
+
+    it('rejects ids with invalid UUID format', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete']({ user: adminUser(), body: { ids: [GROUP_ID, 'not-a-uuid'] } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'One or more IDs have an invalid format' });
+    });
+
+    it('handles missing body', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete']({ user: adminUser(), body: undefined }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+    });
+
+    it('deletes deduplicated groups as admin without manager scope checks', async () => {
+      const { handlers } = setupRoute();
+      Group.bulkDelete.mockResolvedValue(2);
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete'](
+        { user: adminUser(), body: { ids: [GROUP_ID, OTHER_GROUP_ID, GROUP_ID] } },
+        reply
+      );
+      expect(Assignment.isManager).not.toHaveBeenCalled();
+      expect(Group.bulkDelete).toHaveBeenCalledWith([GROUP_ID, OTHER_GROUP_ID]);
+      expect(reply.send).toHaveBeenCalledWith({ message: 'Groups deleted successfully', deleted: 2 });
+    });
+
+    it('allows assignment manager who manages all affected assignments', async () => {
+      const { handlers } = setupRoute();
+      Group.findByIds.mockResolvedValue([
+        { id: GROUP_ID, assignment_id: ASSIGNMENT_ID, name: 'Team A' },
+        { id: OTHER_GROUP_ID, assignment_id: ASSIGNMENT_ID, name: 'Team B' },
+      ]);
+      Assignment.isManager.mockResolvedValue(true);
+      Group.bulkDelete.mockResolvedValue(2);
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete']({ user: amUser(), body: { ids: [GROUP_ID, OTHER_GROUP_ID] } }, reply);
+      expect(Group.findByIds).toHaveBeenCalledWith([GROUP_ID, OTHER_GROUP_ID]);
+      expect(Assignment.isManager).toHaveBeenCalledWith(AM_ID, ASSIGNMENT_ID);
+      expect(reply.send).toHaveBeenCalledWith({ message: 'Groups deleted successfully', deleted: 2 });
+    });
+
+    it('rejects assignment manager who does not manage one of the assignments', async () => {
+      const { handlers } = setupRoute();
+      Group.findByIds.mockResolvedValue([
+        { id: GROUP_ID, assignment_id: ASSIGNMENT_ID, name: 'Team A' },
+        { id: OTHER_GROUP_ID, assignment_id: OTHER_ASSIGNMENT_ID, name: 'Team B' },
+      ]);
+      Assignment.isManager.mockImplementation(async (_userId, assignmentId) => assignmentId === ASSIGNMENT_ID);
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete']({ user: amUser(), body: { ids: [GROUP_ID, OTHER_GROUP_ID] } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Forbidden: You do not manage this assignment' });
+      expect(Group.bulkDelete).not.toHaveBeenCalled();
+    });
+
+    it('handles error when bulk deleting groups', async () => {
+      const { handlers } = setupRoute();
+      Group.bulkDelete.mockRejectedValue(new Error('Database error'));
+      const { logger: mockLogger } = require('../../src/utils/logger');
+      const reply = mockReply();
+      await handlers['/groups/bulk_delete']({ user: adminUser(), body: { ids: [GROUP_ID] } }, reply);
+      expect(mockLogger.error).toHaveBeenCalled();
+      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to delete groups' });
     });
   });
 
   describe('POST /groups/:id/join', () => {
     beforeEach(() => {
       Config.get.mockResolvedValue('false');
+      Group.findById.mockResolvedValue(mockGroupRow());
+      UserGroup.assignUserToGroup.mockResolvedValue();
+      User.findById.mockResolvedValue({ id: 'caller', enabled: true });
+    });
+
+    it('returns 403 when the account is disabled', async () => {
+      const { handlers } = setupRoute();
+      User.findById.mockResolvedValue({ id: 'caller', enabled: false });
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the calling user no longer exists', async () => {
+      const { handlers } = setupRoute();
+      User.findById.mockResolvedValue(null);
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
     });
 
     it('rejects unauthenticated request', () => {
@@ -677,302 +896,132 @@ describe('Groups Routes', () => {
       expect(reply.code).toHaveBeenCalledWith(401);
     });
 
-    it('joins group successfully', async () => {
+    it('returns 400 for invalid UUID', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-        max_members: 5,
-        member_count: 2,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000010',
-        group_id: null,
-        enabled: true,
-      });
-      Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(Group.assignUserToGroup).toHaveBeenCalledWith(
-        '00000000-0000-4000-8000-000000000010',
-        '10000000-0000-4000-8000-000000000001'
-      );
-      expect(reply.send).toHaveBeenCalledWith({
-        message: 'Successfully joined group',
-        groupId: '10000000-0000-4000-8000-000000000001',
-        groupName: 'Team A',
-      });
-    });
-
-    it('joins group with unlimited capacity', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Open Team',
-        enabled: true,
-        max_members: null,
-        member_count: 100,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000010',
-        group_id: null,
-        enabled: true,
-      });
-      Group.assignUserToGroup.mockResolvedValue();
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(Group.assignUserToGroup).toHaveBeenCalledWith(
-        '00000000-0000-4000-8000-000000000010',
-        '10000000-0000-4000-8000-000000000001'
-      );
-    });
-
-    it('returns 404 when group not found', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue(null);
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000999' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(404);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Group not found' });
-    });
-
-    it('returns 404 when user not found', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-        max_members: null,
-        member_count: 0,
-      });
-      User.findById.mockResolvedValue(undefined);
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000099' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(404);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
-    });
-
-    it('rejects when user account is disabled', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-        max_members: null,
-        member_count: 0,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000010',
-        group_id: null,
-        enabled: false,
-      });
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(403);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
-      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
-    });
-
-    it('rejects joining a disabled group', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Disabled',
-        enabled: false,
-        max_members: null,
-        member_count: 0,
-      });
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: 'nope' } }, reply);
       expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Cannot join a disabled group' });
-    });
-
-    it('rejects when user is already in a group', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000002',
-        name: 'Team B',
-        enabled: true,
-        max_members: null,
-        member_count: 1,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000010',
-        group_id: '10000000-0000-4000-8000-000000000001',
-        enabled: true,
-      });
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000002' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({
-        error: 'You are already in a group. Leave your current group first.',
-      });
-    });
-
-    it('rejects when group is full', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Full Team',
-        enabled: true,
-        max_members: 3,
-        member_count: 3,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000010',
-        group_id: null,
-        enabled: true,
-      });
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(409);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Group is full' });
-    });
-
-    it('handles error when joining group', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockRejectedValue(new Error('Database error'));
-      const { logger: mockLogger } = require('../../src/utils/logger');
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(mockLogger.error).toHaveBeenCalled();
-      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Invalid ID format' });
     });
 
     it('rejects normal user when join lock is enabled', async () => {
       const { handlers } = setupRoute();
       Config.get.mockResolvedValue('true');
       const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010', role: 'user' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
       expect(reply.code).toHaveBeenCalledWith(403);
       expect(reply.send).toHaveBeenCalledWith({
         error: 'Group joining is currently locked. Please contact the teaching staff.',
       });
-      expect(Group.findById).not.toHaveBeenCalled();
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
     });
 
     it('allows admin to join when lock is enabled', async () => {
       const { handlers } = setupRoute();
       Config.get.mockResolvedValue('true');
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-        max_members: null,
-        member_count: 0,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        group_id: null,
-        enabled: true,
-      });
-      Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(Group.assignUserToGroup).toHaveBeenCalled();
+      await handlers['/groups/:id/join_post']({ user: adminUser(), params: { id: GROUP_ID } }, reply);
+      expect(UserGroup.assignUserToGroup).toHaveBeenCalled();
       expect(reply.code).not.toHaveBeenCalledWith(403);
     });
 
     it('allows assignment_manager to join when lock is enabled', async () => {
       const { handlers } = setupRoute();
       Config.get.mockResolvedValue('true');
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-        max_members: null,
-        member_count: 0,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000002',
-        group_id: null,
-        enabled: true,
-      });
-      Group.assignUserToGroup.mockResolvedValue();
       const reply = mockReply();
-      await handlers['/groups/:id/join_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000002', role: 'assignment_manager' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(Group.assignUserToGroup).toHaveBeenCalled();
+      await handlers['/groups/:id/join_post']({ user: amUser(), params: { id: GROUP_ID } }, reply);
+      expect(UserGroup.assignUserToGroup).toHaveBeenCalled();
       expect(reply.code).not.toHaveBeenCalledWith(403);
+    });
+
+    it('returns 404 when group not found', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue(null);
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: MISSING_GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Group not found' });
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
+    });
+
+    it('rejects joining a disabled group', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockResolvedValue(mockGroupRow({ enabled: false }));
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Cannot join a disabled group' });
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
+    });
+
+    it('joins group successfully without replacing existing membership', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(UserGroup.assignUserToGroup).toHaveBeenCalledWith(USER_ID, GROUP_ID, { replace: false });
+      expect(reply.send).toHaveBeenCalledWith({
+        message: 'Successfully joined group',
+        groupId: GROUP_ID,
+        groupName: 'Team A',
+      });
+    });
+
+    it('maps 403 when user is not a member of the subject', async () => {
+      const { handlers } = setupRoute();
+      const err = new Error('User is not a member of this subject');
+      err.statusCode = 403;
+      UserGroup.assignUserToGroup.mockRejectedValue(err);
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'User is not a member of this subject' });
+    });
+
+    it('maps 409 when user is already in a group for the assignment', async () => {
+      const { handlers } = setupRoute();
+      const err = new Error('User is already in a group for this assignment');
+      err.statusCode = 409;
+      UserGroup.assignUserToGroup.mockRejectedValue(err);
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(409);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'User is already in a group for this assignment' });
+    });
+
+    it('maps 409 when group is full', async () => {
+      const { handlers } = setupRoute();
+      const err = new Error('Group is full');
+      err.statusCode = 409;
+      UserGroup.assignUserToGroup.mockRejectedValue(err);
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(409);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Group is full' });
+    });
+
+    it('handles unexpected error when joining group', async () => {
+      const { handlers } = setupRoute();
+      Group.findById.mockRejectedValue(new Error('Database error'));
+      const { logger: mockLogger } = require('../../src/utils/logger');
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(mockLogger.error).toHaveBeenCalled();
+      expect(reply.code).toHaveBeenCalledWith(500);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to join group' });
     });
   });
 
   describe('POST /groups/:id/leave', () => {
     beforeEach(() => {
       Config.get.mockResolvedValue('false');
+      Group.findById.mockResolvedValue(mockGroupRow());
+      UserGroup.findMembership.mockResolvedValue({
+        user_id: USER_ID,
+        group_id: GROUP_ID,
+        assignment_id: ASSIGNMENT_ID,
+      });
+      UserGroup.remove.mockResolvedValue({ user_id: USER_ID, group_id: GROUP_ID, assignment_id: ASSIGNMENT_ID });
+      User.findById.mockResolvedValue({ id: 'caller', enabled: true });
     });
 
     it('rejects unauthenticated request', () => {
@@ -982,137 +1031,100 @@ describe('Groups Routes', () => {
       expect(reply.code).toHaveBeenCalledWith(401);
     });
 
-    it('leaves group successfully', async () => {
+    it('returns 403 when the account is disabled', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000010',
-        group_id: '10000000-0000-4000-8000-000000000001',
-        enabled: true,
-      });
-      User.updateGroup.mockResolvedValue({});
+      User.findById.mockResolvedValue({ id: 'caller', enabled: false });
       const reply = mockReply();
-      await handlers['/groups/:id/leave_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(User.updateGroup).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000010', null);
-      expect(reply.send).toHaveBeenCalledWith({ message: 'Successfully left group' });
+      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
+      expect(UserGroup.remove).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the calling user no longer exists', async () => {
+      const { handlers } = setupRoute();
+      User.findById.mockResolvedValue(null);
+      const reply = mockReply();
+      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
+      expect(UserGroup.remove).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for invalid UUID', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: 'nope' } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Invalid ID format' });
+    });
+
+    it('rejects normal user when join lock is enabled', async () => {
+      const { handlers } = setupRoute();
+      Config.get.mockResolvedValue('true');
+      const reply = mockReply();
+      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({
+        error: 'Group joining is currently locked. Please contact the teaching staff.',
+      });
+      expect(UserGroup.remove).not.toHaveBeenCalled();
+    });
+
+    it('allows admin to leave when lock is enabled', async () => {
+      const { handlers } = setupRoute();
+      Config.get.mockResolvedValue('true');
+      UserGroup.findMembership.mockResolvedValue({
+        user_id: ADMIN_ID,
+        group_id: GROUP_ID,
+        assignment_id: ASSIGNMENT_ID,
+      });
+      const reply = mockReply();
+      await handlers['/groups/:id/leave_post']({ user: adminUser(), params: { id: GROUP_ID } }, reply);
+      expect(UserGroup.remove).toHaveBeenCalledWith(ADMIN_ID, ASSIGNMENT_ID);
+      expect(reply.code).not.toHaveBeenCalledWith(403);
     });
 
     it('returns 404 when group not found', async () => {
       const { handlers } = setupRoute();
       Group.findById.mockResolvedValue(null);
       const reply = mockReply();
-      await handlers['/groups/:id/leave_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000999' },
-        },
-        reply
-      );
+      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: MISSING_GROUP_ID } }, reply);
       expect(reply.code).toHaveBeenCalledWith(404);
       expect(reply.send).toHaveBeenCalledWith({ error: 'Group not found' });
     });
 
-    it('returns 404 when user not found', async () => {
+    it('rejects when user has no membership for the assignment', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-      });
-      User.findById.mockResolvedValue(undefined);
+      UserGroup.findMembership.mockResolvedValue(null);
       const reply = mockReply();
-      await handlers['/groups/:id/leave_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000099' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(404);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
-    });
-
-    it('rejects when user account is disabled', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000010',
-        group_id: '10000000-0000-4000-8000-000000000001',
-        enabled: false,
-      });
-      const reply = mockReply();
-      await handlers['/groups/:id/leave_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(403);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
-      expect(User.updateGroup).not.toHaveBeenCalled();
-    });
-
-    it('rejects when user is not in this group', async () => {
-      const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000002',
-        name: 'Team B',
-        enabled: true,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000010',
-        group_id: '10000000-0000-4000-8000-000000000001',
-        enabled: true,
-      });
-      const reply = mockReply();
-      await handlers['/groups/:id/leave_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000002' },
-        },
-        reply
-      );
+      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(UserGroup.findMembership).toHaveBeenCalledWith(USER_ID, ASSIGNMENT_ID);
       expect(reply.code).toHaveBeenCalledWith(400);
       expect(reply.send).toHaveBeenCalledWith({ error: 'You are not a member of this group' });
+      expect(UserGroup.remove).not.toHaveBeenCalled();
     });
 
-    it('rejects when user is not in any group', async () => {
+    it('rejects when user is in a different group of the assignment', async () => {
       const { handlers } = setupRoute();
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000010',
-        group_id: null,
-        enabled: true,
+      UserGroup.findMembership.mockResolvedValue({
+        user_id: USER_ID,
+        group_id: OTHER_GROUP_ID,
+        assignment_id: ASSIGNMENT_ID,
       });
       const reply = mockReply();
-      await handlers['/groups/:id/leave_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
+      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
       expect(reply.code).toHaveBeenCalledWith(400);
       expect(reply.send).toHaveBeenCalledWith({ error: 'You are not a member of this group' });
+      expect(UserGroup.remove).not.toHaveBeenCalled();
+    });
+
+    it('leaves group successfully', async () => {
+      const { handlers } = setupRoute();
+      const reply = mockReply();
+      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
+      expect(UserGroup.remove).toHaveBeenCalledWith(USER_ID, ASSIGNMENT_ID);
+      expect(reply.send).toHaveBeenCalledWith({ message: 'Successfully left group' });
     });
 
     it('handles error when leaving group', async () => {
@@ -1120,788 +1132,10 @@ describe('Groups Routes', () => {
       Group.findById.mockRejectedValue(new Error('Database error'));
       const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
-      await handlers['/groups/:id/leave_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
+      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
       expect(mockLogger.error).toHaveBeenCalled();
       expect(reply.code).toHaveBeenCalledWith(500);
-    });
-
-    it('rejects normal user when join lock is enabled', async () => {
-      const { handlers } = setupRoute();
-      Config.get.mockResolvedValue('true');
-      const reply = mockReply();
-      await handlers['/groups/:id/leave_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000010', role: 'user' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(403);
-      expect(reply.send).toHaveBeenCalledWith({
-        error: 'Group joining is currently locked. Please contact the teaching staff.',
-      });
-      expect(Group.findById).not.toHaveBeenCalled();
-    });
-
-    it('allows admin to leave when lock is enabled', async () => {
-      const { handlers } = setupRoute();
-      Config.get.mockResolvedValue('true');
-      Group.findById.mockResolvedValue({
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team A',
-        enabled: true,
-      });
-      User.findById.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000001',
-        group_id: '10000000-0000-4000-8000-000000000001',
-        enabled: true,
-      });
-      User.updateGroup.mockResolvedValue({});
-      const reply = mockReply();
-      await handlers['/groups/:id/leave_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          params: { id: '10000000-0000-4000-8000-000000000001' },
-        },
-        reply
-      );
-      expect(User.updateGroup).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', null);
-      expect(reply.code).not.toHaveBeenCalledWith(403);
-    });
-  });
-
-  describe('POST /groups/import-mappings', () => {
-    beforeEach(() => {
-      User.findByEmails.mockResolvedValue([]);
-      Group.findByNames.mockResolvedValue([]);
-    });
-
-    it('rejects unauthenticated request', () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      handlers['/groups/import-mappings_post_pre']({ user: null }, reply);
-      expect(reply.code).toHaveBeenCalledWith(401);
-    });
-
-    it('returns reply when AM check fails in preHandler', async () => {
-      const { mockFastify, handlers } = setupRoute();
-      mockFastify.requireAssignmentManager.mockResolvedValue(false);
-      const reply = mockReply();
-      const request = { user: { id: '00000000-0000-4000-8000-000000000010', role: 'user' } };
-      const result = await handlers['/groups/import-mappings_post_pre'](request, reply);
-      expect(mockFastify.requireAssignmentManager).toHaveBeenCalledWith(request, reply);
-      expect(result).toBe(reply);
-    });
-
-    it('rejects missing or empty rows', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post']({ user: { id: 'u1', role: 'admin' }, body: { rows: [] } }, reply);
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'No mappings to import' });
-    });
-
-    it('rejects when rows exceed MAX_IMPORT_MAPPINGS', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      const rows = Array.from({ length: 2001 }, (_, i) => ({
-        email: `user${i}@test.com`,
-        groupName: `Group${i}`,
-        action: 'import',
-      }));
-      await handlers['/groups/import-mappings_post']({ user: { id: 'u1', role: 'admin' }, body: { rows } }, reply);
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith(
-        expect.objectContaining({ error: expect.stringContaining('exceeds maximum') })
-      );
-    });
-
-    it('imports a valid row successfully', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([
-        { id: '00000000-0000-4000-8000-000000000010', email: 'alice@test.com', role_name: 'user' },
-      ]);
-      Group.findByNames.mockResolvedValue([{ id: '10000000-0000-4000-8000-000000000001', name: 'Team A' }]);
-      Group.assignUserToGroup.mockResolvedValue();
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      expect(Group.assignUserToGroup).toHaveBeenCalled();
-      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ imported: 1, skipped: [], errors: [] }));
-    });
-
-    it('performs exactly 2 batch DB queries for a valid import', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([
-        { id: 'u1', email: 'a@test.com', role_name: 'user' },
-        { id: 'u2', email: 'b@test.com', role_name: 'user' },
-      ]);
-      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
-      Group.assignUserToGroup.mockResolvedValue();
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: {
-            rows: [
-              { email: 'a@test.com', groupName: 'Team A', action: 'import' },
-              { email: 'b@test.com', groupName: 'Team A', action: 'import' },
-            ],
-          },
-        },
-        reply
-      );
-      expect(User.findByEmails).toHaveBeenCalledTimes(1);
-      expect(Group.findByNames).toHaveBeenCalledTimes(1);
-      expect(Group.assignUserToGroup).toHaveBeenCalledTimes(2);
-      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ imported: 2 }));
-    });
-
-    it('skips a row when action is skip', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: {
-            rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'skip', skipReason: 'Unknown user' }],
-          },
-        },
-        reply
-      );
-      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
-      const result = reply.send.mock.calls[0][0];
-      expect(result.skipped).toHaveLength(1);
-      expect(result.skipped[0].reason).toBe('Unknown user');
-    });
-
-    it('skips row when user not found', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([]); // email not in DB
-      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'nobody@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      const result = reply.send.mock.calls[0][0];
-      expect(result.skipped[0].reason).toBe('User not found');
-    });
-
-    it('skips row when group not found', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
-      Group.findByNames.mockResolvedValue([]); // group not in DB
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'alice@test.com', groupName: 'NoSuchGroup', action: 'import' }] },
-        },
-        reply
-      );
-      const result = reply.send.mock.calls[0][0];
-      expect(result.skipped[0].reason).toBe('Group not found');
-    });
-
-    it('records error when group is full', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
-      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
-      const fullErr = new Error('Group is full');
-      fullErr.statusCode = 409;
-      Group.assignUserToGroup.mockRejectedValue(fullErr);
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      const result = reply.send.mock.calls[0][0];
-      expect(result.errors[0].error).toBe('Group is full');
-    });
-
-    it('records per-row error when assignUserToGroup throws an unexpected error', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
-      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
-      Group.assignUserToGroup.mockRejectedValue(new Error('DB connection lost'));
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      const result = reply.send.mock.calls[0][0];
-      expect(result.errors[0].error).toBe('Failed to process row');
-    });
-
-    it('returns 500 when batch lookup fails', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockRejectedValue(new Error('DB down'));
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(500);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to import mappings' });
-    });
-
-    it('skips row when target user is an admin', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([{ id: 'admin1', email: 'admin@test.com', role_name: 'admin' }]);
-      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'admin@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
-      const result = reply.send.mock.calls[0][0];
-      expect(result.skipped[0].reason).toBe('Admins and Assignment Managers cannot be assigned to a group');
-    });
-
-    it('skips row when target user is an assignment_manager', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([{ id: 'am1', email: 'am@test.com', role_name: 'assignment_manager' }]);
-      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'am@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
-      const result = reply.send.mock.calls[0][0];
-      expect(result.skipped[0].reason).toBe('Admins and Assignment Managers cannot be assigned to a group');
-    });
-
-    it('imports successfully when target user is a normal user', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([{ id: 'u2', email: 'normaluser@test.com', role_name: 'user' }]);
-      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
-      Group.assignUserToGroup.mockResolvedValue();
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'normaluser@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      expect(Group.assignUserToGroup).toHaveBeenCalled();
-      const result = reply.send.mock.calls[0][0];
-      expect(result.imported).toBe(1);
-    });
-
-    it('returns 409 when two groups share the same name differing only by case', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
-      Group.findByNames.mockResolvedValue([
-        { id: 'g1', name: 'Team A' },
-        { id: 'g2', name: 'team a' },
-      ]);
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(409);
-      expect(reply.send).toHaveBeenCalledWith(
-        expect.objectContaining({ error: expect.stringContaining('Ambiguous group name') })
-      );
-      expect(Group.assignUserToGroup).not.toHaveBeenCalled();
-    });
-
-    it('does not flag collision when two group rows share the same id (deduplication)', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
-      Group.findByNames.mockResolvedValue([
-        { id: 'g1', name: 'Team A' },
-        { id: 'g1', name: 'Team A' },
-      ]);
-      Group.assignUserToGroup.mockResolvedValue();
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: { rows: [{ email: 'alice@test.com', groupName: 'Team A', action: 'import' }] },
-        },
-        reply
-      );
-      expect(reply.code).not.toHaveBeenCalledWith(409);
-      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ imported: 1 }));
-    });
-
-    it('preserves input row order across skip, validation error, and import rows', async () => {
-      const { handlers } = setupRoute();
-      User.findByEmails.mockResolvedValue([{ id: 'u1', email: 'alice@test.com', role_name: 'user' }]);
-      Group.findByNames.mockResolvedValue([{ id: 'g1', name: 'Team A' }]);
-      Group.assignUserToGroup.mockResolvedValue();
-      const reply = mockReply();
-      await handlers['/groups/import-mappings_post'](
-        {
-          user: { id: 'u1', role: 'admin' },
-          body: {
-            rows: [
-              { email: 'alice@test.com', groupName: 'Team A', action: 'import' },
-              { email: 'bad@test.com', groupName: 'Team A', action: 'skip', skipReason: 'Manual skip' },
-              { email: '', groupName: '', action: 'import' }, // validation error
-            ],
-          },
-        },
-        reply
-      );
-      const result = reply.send.mock.calls[0][0];
-      // imported row comes first in original order
-      expect(result.imported).toBe(1);
-      // skip row (row 2) appears in skipped
-      expect(result.skipped[0].reason).toBe('Manual skip');
-      // validation error (row 3) appears in errors
-      expect(result.errors).toHaveLength(1);
-    });
-  });
-
-  describe('GET /groups/export-mappings', () => {
-    it('rejects unauthenticated request', () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      handlers['/groups/export-mappings_get_pre']({ user: null }, reply);
-      expect(reply.code).toHaveBeenCalledWith(401);
-    });
-
-    it('returns reply when AM check fails in preHandler', async () => {
-      const { mockFastify, handlers } = setupRoute();
-      mockFastify.requireAssignmentManager.mockResolvedValue(false);
-      const reply = mockReply();
-      const request = { user: { id: '00000000-0000-4000-8000-000000000010', role: 'user' } };
-      const result = await handlers['/groups/export-mappings_get_pre'](request, reply);
-      expect(mockFastify.requireAssignmentManager).toHaveBeenCalledWith(request, reply);
-      expect(result).toBe(reply);
-    });
-
-    it('returns user-group mappings', async () => {
-      const { handlers } = setupRoute();
-      Group.getExportMappings.mockResolvedValue([
-        { email: 'alice@test.com', group_name: 'Team A' },
-        { email: 'bob@test.com', group_name: 'Team B' },
-      ]);
-      const reply = mockReply();
-      await handlers['/groups/export-mappings_get']({ user: { id: 'u1', role: 'admin' } }, reply);
-      expect(reply.send).toHaveBeenCalledWith({
-        mappings: [
-          { email: 'alice@test.com', groupName: 'Team A' },
-          { email: 'bob@test.com', groupName: 'Team B' },
-        ],
-      });
-    });
-
-    it('returns empty array when no mappings', async () => {
-      const { handlers } = setupRoute();
-      Group.getExportMappings.mockResolvedValue([]);
-      const reply = mockReply();
-      await handlers['/groups/export-mappings_get']({ user: { id: 'u1', role: 'admin' } }, reply);
-      expect(reply.send).toHaveBeenCalledWith({ mappings: [] });
-    });
-
-    it('handles DB error (500)', async () => {
-      const { handlers } = setupRoute();
-      Group.getExportMappings.mockRejectedValue(new Error('DB error'));
-      const reply = mockReply();
-      await handlers['/groups/export-mappings_get']({ user: { id: 'u1', role: 'admin' } }, reply);
-      expect(reply.code).toHaveBeenCalledWith(500);
-    });
-  });
-
-  describe('POST /groups/bulk', () => {
-    // ── Auth / RBAC ──────────────────────────────────────────────────────────
-
-    it('rejects unauthenticated request (401)', () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      handlers['/groups/bulk_post_pre']({ user: null }, reply);
-      expect(reply.code).toHaveBeenCalledWith(401);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
-    });
-
-    it('returns reply when admin check fails (non-admin user)', async () => {
-      const { mockFastify, handlers } = setupRoute();
-      mockFastify.requireAdmin.mockResolvedValue(false);
-      const reply = mockReply();
-      const request = { user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' } };
-      const result = await handlers['/groups/bulk_post_pre'](request, reply);
-      expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
-      expect(result).toBe(reply);
-    });
-
-    // ── Input validation ─────────────────────────────────────────────────────
-
-    it('rejects missing body (400)', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        { user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' }, body: null },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-    });
-
-    it('rejects non-array body (400)', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { name: 'Group A' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }));
-    });
-
-    it('rejects empty array body (400)', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [],
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Request body must be a non-empty array' });
-    });
-
-    it('rejects array exceeding max batch size (400)', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      const oversized = Array.from({ length: 2001 }, (_, i) => ({ name: `Group ${i + 1}` }));
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: oversized,
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Batch size exceeds maximum of 2000 groups per request' });
-    });
-
-    it('rejects item with missing name (400)', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [{ name: 'Valid Group' }, { enabled: true }],
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ error: expect.stringContaining('items[1]') }));
-    });
-
-    it('rejects item with empty name string (400)', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [{ name: '' }],
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-    });
-
-    it('rejects item with name exceeding 100 characters (400)', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [{ name: 'A'.repeat(101) }],
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-    });
-
-    it('rejects item with non-string name (400)', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [{ name: 42 }],
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-    });
-
-    // ── Happy path ───────────────────────────────────────────────────────────
-
-    it('creates two groups successfully (201)', async () => {
-      const { handlers } = setupRoute();
-      const createdGroups = [
-        { id: '10000000-0000-4000-8000-000000000001', name: 'Group A', enabled: true, max_members: null },
-        { id: '10000000-0000-4000-8000-000000000002', name: 'Group B', enabled: true, max_members: null },
-      ];
-      Group.bulkCreate.mockResolvedValue(createdGroups);
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [{ name: 'Group A' }, { name: 'Group B' }],
-        },
-        reply
-      );
-      expect(Group.bulkCreate).toHaveBeenCalledWith([
-        { name: 'Group A', enabled: true, maxMembers: null },
-        { name: 'Group B', enabled: true, maxMembers: null },
-      ]);
-      expect(reply.code).toHaveBeenCalledWith(201);
-      expect(reply.send).toHaveBeenCalledWith({
-        message: 'Groups created successfully',
-        groups: createdGroups,
-      });
-    });
-
-    it('passes enabled and maxMembers fields when provided', async () => {
-      const { handlers } = setupRoute();
-      const createdGroups = [
-        { id: '10000000-0000-4000-8000-000000000001', name: 'Group A', enabled: false, max_members: 5 },
-      ];
-      Group.bulkCreate.mockResolvedValue(createdGroups);
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [{ name: 'Group A', enabled: false, maxMembers: 5 }],
-        },
-        reply
-      );
-      expect(Group.bulkCreate).toHaveBeenCalledWith([{ name: 'Group A', enabled: false, maxMembers: 5 }]);
-      expect(reply.code).toHaveBeenCalledWith(201);
-    });
-
-    it('handles exactly 100 groups (boundary — allowed)', async () => {
-      const { handlers } = setupRoute();
-      const body = Array.from({ length: 100 }, (_, i) => ({ name: `Group ${i + 1}` }));
-      const createdGroups = body.map((g, i) => ({
-        id: `10000000-0000-4000-8000-0000000000${String(i + 1).padStart(2, '0')}`,
-        name: g.name,
-        enabled: true,
-        max_members: null,
-      }));
-      Group.bulkCreate.mockResolvedValue(createdGroups);
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body,
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(201);
-    });
-
-    // ── Duplicate names ──────────────────────────────────────────────────────
-
-    it('rolls back and returns 409 when duplicate group name exists in DB', async () => {
-      const { handlers } = setupRoute();
-      const err = new Error('duplicate key value violates unique constraint');
-      err.code = '23505';
-      Group.bulkCreate.mockRejectedValue(err);
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [{ name: 'Existing Group' }, { name: 'New Group' }],
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(409);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'One or more group names already exist' });
-    });
-
-    it('rejects duplicate names within the batch itself (400)', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [{ name: 'Group A' }, { name: 'Group A' }],
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Duplicate group names within the batch are not allowed' });
-    });
-
-    // ── Database / server errors ─────────────────────────────────────────────
-
-    it('returns 500 on unexpected database error and rolls back', async () => {
-      const { handlers } = setupRoute();
-      Group.bulkCreate.mockRejectedValue(new Error('Connection lost'));
-      const { logger: mockLogger } = require('../../src/utils/logger');
-      const reply = mockReply();
-      await handlers['/groups/bulk_post'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: [{ name: 'Group A' }, { name: 'Group B' }],
-        },
-        reply
-      );
-      expect(mockLogger.error).toHaveBeenCalled();
-      expect(reply.code).toHaveBeenCalledWith(500);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to create groups' });
-    });
-  });
-
-  // ── DELETE /groups/bulk ──────────────────────────────────────────────────
-  describe('DELETE /groups/bulk', () => {
-    it('rejects unauthenticated request', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_delete_pre']({ user: null }, reply);
-      expect(reply.code).toHaveBeenCalledWith(401);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
-    });
-
-    it('rejects non-admin user (403)', async () => {
-      const { mockFastify, handlers } = setupRoute();
-      mockFastify.requireAdmin.mockResolvedValue(false);
-      const reply = mockReply();
-      const request = {
-        user: { id: '00000000-0000-4000-8000-000000000002', role: 'assignment_manager' },
-        body: { ids: ['10000000-0000-4000-8000-000000000001'] },
-      };
-      const result = await handlers['/groups/bulk_delete_pre'](request, reply);
-      expect(mockFastify.requireAdmin).toHaveBeenCalledWith(request, reply);
-      expect(result).toBe(reply);
-    });
-
-    it('deletes 2 groups and returns { deleted: 2 }', async () => {
-      const { handlers } = setupRoute();
-      Group.bulkDelete.mockResolvedValue(2);
-      const reply = mockReply();
-      await handlers['/groups/bulk_delete'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: {
-            ids: ['10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002'],
-          },
-        },
-        reply
-      );
-      expect(Group.bulkDelete).toHaveBeenCalledWith([
-        '10000000-0000-4000-8000-000000000001',
-        '10000000-0000-4000-8000-000000000002',
-      ]);
-      expect(reply.send).toHaveBeenCalledWith({ message: 'Groups deleted successfully', deleted: 2 });
-    });
-
-    it('returns 400 when ids is an empty array', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_delete'](
-        { user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' }, body: { ids: [] } },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
-    });
-
-    it('returns 400 when ids exceeds 2000', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      const ids = Array.from({ length: 2001 }, (_, i) => `id-${i}`);
-      await handlers['/groups/bulk_delete'](
-        { user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' }, body: { ids } },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
-    });
-
-    it('returns 400 when body.ids is not an array', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_delete'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { ids: 'not-an-array' },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'ids must be a non-empty array of up to 2000 items' });
-    });
-
-    it('returns 400 when ids contain non-UUID values', async () => {
-      const { handlers } = setupRoute();
-      const reply = mockReply();
-      await handlers['/groups/bulk_delete'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { ids: ['not-a-uuid', '10000000-0000-4000-8000-000000000001'] },
-        },
-        reply
-      );
-      expect(reply.code).toHaveBeenCalledWith(400);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'One or more IDs have an invalid format' });
-      expect(Group.bulkDelete).not.toHaveBeenCalled();
-    });
-
-    it('returns 500 on DB error', async () => {
-      const { handlers } = setupRoute();
-      Group.bulkDelete.mockRejectedValue(new Error('DB exploded'));
-      const { logger: mockLogger } = require('../../src/utils/logger');
-      const reply = mockReply();
-      await handlers['/groups/bulk_delete'](
-        {
-          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
-          body: { ids: ['10000000-0000-4000-8000-000000000001'] },
-        },
-        reply
-      );
-      expect(mockLogger.error).toHaveBeenCalled();
-      expect(reply.code).toHaveBeenCalledWith(500);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to delete groups' });
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Failed to leave group' });
     });
   });
 });

@@ -10,20 +10,37 @@ const pool = new Pool(dbConfig);
 const { createSQL } = require('./schema');
 
 const dropSQL = `
+DROP TABLE IF EXISTS user_groups CASCADE;
+DROP TABLE IF EXISTS assignment_managers CASCADE;
+DROP TABLE IF EXISTS user_subjects CASCADE;
+DROP TABLE IF EXISTS password_reset_tokens CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS groups CASCADE;
+DROP TABLE IF EXISTS assignments CASCADE;
+DROP TABLE IF EXISTS subjects CASCADE;
 DROP TABLE IF EXISTS roles CASCADE;
 DROP TABLE IF EXISTS config CASCADE;
 DROP TABLE IF EXISTS schema_migrations CASCADE;
 `;
 
-const sampleGroupsSQL = `
-INSERT INTO groups (name, enabled) VALUES
-  ('Team Alpha', true),
-  ('Team Beta', true),
-  ('Team Gamma', true),
-  ('Team Delta', false)
-ON CONFLICT (name) DO NOTHING;
+// Minimal dev seed: one subject with one assignment and sample groups under it.
+const sampleHierarchySQL = `
+WITH subj AS (
+  INSERT INTO subjects (name) VALUES ('Sample Subject')
+  ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+  RETURNING id
+), assign AS (
+  INSERT INTO assignments (subject_id, name)
+  SELECT id, 'Assignment 1' FROM subj
+  ON CONFLICT (subject_id, name) DO UPDATE SET name = EXCLUDED.name
+  RETURNING id
+)
+INSERT INTO groups (assignment_id, name, enabled)
+SELECT assign.id, g.name, g.enabled
+FROM assign,
+     (VALUES ('Team Alpha', true), ('Team Beta', true),
+             ('Team Gamma', true), ('Team Delta', false)) AS g(name, enabled)
+ON CONFLICT (assignment_id, name) DO NOTHING;
 `;
 
 function askConfirmation(question) {
@@ -126,8 +143,8 @@ async function migrate() {
       [adminUsername, 'admin@gap.local', passwordHash]
     );
 
-    // Insert sample groups
-    await client.query(sampleGroupsSQL);
+    // Insert sample subject/assignment/groups hierarchy
+    await client.query(sampleHierarchySQL);
 
     // Run pending incremental migrations
     await runMigrations(client);

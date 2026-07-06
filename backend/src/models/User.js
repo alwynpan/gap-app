@@ -25,11 +25,36 @@ class User {
       conditions.push(`u.status = $${idx++}`);
       values.push(filters.status);
     }
-    if (filters.groupId === 'none') {
-      conditions.push('u.group_id IS NULL');
-    } else if (filters.groupId) {
-      conditions.push(`u.group_id = $${idx++}`);
+    if (filters.subjectId) {
+      conditions.push(`EXISTS (SELECT 1 FROM user_subjects us WHERE us.user_id = u.id AND us.subject_id = $${idx++})`);
+      values.push(filters.subjectId);
+    }
+    if (filters.assignmentId && filters.groupId === 'none') {
+      // Enrolled in the assignment's subject but not in any group for that assignment
+      conditions.push(
+        `EXISTS (SELECT 1 FROM user_subjects us
+                 JOIN assignments a ON a.subject_id = us.subject_id
+                 WHERE us.user_id = u.id AND a.id = $${idx++})`
+      );
+      values.push(filters.assignmentId);
+      conditions.push(
+        `NOT EXISTS (SELECT 1 FROM user_groups ug WHERE ug.user_id = u.id AND ug.assignment_id = $${idx++})`
+      );
+      values.push(filters.assignmentId);
+    } else if (filters.groupId && filters.groupId !== 'none') {
+      conditions.push(`EXISTS (SELECT 1 FROM user_groups ug WHERE ug.user_id = u.id AND ug.group_id = $${idx++})`);
       values.push(filters.groupId);
+    }
+    if (filters.managedBy) {
+      // Assignment-manager scoping: users enrolled in subjects containing
+      // assignments managed by this user
+      conditions.push(
+        `EXISTS (SELECT 1 FROM user_subjects us
+                 JOIN assignments a ON a.subject_id = us.subject_id
+                 JOIN assignment_managers am ON am.assignment_id = a.id
+                 WHERE us.user_id = u.id AND am.user_id = $${idx++})`
+      );
+      values.push(filters.managedBy);
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -37,10 +62,8 @@ class User {
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
               u.enabled, u.status, u.created_at,
-              u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
-       LEFT JOIN groups g ON u.group_id = g.id
        LEFT JOIN roles r ON u.role_id = r.id
        ${where}
        ORDER BY u.username`,
@@ -56,10 +79,8 @@ class User {
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
               u.enabled, u.status, u.created_at,
-              u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
-       LEFT JOIN groups g ON u.group_id = g.id
        LEFT JOIN roles r ON u.role_id = r.id
        WHERE u.id = ANY($1)`,
       [ids]
@@ -71,10 +92,8 @@ class User {
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
               u.enabled, u.status, u.created_at,
-              u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
-       LEFT JOIN groups g ON u.group_id = g.id
        LEFT JOIN roles r ON u.role_id = r.id
        WHERE u.id = $1`,
       [id]
@@ -86,10 +105,8 @@ class User {
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.password_hash, u.first_name, u.last_name,
               u.student_id, u.enabled, u.status,
-              u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
-       LEFT JOIN groups g ON u.group_id = g.id
        LEFT JOIN roles r ON u.role_id = r.id
        WHERE LOWER(u.username) = LOWER($1)`,
       [username]
@@ -100,7 +117,7 @@ class User {
   static async findByEmail(email) {
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
-              u.group_id, u.enabled, u.status, u.created_at, u.updated_at,
+              u.enabled, u.status, u.created_at, u.updated_at,
               u.role_id, r.name as role_name
        FROM users u
        LEFT JOIN roles r ON u.role_id = r.id
@@ -112,7 +129,7 @@ class User {
 
   static async findByStudentId(studentId) {
     const result = await pool.query(
-      `SELECT id, username, email, first_name, last_name, student_id, group_id, enabled, status, created_at, updated_at, role_id
+      `SELECT id, username, email, first_name, last_name, student_id, enabled, status, created_at, updated_at, role_id
        FROM users WHERE student_id = $1`,
       [studentId]
     );
@@ -125,7 +142,7 @@ class User {
     }
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
-              u.group_id, u.enabled, u.status, u.created_at, u.updated_at,
+              u.enabled, u.status, u.created_at, u.updated_at,
               u.role_id, r.name as role_name
        FROM users u
        LEFT JOIN roles r ON u.role_id = r.id
@@ -143,10 +160,8 @@ class User {
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.password_hash, u.first_name, u.last_name,
               u.student_id, u.enabled, u.status,
-              u.group_id, g.name as group_name,
               u.role_id, r.name as role_name
        FROM users u
-       LEFT JOIN groups g ON u.group_id = g.id
        LEFT JOIN roles r ON u.role_id = r.id
        WHERE LOWER(u.username) = ANY($1)`,
       [lower]
@@ -159,7 +174,7 @@ class User {
       return [];
     }
     const result = await pool.query(
-      `SELECT id, username, email, first_name, last_name, student_id, group_id, enabled, status, created_at, updated_at, role_id
+      `SELECT id, username, email, first_name, last_name, student_id, enabled, status, created_at, updated_at, role_id
        FROM users WHERE student_id = ANY($1)`,
       [studentIds]
     );
@@ -167,7 +182,7 @@ class User {
   }
 
   static async create(userData) {
-    const { username, email, password, firstName, lastName, studentId, groupId, roleId } = userData;
+    const { username, email, password, firstName, lastName, studentId, roleId } = userData;
 
     // If no password provided the account starts as 'pending'; the user sets a password via email link
     let passwordHash = null;
@@ -178,20 +193,10 @@ class User {
     }
 
     const result = await pool.query(
-      `INSERT INTO users (username, email, password_hash, first_name, last_name, student_id, group_id, role_id, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO users (username, email, password_hash, first_name, last_name, student_id, role_id, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, username, email, first_name, last_name, student_id, enabled, status, created_at`,
-      [
-        username,
-        email,
-        passwordHash,
-        firstName || username,
-        lastName || username,
-        studentId || null,
-        groupId || null,
-        roleId,
-        status,
-      ]
+      [username, email, passwordHash, firstName || username, lastName || username, studentId || null, roleId, status]
     );
     return result.rows[0];
   }
@@ -207,7 +212,6 @@ class User {
       firstName: 'first_name',
       lastName: 'last_name',
       studentId: 'student_id',
-      groupId: 'group_id',
       roleId: 'role_id',
       enabled: 'enabled',
       status: 'status',
@@ -232,20 +236,10 @@ class User {
 
     const result = await pool.query(
       `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${paramIndex}
-       RETURNING id, username, email, first_name, last_name, student_id, group_id, enabled, status, created_at, updated_at, role_id`,
+       RETURNING id, username, email, first_name, last_name, student_id, enabled, status, created_at, updated_at, role_id`,
       values
     );
     return result.rows[0] || null;
-  }
-
-  static async updateGroup(userId, groupId) {
-    const result = await pool.query(
-      `UPDATE users
-       SET group_id = $1, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2 RETURNING *`,
-      [groupId, userId]
-    );
-    return result.rows[0];
   }
 
   static async updatePassword(id, newPassword) {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import api from '@/utils/api';
@@ -10,407 +10,425 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(),
 }));
 
-describe('Dashboard page', () => {
-  const mockLogout = jest.fn();
-  const mockRefreshUser = jest.fn();
+const mockLogout = jest.fn();
+const mockRefreshUser = jest.fn();
 
+const SUBJECT_1 = { id: 'sub-1', name: 'Software Modelling' };
+const SUBJECT_2 = { id: 'sub-2', name: 'Distributed Systems' };
+
+const MEMBERSHIP_A1 = {
+  assignment_id: 'a-1',
+  assignment_name: 'Assignment 1',
+  subject_id: 'sub-1',
+  subject_name: 'Software Modelling',
+  group_id: 'g-1',
+  group_name: 'Team Alpha',
+};
+
+function makeUser(overrides = {}) {
+  return {
+    id: 'u-10',
+    username: 'testuser',
+    email: 'test@example.com',
+    firstName: 'Test',
+    lastName: 'User',
+    role: 'user',
+    studentId: 's1234567',
+    subjects: [SUBJECT_1],
+    memberships: [],
+    managedAssignments: [],
+    ...overrides,
+  };
+}
+
+function mockAuth({ user, isAdmin = false, isAssignmentManager = false }) {
+  useAuth.mockReturnValue({
+    user,
+    logout: mockLogout,
+    refreshUser: mockRefreshUser,
+    isAdmin,
+    isAssignmentManager,
+    memberships: user?.memberships ?? [],
+    managedAssignmentIds: (user?.managedAssignments ?? []).map((a) => a.id),
+  });
+}
+
+function mockApi({
+  locked = false,
+  subjects = {},
+  groupsByAssignment = {},
+  membersByGroup = {},
+  failSubjects = [],
+} = {}) {
+  api.get.mockImplementation((url) => {
+    if (url.includes('/config/group-join-locked')) {
+      return Promise.resolve({ data: { locked } });
+    }
+    const subjectMatch = url.match(/\/subjects\/([^/?]+)$/);
+    if (subjectMatch) {
+      const id = subjectMatch[1];
+      if (failSubjects.includes(id)) {
+        return Promise.reject(new Error('subject fetch failed'));
+      }
+      return Promise.resolve({ data: { subject: { id }, assignments: subjects[id] ?? [] } });
+    }
+    const assignmentMatch = url.match(/\/assignments\/([^/?]+)\/groups/);
+    if (assignmentMatch) {
+      return Promise.resolve({ data: { groups: groupsByAssignment[assignmentMatch[1]] ?? [] } });
+    }
+    const groupMatch = url.match(/\/groups\/([^/?]+)$/);
+    if (groupMatch) {
+      return Promise.resolve({ data: { group: {}, members: membersByGroup[groupMatch[1]] ?? [] } });
+    }
+    return Promise.reject(new Error(`Unexpected GET ${url}`));
+  });
+}
+
+function renderDashboard() {
+  return render(
+    <MemoryRouter>
+      <Dashboard />
+    </MemoryRouter>
+  );
+}
+
+describe('Dashboard page', () => {
   beforeEach(() => {
-    useAuth.mockReturnValue({
-      user: { username: 'testuser', email: 'test@example.com', role: 'normal_user' },
-      logout: mockLogout,
-      refreshUser: mockRefreshUser,
-      isAdmin: false,
-      isAssignmentManager: false,
-    });
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
     jest.useRealTimers();
   });
 
-  it('renders user profile data', () => {
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
+  describe('profile card', () => {
+    it('shows subject names joined by comma and no Group row', async () => {
+      mockAuth({ user: makeUser({ subjects: [SUBJECT_1, SUBJECT_2] }) });
+      mockApi({ subjects: { 'sub-1': [], 'sub-2': [] } });
 
-    expect(screen.getByText(/welcome back, testuser!/i)).toBeInTheDocument();
-    expect(screen.getByText('test@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Normal User')).toBeInTheDocument();
-  });
+      renderDashboard();
 
-  it('shows admin links for admin users', () => {
-    useAuth.mockReturnValue({
-      user: { username: 'admin', email: 'admin@example.com', role: 'admin' },
-      logout: mockLogout,
-      refreshUser: mockRefreshUser,
-      isAdmin: true,
-      isAssignmentManager: true,
+      expect(screen.getByText(/welcome back, testuser!/i)).toBeInTheDocument();
+      expect(screen.getByText('Software Modelling, Distributed Systems')).toBeInTheDocument();
+      expect(screen.queryByText(/^Group$/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Not assigned')).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(api.get).toHaveBeenCalledWith(expect.stringContaining('/subjects/sub-1'));
+      });
     });
 
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByRole('link', { name: /manage users/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /manage groups/i })).toBeInTheDocument();
-  });
-
-  it('shows Manage Users but not Manage Groups for assignment_manager role', () => {
-    useAuth.mockReturnValue({
-      user: { username: 'manager', email: 'manager@example.com', role: 'assignment_manager' },
-      logout: mockLogout,
-      refreshUser: mockRefreshUser,
-      isAdmin: false,
-      isAssignmentManager: true,
-    });
-
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByRole('link', { name: /manage users/i })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /manage groups/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
-  });
-
-  it('hides administration block for normal users', () => {
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
-
-    expect(screen.queryByText('Administration')).not.toBeInTheDocument();
-  });
-
-  it('does not show My Group section for admin users', () => {
-    useAuth.mockReturnValue({
-      user: { username: 'admin', email: 'admin@example.com', role: 'admin' },
-      logout: mockLogout,
-      refreshUser: mockRefreshUser,
-      isAdmin: true,
-      isAssignmentManager: true,
-    });
-
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
-
-    expect(screen.queryByText('My Group')).not.toBeInTheDocument();
-  });
-
-  describe('My Group (normal user)', () => {
-    it('shows current group with leave button when user is in a group', async () => {
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
-          groupName: 'Team Alpha',
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
+    it('shows a dash when the user has no subjects', () => {
+      mockAuth({
+        user: makeUser({ username: 'admin', role: 'admin', subjects: [] }),
+        isAdmin: true,
+        isAssignmentManager: true,
       });
 
-      api.get.mockResolvedValue({ data: { members: [] } });
+      renderDashboard();
 
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      expect(screen.getByText('My Group')).toBeInTheDocument();
-      expect(screen.getAllByText('Team Alpha').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByRole('button', { name: /leave group/i })).toBeInTheDocument();
+      expect(screen.getByText('Subjects')).toBeInTheDocument();
+      expect(screen.getByText('—')).toBeInTheDocument();
     });
+  });
 
-    it('fetches and shows group members when user is in a group', async () => {
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
-          groupName: 'Team Alpha',
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
+  describe('administration links', () => {
+    it('shows Subjects & Assignments link for admins pointing at /subjects', () => {
+      mockAuth({
+        user: makeUser({ username: 'admin', role: 'admin', subjects: [] }),
+        isAdmin: true,
+        isAssignmentManager: true,
       });
 
-      api.get.mockResolvedValue({
-        data: {
-          members: [
-            {
-              id: 'u0000000-0000-0000-0000-000000000010',
-              username: 'testuser',
-              email: 'test@example.com',
-              first_name: 'Test',
-              last_name: 'User',
-            },
-            {
-              id: 'u0000000-0000-0000-0000-000000000020',
-              username: 'alice',
-              email: 'alice@example.com',
-              first_name: 'Alice',
-              last_name: 'Smith',
-            },
+      renderDashboard();
+
+      const subjectsLink = screen.getByRole('link', { name: /subjects & assignments/i });
+      expect(subjectsLink).toBeInTheDocument();
+      expect(subjectsLink).toHaveAttribute('href', '/subjects');
+      expect(screen.getByRole('link', { name: /manage users/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /manage groups/i })).not.toBeInTheDocument();
+    });
+
+    it('shows Subjects & Assignments link for assignment managers', () => {
+      mockAuth({
+        user: makeUser({ username: 'manager', role: 'assignment_manager', subjects: [] }),
+        isAdmin: false,
+        isAssignmentManager: true,
+      });
+
+      renderDashboard();
+
+      expect(screen.getByRole('link', { name: /subjects & assignments/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /manage users/i })).toBeInTheDocument();
+    });
+
+    it('hides the administration block for normal users', () => {
+      mockAuth({ user: makeUser({ subjects: [] }) });
+
+      renderDashboard();
+
+      expect(screen.queryByText('Administration')).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /subjects & assignments/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('per-subject cards', () => {
+    it('renders a card per subject listing its assignments', async () => {
+      mockAuth({
+        user: makeUser({ subjects: [SUBJECT_1, SUBJECT_2], memberships: [MEMBERSHIP_A1] }),
+      });
+      mockApi({
+        subjects: {
+          'sub-1': [
+            { id: 'a-1', name: 'Assignment 1', group_count: 2 },
+            { id: 'a-2', name: 'Assignment 2', group_count: 1 },
+          ],
+          'sub-2': [{ id: 'a-3', name: 'Assignment 3', group_count: 0 }],
+        },
+        groupsByAssignment: { 'a-2': [], 'a-3': [] },
+      });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByText('Assignment 1')).toBeInTheDocument();
+        expect(screen.getByText('Assignment 2')).toBeInTheDocument();
+        expect(screen.getByText('Assignment 3')).toBeInTheDocument();
+      });
+      expect(screen.getByText('Software Modelling')).toBeInTheDocument();
+      expect(screen.getByText('Distributed Systems')).toBeInTheDocument();
+    });
+
+    it('does not render subject cards or fetch subjects for admins', () => {
+      mockAuth({
+        user: makeUser({ username: 'admin', role: 'admin', subjects: [SUBJECT_1] }),
+        isAdmin: true,
+        isAssignmentManager: true,
+      });
+      mockApi();
+
+      renderDashboard();
+
+      expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/subjects/'));
+      expect(screen.queryByText(/you are not enrolled in any subject/i)).not.toBeInTheDocument();
+    });
+
+    it('shows an empty state when the user has no subjects', () => {
+      mockAuth({ user: makeUser({ subjects: [] }) });
+      mockApi();
+
+      renderDashboard();
+
+      expect(
+        screen.getByText('You are not enrolled in any subject yet. Contact your administrator.')
+      ).toBeInTheDocument();
+    });
+
+    it('shows an inline error in the failing subject card while other subjects render', async () => {
+      mockAuth({ user: makeUser({ subjects: [SUBJECT_1, SUBJECT_2] }) });
+      mockApi({
+        subjects: { 'sub-2': [{ id: 'a-3', name: 'Assignment 3', group_count: 0 }] },
+        groupsByAssignment: { 'a-3': [] },
+        failSubjects: ['sub-1'],
+      });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to load subject details')).toBeInTheDocument();
+        expect(screen.getByText('Assignment 3')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('assignment with membership', () => {
+    const memberUser = makeUser({ memberships: [MEMBERSHIP_A1] });
+    const subjectFixture = { 'sub-1': [{ id: 'a-1', name: 'Assignment 1', group_count: 2 }] };
+
+    it('shows the current group with a leave button', async () => {
+      mockAuth({ user: memberUser });
+      mockApi({ subjects: subjectFixture });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByText(/your group:/i)).toBeInTheDocument();
+        expect(screen.getByText('Team Alpha')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /leave group/i })).toBeInTheDocument();
+      });
+      // No join UI for an assignment the user already belongs to
+      expect(screen.queryByRole('button', { name: /^join$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /feeling lucky/i })).not.toBeInTheDocument();
+    });
+
+    it('fetches and shows group members only when expanded', async () => {
+      mockAuth({ user: memberUser });
+      mockApi({
+        subjects: subjectFixture,
+        membersByGroup: {
+          'g-1': [
+            { id: 'u-10', username: 'testuser', first_name: 'Test', last_name: 'User', role_name: 'user' },
+            { id: 'u-20', username: 'alice', first_name: 'Alice', last_name: 'Smith', role_name: 'user' },
+            { id: 'u-30', username: 'legacyuser', first_name: null, last_name: null, role_name: 'user' },
           ],
         },
       });
 
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
+      renderDashboard();
 
       await waitFor(() => {
-        expect(screen.getByText('Group Members')).toBeInTheDocument();
-        // shows formatted name "A. Smith" not username "alice"
+        expect(screen.getByRole('button', { name: /show members/i })).toBeInTheDocument();
+      });
+      expect(api.get).not.toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g-1$/));
+
+      await userEvent.click(screen.getByRole('button', { name: /show members/i }));
+
+      await waitFor(() => {
+        expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g-1$/));
+        // "Initial. LastName" format, current user marked, username fallback
+        expect(screen.getByText('T. User')).toBeInTheDocument();
         expect(screen.getByText('A. Smith')).toBeInTheDocument();
-        expect(screen.getByText('alice@example.com')).toBeInTheDocument();
-        // current user is marked with (you)
+        expect(screen.getByText('legacyuser')).toBeInTheDocument();
         expect(screen.getByText('(you)')).toBeInTheDocument();
       });
+
+      await userEvent.click(screen.getByRole('button', { name: /hide members/i }));
+      expect(screen.queryByText('A. Smith')).not.toBeInTheDocument();
     });
 
-    it('displays member name as "Initial. LastName" format', async () => {
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
-          groupName: 'Team Alpha',
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
+    it('hides the leave button and shows lock banner when the global lock is on', async () => {
+      mockAuth({ user: memberUser });
+      mockApi({ locked: true, subjects: subjectFixture });
 
-      api.get.mockResolvedValue({
-        data: {
-          members: [
-            { id: 'u1', username: 'jdoe', email: 'jdoe@example.com', first_name: 'John', last_name: 'Doe' },
-            { id: 'u2', username: 'msmith', email: 'm@example.com', first_name: 'Mary', last_name: 'Smith' },
-          ],
-        },
-      });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
+      renderDashboard();
 
       await waitFor(() => {
-        expect(screen.getByText('J. Doe')).toBeInTheDocument();
-        expect(screen.getByText('M. Smith')).toBeInTheDocument();
-        // usernames should NOT be shown
-        expect(screen.queryByText('jdoe')).not.toBeInTheDocument();
-        expect(screen.queryByText('msmith')).not.toBeInTheDocument();
+        expect(screen.getByText('Team Alpha')).toBeInTheDocument();
       });
-    });
-
-    it('falls back to username when first_name is missing', async () => {
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
-          groupName: 'Team Alpha',
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockResolvedValue({
-        data: {
-          members: [
-            { id: 'u1', username: 'legacyuser', email: 'legacy@example.com', first_name: null, last_name: null },
-          ],
-        },
-      });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
       await waitFor(() => {
-        expect(screen.getByText('legacyuser')).toBeInTheDocument();
+        expect(screen.getByText(/group joining is locked/i)).toBeInTheDocument();
       });
+      expect(screen.queryByRole('button', { name: /leave group/i })).not.toBeInTheDocument();
     });
 
-    it('shows no members message when group has no members', async () => {
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
-          groupName: 'Team Alpha',
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockResolvedValue({ data: { members: [] } });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('No members yet')).toBeInTheDocument();
-      });
-    });
-
-    it('fetches and shows available groups when user has no group', async () => {
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: null,
-          groupName: null,
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockResolvedValue({
-        data: {
-          groups: [
-            { id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', max_members: 5, member_count: 2 },
-            { id: 'g0000000-0000-0000-0000-000000000002', name: 'Team B', max_members: null, member_count: 10 },
-            { id: 'g0000000-0000-0000-0000-000000000003', name: 'Full Team', max_members: 3, member_count: 3 },
-          ],
-        },
-      });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('Team A')).toBeInTheDocument();
-        expect(screen.getByText('Team B')).toBeInTheDocument();
-      });
-
-      // Full team should be filtered out
-      expect(screen.queryByText('Full Team')).not.toBeInTheDocument();
-    });
-
-    it('shows member count with max members', async () => {
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: null,
-          groupName: null,
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockResolvedValue({
-        data: {
-          groups: [{ id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', max_members: 5, member_count: 2 }],
-        },
-      });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/2/)).toBeInTheDocument();
-        expect(screen.getByText(/\/ 5/)).toBeInTheDocument();
-      });
-    });
-
-    it('joins a group successfully', async () => {
+    it('leaves a group, refreshes the user, and refetches joinable groups', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: null,
-          groupName: null,
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
+      mockAuth({ user: memberUser });
+      mockApi({ subjects: subjectFixture, groupsByAssignment: { 'a-1': [] } });
+      api.post.mockResolvedValue({ data: {} });
 
-      api.get.mockResolvedValue({
-        data: {
-          groups: [{ id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', max_members: 5, member_count: 2 }],
-        },
-      });
-      api.post.mockResolvedValue({});
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
+      renderDashboard();
 
       await waitFor(() => {
-        expect(screen.getByText('Team A')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /leave group/i })).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole('button', { name: /join/i }));
+      await user.click(screen.getByRole('button', { name: /leave group/i }));
 
       await waitFor(() => {
-        expect(api.post).toHaveBeenCalledWith(
-          expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001\/join$/)
-        );
+        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g-1\/leave$/));
+        expect(screen.getByText('Successfully left group')).toBeInTheDocument();
+        expect(mockRefreshUser).toHaveBeenCalled();
+        expect(api.get).toHaveBeenCalledWith(expect.stringContaining('/assignments/a-1/groups'));
+      });
+
+      jest.advanceTimersByTime(3000);
+      await waitFor(() => {
+        expect(screen.queryByText('Successfully left group')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows the server error when leaving fails', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      mockAuth({ user: memberUser });
+      mockApi({ subjects: subjectFixture });
+      api.post.mockRejectedValue({ response: { data: { error: 'Group changes are locked' } } });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /leave group/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /leave group/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Group changes are locked')).toBeInTheDocument();
+      });
+      expect(mockRefreshUser).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(3000);
+      await waitFor(() => {
+        expect(screen.queryByText('Group changes are locked')).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('assignment without membership', () => {
+    const subjectFixture = { 'sub-1': [{ id: 'a-2', name: 'Assignment 2', group_count: 3 }] };
+
+    it('lists joinable groups and filters out full ones', async () => {
+      mockAuth({ user: makeUser() });
+      mockApi({
+        subjects: subjectFixture,
+        groupsByAssignment: {
+          'a-2': [
+            { id: 'g-2', name: 'Team B', enabled: true, max_members: 5, member_count: 2 },
+            { id: 'g-3', name: 'Team C', enabled: true, max_members: null, member_count: 10 },
+            { id: 'g-4', name: 'Full Team', enabled: true, max_members: 3, member_count: 3 },
+          ],
+        },
+      });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByText('Team B')).toBeInTheDocument();
+        expect(screen.getByText('Team C')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Full Team')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /^join$/i })).toHaveLength(2);
+    });
+
+    it('shows a message when no joinable groups exist', async () => {
+      mockAuth({ user: makeUser() });
+      mockApi({ subjects: subjectFixture, groupsByAssignment: { 'a-2': [] } });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByText('No available groups to join')).toBeInTheDocument();
+      });
+    });
+
+    it('joins a group and refreshes the user', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      mockAuth({ user: makeUser() });
+      mockApi({
+        subjects: subjectFixture,
+        groupsByAssignment: {
+          'a-2': [{ id: 'g-2', name: 'Team B', enabled: true, max_members: 5, member_count: 2 }],
+        },
+      });
+      api.post.mockResolvedValue({ data: { message: 'ok', groupId: 'g-2', groupName: 'Team B' } });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByText('Team B')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /^join$/i }));
+
+      await waitFor(() => {
+        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g-2\/join$/));
         expect(screen.getByText('Successfully joined group')).toBeInTheDocument();
         expect(mockRefreshUser).toHaveBeenCalled();
       });
@@ -421,494 +439,168 @@ describe('Dashboard page', () => {
       });
     });
 
-    it('shows error when joining group fails', async () => {
+    it('shows the server error when joining fails with 409', async () => {
       jest.useFakeTimers();
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: null,
-          groupName: null,
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockResolvedValue({
-        data: {
-          groups: [{ id: 'g0000000-0000-0000-0000-000000000001', name: 'Team A', max_members: 5, member_count: 2 }],
+      mockAuth({ user: makeUser() });
+      mockApi({
+        subjects: subjectFixture,
+        groupsByAssignment: {
+          'a-2': [{ id: 'g-2', name: 'Team B', enabled: true, max_members: 5, member_count: 2 }],
         },
       });
-      api.post.mockRejectedValue({ response: { data: { error: 'Group is full' } } });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('Team A')).toBeInTheDocument();
+      api.post.mockRejectedValue({
+        response: { status: 409, data: { error: 'You already belong to a group for this assignment' } },
       });
 
-      await user.click(screen.getByRole('button', { name: /join/i }));
+      renderDashboard();
 
       await waitFor(() => {
-        expect(screen.getByText('Group is full')).toBeInTheDocument();
+        expect(screen.getByText('Team B')).toBeInTheDocument();
       });
+
+      await user.click(screen.getByRole('button', { name: /^join$/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('You already belong to a group for this assignment')).toBeInTheDocument();
+      });
+      expect(mockRefreshUser).not.toHaveBeenCalled();
 
       jest.advanceTimersByTime(3000);
       await waitFor(() => {
-        expect(screen.queryByText('Group is full')).not.toBeInTheDocument();
+        expect(screen.queryByText('You already belong to a group for this assignment')).not.toBeInTheDocument();
       });
     });
 
-    it('leaves a group successfully', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    it("joins a random non-empty group via I'm Feeling Lucky", async () => {
+      const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.99);
 
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
-          groupName: 'Team Alpha',
+      mockAuth({ user: makeUser() });
+      mockApi({
+        subjects: subjectFixture,
+        groupsByAssignment: {
+          'a-2': [
+            { id: 'g-empty', name: 'Empty Group', enabled: true, max_members: 5, member_count: 0 },
+            { id: 'g-a', name: 'Active A', enabled: true, max_members: 5, member_count: 1 },
+            { id: 'g-b', name: 'Active B', enabled: true, max_members: 5, member_count: 2 },
+          ],
         },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
       });
+      api.post.mockResolvedValue({ data: {} });
 
-      api.get.mockResolvedValue({ data: { members: [] } });
-      api.post.mockResolvedValue({});
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await user.click(screen.getByRole('button', { name: /leave group/i }));
-
-      await waitFor(() => {
-        expect(api.post).toHaveBeenCalledWith(
-          expect.stringMatching(/\/groups\/g0000000-0000-0000-0000-000000000001\/leave$/)
-        );
-        expect(screen.getByText('Successfully left group')).toBeInTheDocument();
-        expect(mockRefreshUser).toHaveBeenCalled();
-      });
-
-      jest.advanceTimersByTime(3000);
-      await waitFor(() => {
-        expect(screen.queryByText('Successfully left group')).not.toBeInTheDocument();
-      });
-    });
-
-    it('shows error when leaving group fails', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: 'g0000000-0000-0000-0000-000000000001',
-          groupName: 'Team Alpha',
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockResolvedValue({ data: { members: [] } });
-      api.post.mockRejectedValue({ response: { data: { error: 'Not a member' } } });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await user.click(screen.getByRole('button', { name: /leave group/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText('Not a member')).toBeInTheDocument();
-      });
-
-      jest.advanceTimersByTime(3000);
-      await waitFor(() => {
-        expect(screen.queryByText('Not a member')).not.toBeInTheDocument();
-      });
-    });
-
-    it('shows no available groups message when none exist', async () => {
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: null,
-          groupName: null,
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockResolvedValue({ data: { groups: [] } });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('No available groups to join')).toBeInTheDocument();
-      });
-    });
-
-    it('shows error when fetching available groups fails', async () => {
-      jest.useFakeTimers();
-
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: null,
-          groupName: null,
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockRejectedValue(new Error('network'));
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('Failed to load available groups')).toBeInTheDocument();
-      });
-
-      jest.advanceTimersByTime(3000);
-      await waitFor(() => {
-        expect(screen.queryByText('Failed to load available groups')).not.toBeInTheDocument();
-      });
-    });
-
-    it('does not call leave when user has no groupId', async () => {
-      useAuth.mockReturnValue({
-        user: {
-          id: 'u0000000-0000-0000-0000-000000000010',
-          username: 'testuser',
-          email: 'test@example.com',
-          role: 'user',
-          groupId: null,
-          groupName: null,
-        },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockResolvedValue({ data: { groups: [] } });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      // The leave button shouldn't even show, but the handleLeaveGroup has a guard
-      expect(screen.queryByRole('button', { name: /leave group/i })).not.toBeInTheDocument();
-    });
-  });
-
-  describe('Settings link (admin/AM)', () => {
-    it('shows settings link for admin users', () => {
-      useAuth.mockReturnValue({
-        user: { username: 'admin', email: 'admin@example.com', role: 'admin' },
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: true,
-        isAssignmentManager: true,
-      });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
-    });
-
-    it('does not show settings link for normal users', () => {
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
-    });
-  });
-
-  describe("I'm Feeling Lucky", () => {
-    const normalUserNoGroup = {
-      id: 'u0000000-0000-0000-0000-000000000010',
-      username: 'testuser',
-      email: 'test@example.com',
-      role: 'user',
-      groupId: null,
-      groupName: null,
-    };
-
-    beforeEach(() => {
-      useAuth.mockReturnValue({
-        user: normalUserNoGroup,
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-    });
-
-    it('shows "I\'m Feeling Lucky" button when user has no group and lock is off', async () => {
-      api.get.mockImplementation((url) => {
-        if (url.includes('group-join-locked')) {
-          return Promise.resolve({ data: { locked: false } });
-        }
-        return Promise.resolve({
-          data: {
-            groups: [{ id: 'g1', name: 'Team A', max_members: 5, member_count: 2 }],
-          },
-        });
-      });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
+      renderDashboard();
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /feeling lucky/i })).toBeInTheDocument();
       });
-    });
-
-    it('assigns to a non-empty group when one exists', async () => {
-      api.get.mockImplementation((url) => {
-        if (url.includes('group-join-locked')) {
-          return Promise.resolve({ data: { locked: false } });
-        }
-        return Promise.resolve({
-          data: {
-            groups: [
-              { id: 'g1', name: 'Empty Group', max_members: 5, member_count: 0 },
-              { id: 'g2', name: 'Active Group', max_members: 5, member_count: 3 },
-            ],
-          },
-        });
-      });
-      api.post.mockResolvedValue({});
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => screen.getByRole('button', { name: /feeling lucky/i }));
 
       await userEvent.click(screen.getByRole('button', { name: /feeling lucky/i }));
 
       await waitFor(() => {
-        // Should join g2 (non-empty), not g1 (empty)
-        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g2\/join$/));
+        // pool is the non-empty groups [g-a, g-b]; floor(0.99 * 2) = 1 -> g-b
+        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g-b\/join$/));
       });
+
+      randomSpy.mockRestore();
     });
 
-    it('falls back to any group when no non-empty groups exist', async () => {
-      api.get.mockImplementation((url) => {
-        if (url.includes('group-join-locked')) {
-          return Promise.resolve({ data: { locked: false } });
-        }
-        return Promise.resolve({
-          data: {
-            groups: [{ id: 'g1', name: 'Empty Group', max_members: 5, member_count: 0 }],
-          },
-        });
+    it('falls back to empty groups for lucky when all groups are empty', async () => {
+      const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+
+      mockAuth({ user: makeUser() });
+      mockApi({
+        subjects: subjectFixture,
+        groupsByAssignment: {
+          'a-2': [{ id: 'g-empty', name: 'Empty Group', enabled: true, max_members: 5, member_count: 0 }],
+        },
       });
-      api.post.mockResolvedValue({});
+      api.post.mockResolvedValue({ data: {} });
 
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
+      renderDashboard();
 
-      await waitFor(() => screen.getByRole('button', { name: /feeling lucky/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /feeling lucky/i })).toBeInTheDocument();
+      });
 
       await userEvent.click(screen.getByRole('button', { name: /feeling lucky/i }));
 
       await waitFor(() => {
-        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g1\/join$/));
+        expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/groups\/g-empty\/join$/));
       });
+
+      randomSpy.mockRestore();
     });
 
-    it('shows error when no groups are available', async () => {
-      api.get.mockImplementation((url) => {
-        if (url.includes('group-join-locked')) {
-          return Promise.resolve({ data: { locked: false } });
-        }
-        return Promise.resolve({ data: { groups: [] } });
+    it('shows an error when lucky finds no joinable group', async () => {
+      jest.useFakeTimers();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      mockAuth({ user: makeUser() });
+      mockApi({ subjects: subjectFixture, groupsByAssignment: { 'a-2': [] } });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /feeling lucky/i })).toBeInTheDocument();
       });
 
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => screen.getByRole('button', { name: /feeling lucky/i }));
-
-      await userEvent.click(screen.getByRole('button', { name: /feeling lucky/i }));
+      await user.click(screen.getByRole('button', { name: /feeling lucky/i }));
 
       await waitFor(() => {
         expect(screen.getByText('No available group to join')).toBeInTheDocument();
       });
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it('shows the locked banner instead of join UI when the global lock is on', async () => {
+      mockAuth({ user: makeUser() });
+      mockApi({
+        locked: true,
+        subjects: subjectFixture,
+        groupsByAssignment: {
+          'a-2': [{ id: 'g-2', name: 'Team B', enabled: true, max_members: 5, member_count: 2 }],
+        },
+      });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByText(/group joining is locked/i)).toBeInTheDocument();
+      });
+      expect(screen.queryByRole('button', { name: /^join$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /feeling lucky/i })).not.toBeInTheDocument();
     });
   });
 
-  describe('Group join lock', () => {
-    const normalUserNoGroup = {
-      id: 'u0000000-0000-0000-0000-000000000010',
-      username: 'testuser',
-      email: 'test@example.com',
-      role: 'user',
-      groupId: null,
-      groupName: null,
-    };
-
-    const normalUserInGroup = {
-      id: 'u0000000-0000-0000-0000-000000000010',
-      username: 'testuser',
-      email: 'test@example.com',
-      role: 'user',
-      groupId: 'g0000000-0000-0000-0000-000000000001',
-      groupName: 'Team Alpha',
-    };
-
-    it('shows lock message instead of join UI when lock is enabled and user has no group', async () => {
-      useAuth.mockReturnValue({
-        user: normalUserNoGroup,
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
+  describe('mixed subject content', () => {
+    it('renders membership and join UI side by side within the same subject card', async () => {
+      mockAuth({ user: makeUser({ memberships: [MEMBERSHIP_A1] }) });
+      mockApi({
+        subjects: {
+          'sub-1': [
+            { id: 'a-1', name: 'Assignment 1', group_count: 2 },
+            { id: 'a-2', name: 'Assignment 2', group_count: 1 },
+          ],
+        },
+        groupsByAssignment: {
+          'a-2': [{ id: 'g-2', name: 'Team B', enabled: true, max_members: 5, member_count: 2 }],
+        },
       });
 
-      api.get.mockImplementation((url) => {
-        if (url.includes('group-join-locked')) {
-          return Promise.resolve({ data: { locked: true } });
-        }
-        return Promise.resolve({ data: { groups: [] } });
-      });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
+      renderDashboard();
 
       await waitFor(() => {
-        expect(screen.getByText(/group joining is locked/i)).toBeInTheDocument();
+        expect(screen.getByText('Team Alpha')).toBeInTheDocument();
+        expect(screen.getByText('Team B')).toBeInTheDocument();
       });
 
-      expect(screen.queryByRole('button', { name: /feeling lucky/i })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /^join$/i })).not.toBeInTheDocument();
-    });
-
-    it('hides leave button and shows lock message when user is in a group and lock is enabled', async () => {
-      useAuth.mockReturnValue({
-        user: normalUserInGroup,
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockImplementation((url) => {
-        if (url.includes('group-join-locked')) {
-          return Promise.resolve({ data: { locked: true } });
-        }
-        return Promise.resolve({ data: { members: [] } });
-      });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/group joining is locked/i)).toBeInTheDocument();
-      });
-
-      expect(screen.queryByRole('button', { name: /leave group/i })).not.toBeInTheDocument();
-    });
-
-    it('shows leave button and join UI when lock is disabled', async () => {
-      useAuth.mockReturnValue({
-        user: normalUserInGroup,
-        logout: mockLogout,
-        refreshUser: mockRefreshUser,
-        isAdmin: false,
-        isAssignmentManager: false,
-      });
-
-      api.get.mockImplementation((url) => {
-        if (url.includes('group-join-locked')) {
-          return Promise.resolve({ data: { locked: false } });
-        }
-        return Promise.resolve({ data: { members: [] } });
-      });
-
-      render(
-        <MemoryRouter>
-          <Dashboard />
-        </MemoryRouter>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /leave group/i })).toBeInTheDocument();
-      });
-
-      expect(screen.queryByText(/group joining is locked/i)).not.toBeInTheDocument();
+      const card = screen.getByRole('heading', { name: 'Software Modelling' }).closest('div');
+      expect(within(card).getByRole('button', { name: /leave group/i })).toBeInTheDocument();
+      expect(within(card).getByRole('button', { name: /^join$/i })).toBeInTheDocument();
+      // groups are only fetched for the assignment without a membership
+      expect(api.get).toHaveBeenCalledWith(expect.stringContaining('/assignments/a-2/groups'));
+      expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/assignments/a-1/groups'));
     });
   });
 });

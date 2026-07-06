@@ -4,15 +4,16 @@ const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { cleanDatabase, createUser } = require('../helpers/db');
+const { cleanDatabase, createUser, createHierarchy } = require('../helpers/db');
 const { loginAsAdmin } = require('../helpers/auth');
 
 test.describe('Import Users', () => {
   test.beforeEach(async () => {
     await cleanDatabase();
+    await createHierarchy({ subjectName: 'Import Subject', assignmentName: 'Import A1' });
   });
 
-  test('upload CSV and import new users successfully', async ({ page }) => {
+  test('upload CSV and import new users into the target subject', async ({ page }) => {
     const csvContent = 'username,email,firstName,lastName\nnewimport,newimport@test.com,Import,Test\n';
     const tmpPath = path.join(os.tmpdir(), `import-new-${Date.now()}.csv`);
 
@@ -27,14 +28,45 @@ test.describe('Import Users', () => {
       await expect(page.getByRole('button', { name: /preview import/i })).toBeVisible({ timeout: 10000 });
       await page.getByRole('button', { name: /preview import/i }).click();
 
-      // Step 3: Preview — row should appear as "New"
+      // Step 3: Preview — row should appear as "New"; the target subject is required
       await expect(page.getByText('New', { exact: true })).toBeVisible({ timeout: 10000 });
       await expect(page.getByRole('cell', { name: 'newimport', exact: true })).toBeVisible();
+      await page.getByLabel(/target subject/i).selectOption({ label: 'Import Subject' });
       await page.getByRole('button', { name: /^import$/i }).click();
 
       // Step 4: Result
       await expect(page.getByText('Import Complete')).toBeVisible({ timeout: 10000 });
       await expect(page.getByText(/1 imported/)).toBeVisible();
+
+      // Imported user is enrolled in the target subject (Subjects column on /users)
+      await page.goto('/users');
+      const row = page.locator('table tbody tr').filter({ hasText: 'newimport' });
+      await expect(row.getByText('Import Subject')).toBeVisible({ timeout: 10000 });
+    } finally {
+      fs.rmSync(tmpPath, { force: true });
+    }
+  });
+
+  test('import without choosing a target subject shows an error', async ({ page }) => {
+    const csvContent = 'username,email,firstName,lastName\nnosubjimport,nosubjimport@test.com,No,Subject\n';
+    const tmpPath = path.join(os.tmpdir(), `import-nosubj-${Date.now()}.csv`);
+
+    try {
+      fs.writeFileSync(tmpPath, csvContent, 'utf8');
+      await loginAsAdmin(page);
+      await page.goto('/users/import');
+
+      await page.locator('input[aria-label="Upload CSV file"]').setInputFiles(tmpPath);
+      await expect(page.getByRole('button', { name: /preview import/i })).toBeVisible({ timeout: 10000 });
+      await page.getByRole('button', { name: /preview import/i }).click();
+
+      await expect(page.getByText('New', { exact: true })).toBeVisible({ timeout: 10000 });
+      // Leave the Target subject select empty
+      await page.getByRole('button', { name: /^import$/i }).click();
+
+      await expect(page.getByText('Subject is required')).toBeVisible();
+      // Still on the preview step — nothing was imported
+      await expect(page.getByText('Import Complete')).not.toBeVisible();
     } finally {
       fs.rmSync(tmpPath, { force: true });
     }
@@ -89,6 +121,7 @@ test.describe('Import Users', () => {
       await page.locator('input[type="radio"][value="overwrite"]').check();
       await expect(page.getByText('Existing – overwrite')).toBeVisible({ timeout: 10000 });
 
+      await page.getByLabel(/target subject/i).selectOption({ label: 'Import Subject' });
       await page.getByRole('button', { name: /^import$/i }).click();
 
       // Step 4: Result

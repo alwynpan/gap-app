@@ -1,7 +1,7 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { cleanDatabase, createUser } = require('../helpers/db');
+const { cleanDatabase, createUser, createHierarchy, addUserToSubject } = require('../helpers/db');
 const { loginAsAdmin, loginAs, logout, enableGroupJoinLock } = require('../helpers/auth');
 
 test.describe('Settings — Group Join Lock', () => {
@@ -42,7 +42,10 @@ test.describe('Settings — Group Join Lock', () => {
 
   test('when group join lock is enabled, user dashboard shows locked message', async ({ page }) => {
     await enableGroupJoinLock(page);
-    await createUser({ username: 'locktest', email: 'locktest@test.com' });
+    // The locked message renders per assignment inside the user's subject cards
+    const { subject } = await createHierarchy({ subjectName: 'Lock Subject', assignmentName: 'Lock A1' });
+    const user = await createUser({ username: 'locktest', email: 'locktest@test.com' });
+    await addUserToSubject(user.id, subject.id);
     // PublicRoute redirects authenticated users from /login, so logout first
     await logout(page);
     await loginAs(page, 'locktest', 'TestPass123!');

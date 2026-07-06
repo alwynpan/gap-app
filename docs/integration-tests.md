@@ -25,7 +25,7 @@ backend/
     │   └── setupEnv.js                     # Set process.env from container config (runs before modules load)
     ├── helpers/
     │   ├── server.js                       # buildTestServer() / closeTestServer() helpers
-    │   └── db.js                           # cleanDatabase(), createUser(), createGroup(), loginAs(), getPool()
+    │   └── db.js                           # cleanDatabase(), createUser(), createSubject(), createAssignment(), createGroup({ assignmentId, ... }), addUserToSubject(), assignManager(), addUserToGroup(), loginAs(), getPool()
     ├── auth.test.js
     ├── users.test.js
     ├── groups.test.js

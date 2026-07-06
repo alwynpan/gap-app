@@ -4,12 +4,18 @@ Group Assignment Portal — a role-based access control system for managing stud
 
 ## Features
 
+- **Subject → Assignment → Group hierarchy** — Subjects contain assignments, assignments contain groups; users enrol in
+  subjects and hold at most one group per assignment
 - **JWT Authentication** — Secure login/logout with token-based auth; account setup and password reset via email
-- **User Management** — Create, update, enable/disable, bulk-delete, and CSV-import users
-- **Group Management** — Create, edit, bulk-create, enable/disable groups with optional member caps
-- **Role-Based Access Control (RBAC)** — Three-tier role system (Admin, Assignment Manager, User)
-- **Group Assignment** — Assign users to groups manually, via UI, or via CSV import/export
-- **Group Join/Leave** — Users can self-join/leave groups when the join lock is off
+- **User Management** — Create, update, enable/disable, bulk-delete, and CSV-import users into a target subject
+- **Group Management** — Create, edit, bulk-create, enable/disable per-assignment groups with optional member caps
+- **Role-Based Access Control (RBAC)** — Three-tier role system (Admin, Assignment Manager, User) with per-assignment
+  manager scoping
+- **Group Assignment** — Assign subject members to groups manually, via UI, or via per-assignment CSV import/export of
+  mappings
+- **Group Join/Leave** — Users can self-join/leave one group per assignment when the join lock is off
+- **Safe destructive deletes** — Two-step typed confirmation when deleting subjects or assignments (cascades to groups
+  and memberships, never user accounts)
 - **Email Notifications** — Account setup and password-reset emails (optional SMTP; links logged to console when
   disabled)
 - **System Config** — Admins/AMs can lock/unlock group joining system-wide
@@ -27,6 +33,11 @@ Group Assignment Portal — a role-based access control system for managing stud
 
 All API routes are prefixed with `/api`. The production setup adds Traefik in front, terminating TLS and routing `/api`
 and `/health` to the backend, everything else to the frontend nginx.
+
+The data model is hierarchical: **subjects** contain **assignments**, and each assignment has its own **groups**. Users
+enrol in subjects (`user_subjects`), group membership is per assignment (`user_groups`, at most one group per user per
+assignment), and assignment managers are scoped to the assignments they manage (`assignment_managers`). A user can only
+be placed in a group of a subject they are enrolled in — enforced for all callers, including admins.
 
 ## Tech Stack
 
@@ -227,13 +238,21 @@ docker compose down -v                           # Stop and wipe all data
 
 ```bash
 cd backend
-npm run migrate        # Apply pending migrations (safe for existing data)
+npm run migrate        # Create tables if needed, apply pending migrations
 npm run migrate:up     # Alias for migrate
 npm run migrate:reset  # Full reset — drops all tables (requires confirmation in production)
 ```
 
 Incremental migrations live in `backend/src/db/migrations/` as numbered SQL files. Always add schema changes as a new
 migration file — never edit existing ones.
+
+> ⚠️ **Destructive upgrade to the subject/assignment hierarchy.** Migration `013_subject_assignment_hierarchy.sql` moves
+> the database from the old flat groups model to the Subject → Assignment → Group hierarchy using a **clean-reset
+> strategy**: it **drops the legacy `groups` table (including all group memberships) and removes the `users.group_id`
+> column**. User accounts are preserved. The recommended path when upgrading an existing deployment is a full reset
+> (`pnpm --filter gap-backend migrate:reset`) followed by re-creating subjects/assignments/groups; running plain
+> `migrate` on a legacy database also converges to the new schema but still destroys all existing group data. **Back up
+> your database before upgrading.** Databases created from the current schema are unaffected.
 
 ## Testing
 
@@ -276,11 +295,11 @@ Pre-commit hooks (Husky + lint-staged) automatically apply Prettier and ESLint o
 
 ## Role System
 
-| Role                   | Capabilities                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| **Admin**              | Full access: manage users, groups, config; assign users to groups; bulk operations  |
-| **Assignment Manager** | View/create/edit users; assign users to groups; import/export mappings; lock config |
-| **User**               | View own profile and groups; self-join/leave groups (when join lock is off)         |
+| Role                   | Capabilities                                                                                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Admin**              | Full access: manage subjects, assignments, groups, users, and config; enrol users in subjects; assign users to groups; bulk operations                                         |
+| **Assignment Manager** | Scoped to managed assignments: create/edit/delete groups and assign subject members to groups; sees and creates/imports users only in subjects where they manage an assignment |
+| **User**               | View own profile and enrolled subjects; self-join/leave one group per assignment (when join lock is off)                                                                       |
 
 ## Environment Variables Reference
 
@@ -327,8 +346,8 @@ gap-app/
 │   │   ├── middleware/
 │   │   │   ├── auth.js      # JWT plugin + verifyToken decorator
 │   │   │   └── rbac.js      # checkRole, requireAdmin, requireAssignmentManager
-│   │   ├── models/          # User, Group, Role, Config, PasswordResetToken
-│   │   ├── routes/          # auth, users, groups, config
+│   │   ├── models/          # User, Subject, Assignment, Group, UserGroup, Role, Config, PasswordResetToken
+│   │   ├── routes/          # auth, users, subjects, assignments, groups, config
 │   │   ├── services/
 │   │   │   └── email.js     # Nodemailer email service
 │   │   └── server.js        # App entry point
@@ -340,7 +359,7 @@ gap-app/
 │   │   ├── components/      # Header, ProtectedRoute, CsvDropzone, etc.
 │   │   ├── context/
 │   │   │   └── AuthContext.jsx
-│   │   ├── pages/           # Login, Register, Dashboard, Users, Groups, ImportGroupMappings
+│   │   ├── pages/           # Login, Register, Dashboard, Users, Subjects, SubjectDetail, Groups, ImportUsers, ImportGroupMappings, Settings
 │   │   └── utils/           # csv, formatting, schemas
 │   ├── tests/unit/
 │   ├── Dockerfile           # Production (multi-stage: build + nginx)

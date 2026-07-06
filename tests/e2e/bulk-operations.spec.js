@@ -2,7 +2,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { loginAsAdmin } = require('../helpers/auth');
-const { cleanDatabase, createUser, createGroup } = require('../helpers/db');
+const { cleanDatabase, createUser, createHierarchy } = require('../helpers/db');
 
 test.describe('Bulk Operations — Users', () => {
   test.beforeEach(async () => {
@@ -39,6 +39,7 @@ test.describe('Bulk Operations — Users', () => {
   });
 
   test('admin can send setup emails to pending users', async ({ page }) => {
+    await createHierarchy({ subjectName: 'BulkSubject', assignmentName: 'BA1' });
     await loginAsAdmin(page);
     await page.goto('/users');
 
@@ -48,6 +49,8 @@ test.describe('Bulk Operations — Users', () => {
     await page.getByPlaceholder('Enter email').fill('pendinguser1@test.com');
     await page.getByPlaceholder('Enter first name').fill('Pending');
     await page.getByPlaceholder('Enter last name').fill('User');
+    // Subject is required for the user role
+    await page.getByLabel('Subject', { exact: true }).selectOption({ label: 'BulkSubject' });
 
     // Ensure the checkbox is unchecked so the user is created as pending
     const sendEmailCheckbox = page.locator('#sendSetupEmail');
@@ -76,10 +79,13 @@ test.describe('Bulk Operations — Groups', () => {
   });
 
   test('admin can bulk delete multiple groups', async ({ page }) => {
-    await createGroup({ name: 'BulkDeleteGroup1' });
-    await createGroup({ name: 'BulkDeleteGroup2' });
+    const { subject, assignment } = await createHierarchy({
+      subjectName: 'BulkGroupSubject',
+      assignmentName: 'BGA1',
+      groups: [{ name: 'BulkDeleteGroup1' }, { name: 'BulkDeleteGroup2' }],
+    });
     await loginAsAdmin(page);
-    await page.goto('/groups');
+    await page.goto(`/subjects/${subject.id}/assignments/${assignment.id}`);
 
     await page.locator('input[aria-label="Select BulkDeleteGroup1"]').check();
     await page.locator('input[aria-label="Select BulkDeleteGroup2"]').check();

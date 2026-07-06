@@ -1,35 +1,23 @@
-import { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import api from '@/utils/api';
 import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import { formatRoleName } from '../utils/formatting.js';
 import { Power, Gauge, Trash2, UserMinus, ChevronDown, ChevronRight, Check, Pencil } from 'lucide-react';
 import IndeterminateCheckbox from '../components/IndeterminateCheckbox.jsx';
+import IconBtn from '../components/IconBtn.jsx';
 import { parseBody, createGroupSchema, updateGroupSchema } from '../utils/schemas.js';
 import { downloadCsv } from '../utils/csv.js';
 import { API_BASE } from '../config.js';
 
-function IconBtn({ onClick, label, className, children }) {
-  return (
-    <div className="relative group/tip">
-      <button
-        type="button"
-        onClick={onClick}
-        aria-label={label}
-        className={`p-1.5 rounded transition-colors ${className}`}
-      >
-        {children}
-      </button>
-      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-20">
-        {label}
-      </span>
-    </div>
-  );
-}
-
 function Groups() {
-  const { isAssignmentManager } = useAuth();
+  const { subjectId, assignmentId } = useParams();
+  const { isAdmin, user } = useAuth();
+  // Admins manage everything; AMs manage only the assignments listed on their profile.
+  const canManage = isAdmin || (user?.managedAssignments || []).some((a) => a.id === assignmentId);
+
+  const [assignment, setAssignment] = useState(null);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -44,7 +32,7 @@ function Groups() {
   const [newGroupMaxMembers, setNewGroupMaxMembers] = useState('');
 
   // Bulk create modal
-  const [bulkCreateModal, setBulkCreateModal] = useState(null); // { prefix, count }
+  const [bulkCreateModal, setBulkCreateModal] = useState(null); // { prefix, count, maxMembers }
 
   // Set limit modal — single or bulk ({ groupIds: string[], value: string })
   const [limitModal, setLimitModal] = useState(null);
@@ -68,7 +56,7 @@ function Groups() {
   // Expanded row state
   const [expandedGroup, setExpandedGroup] = useState(null);
   const [groupMembers, setGroupMembers] = useState([]);
-  const [allUsers, setAllUsers] = useState([]);
+  const [subjectUsers, setSubjectUsers] = useState([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
 
@@ -78,37 +66,42 @@ function Groups() {
 
   const location = useLocation();
 
-  // Re-fetch whenever this page is navigated to (location.key changes on each navigation).
-  useEffect(() => {
-    fetchGroups();
-  }, [location.key]);
-
-  // Re-fetch when the browser tab becomes visible again (multi-tab scenario).
-  useEffect(() => {
-    const handler = () => {
-      if (!document.hidden) {
-        fetchGroups();
-      }
-    };
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
-  }, []);
-
-  const fetchGroups = async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const response = await api.get(`${API_BASE}/groups`);
-      setGroups(response.data.groups || []);
+      const [assignmentRes, groupsRes] = await Promise.all([
+        api.get(`${API_BASE}/assignments/${assignmentId}`),
+        api.get(`${API_BASE}/assignments/${assignmentId}/groups`),
+      ]);
+      setAssignment(assignmentRes.data.assignment || null);
+      setGroups(groupsRes.data.groups || []);
     } catch (_err) {
       setError('Failed to load groups');
     } finally {
       setLoading(false);
     }
-  };
+  }, [assignmentId]);
+
+  // Re-fetch whenever this page is navigated to (location.key changes on each
+  // navigation) or the route's assignment changes (fetchData identity).
+  useEffect(() => {
+    fetchData();
+  }, [location.key, fetchData]);
+
+  // Re-fetch when the browser tab becomes visible again (multi-tab scenario).
+  useEffect(() => {
+    const handler = () => {
+      if (!document.hidden) {
+        fetchData();
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [fetchData]);
 
   const handleExportMappings = async () => {
     setExporting(true);
     try {
-      const response = await api.get(`${API_BASE}/groups/export-mappings`);
+      const response = await api.get(`${API_BASE}/assignments/${assignmentId}/export-mappings`);
       const { mappings } = response.data;
       const today = new Date().toISOString().slice(0, 10);
       downloadCsv(mappings, ['groupName', 'email'], `group-mappings-${today}.csv`);
@@ -166,15 +159,17 @@ function Groups() {
   const handleCreateGroup = async (e) => {
     e.preventDefault();
     setCreateFormError('');
-    const { data: body, error: validationError } = parseBody(createGroupSchema, { name: newGroupName });
+    const { data: body, error: validationError } = parseBody(createGroupSchema, {
+      assignmentId,
+      name: newGroupName,
+    });
     if (validationError) {
       setCreateFormError(validationError);
       return;
     }
-    const body_name = body.name;
     setCreating(true);
     try {
-      const requestBody = { name: body_name };
+      const requestBody = { assignmentId: body.assignmentId, name: body.name };
       if (newGroupMaxMembers !== '') {
         requestBody.maxMembers = parseInt(newGroupMaxMembers, 10);
       }
@@ -183,7 +178,7 @@ function Groups() {
       setNewGroupName('');
       setNewGroupMaxMembers('');
       setShowCreateModal(false);
-      fetchGroups();
+      fetchData();
     } catch (err) {
       setCreateFormError(err.response?.data?.error || 'Failed to create group');
     } finally {
@@ -228,7 +223,7 @@ function Groups() {
       });
       showSuccess('Group updated successfully');
       setEditingGroup(null);
-      fetchGroups();
+      fetchData();
     } catch (err) {
       setEditFormError(err.response?.data?.error || 'Failed to update group');
     } finally {
@@ -241,7 +236,7 @@ function Groups() {
     try {
       await api.put(`${API_BASE}/groups/${groupId}`, { enabled: !currentEnabled });
       showSuccess(`Group ${currentEnabled ? 'disabled' : 'enabled'} successfully`);
-      fetchGroups();
+      fetchData();
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to update group');
     }
@@ -275,7 +270,7 @@ function Groups() {
       await Promise.all(groupIds.map((id) => api.put(`${API_BASE}/groups/${id}`, { maxMembers })));
       showSuccess(groupIds.length === 1 ? 'Group limit updated' : `Updated limit for ${groupIds.length} groups`);
       setLimitModal(null);
-      fetchGroups();
+      fetchData();
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to update limit');
     }
@@ -317,7 +312,7 @@ function Groups() {
     for (let batchIndex = 0; batchIndex < allGroups.length; batchIndex += BULK_BATCH_SIZE) {
       const batch = allGroups.slice(batchIndex, batchIndex + BULK_BATCH_SIZE);
       try {
-        await api.post(`${API_BASE}/groups/bulk`, batch);
+        await api.post(`${API_BASE}/groups/bulk`, { assignmentId, groups: batch });
         totalCreated += batch.length;
       } catch (err) {
         if (firstError === null) {
@@ -336,7 +331,7 @@ function Groups() {
     }
 
     setBulkCreateModal(null);
-    fetchGroups();
+    fetchData();
   };
 
   const bulkCreatePreview = () => {
@@ -382,7 +377,7 @@ function Groups() {
         return next;
       });
       setDeleteModal(null);
-      fetchGroups();
+      fetchData();
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to delete group');
     } finally {
@@ -398,13 +393,13 @@ function Groups() {
     try {
       const [groupRes, usersRes] = await Promise.all([
         api.get(`${API_BASE}/groups/${groupId}`),
-        isAssignmentManager ? api.get(`${API_BASE}/users`) : Promise.resolve({ data: { users: [] } }),
+        canManage ? api.get(`${API_BASE}/subjects/${subjectId}/users`) : Promise.resolve({ data: { users: [] } }),
       ]);
       if (expandedGroupRef.current !== groupId) {
         return;
       }
       setGroupMembers(groupRes.data.members || []);
-      setAllUsers(usersRes.data.users || []);
+      setSubjectUsers(usersRes.data.users || []);
     } catch (_err) {
       if (expandedGroupRef.current !== groupId) {
         return;
@@ -421,7 +416,7 @@ function Groups() {
     if (expandedGroup === groupId) {
       setExpandedGroup(null);
       setGroupMembers([]);
-      setAllUsers([]);
+      setSubjectUsers([]);
       setSelectedUserId('');
       return;
     }
@@ -433,12 +428,12 @@ function Groups() {
   const handleRemoveMember = async (userId) => {
     const groupId = expandedGroup;
     try {
-      await api.put(`${API_BASE}/users/${userId}/group`, { groupId: null });
+      await api.put(`${API_BASE}/users/${userId}/group`, { assignmentId, groupId: null });
       showSuccess('Member removed successfully');
       if (groupId) {
         fetchGroupMembers(groupId);
       }
-      fetchGroups();
+      fetchData();
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to remove member');
     }
@@ -450,20 +445,25 @@ function Groups() {
     }
     const groupId = expandedGroup;
     try {
-      await api.put(`${API_BASE}/users/${selectedUserId}/group`, { groupId });
+      await api.put(`${API_BASE}/users/${selectedUserId}/group`, { assignmentId, groupId });
       showSuccess('Member added successfully');
       setSelectedUserId('');
       if (groupId) {
         fetchGroupMembers(groupId);
       }
-      fetchGroups();
+      fetchData();
     } catch (err) {
+      // Backend is authoritative: surfaces 403 (not a subject member) and
+      // 409 (group full / already in a group for this assignment) errors.
       showError(err.response?.data?.error || 'Failed to add member');
     }
   };
 
+  // Candidates come from the parent subject's members. Users already in the
+  // currently expanded group are excluded client-side; membership in another
+  // group of this assignment is enforced by the backend (409 surfaces above).
   const availableForGroup = () =>
-    allUsers.filter((u) => !groupMembers.some((m) => m.id === u.id) && u.role_name === 'user');
+    subjectUsers.filter((u) => !groupMembers.some((m) => m.id === u.id) && u.role_name === 'user');
 
   // ── Search ──────────────────────────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState('');
@@ -497,7 +497,7 @@ function Groups() {
               Created
             </th>
             <th className="w-[14%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Actions
+              {canManage ? 'Actions' : ''}
             </th>
           </tr>
         </thead>
@@ -522,13 +522,15 @@ function Groups() {
                 }}
               >
                 <td className="px-3 py-4" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(group.id)}
-                    onChange={() => toggleSelect(group.id)}
-                    aria-label={`Select ${group.name}`}
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
+                  {canManage && (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(group.id)}
+                      onChange={() => toggleSelect(group.id)}
+                      aria-label={`Select ${group.name}`}
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                  )}
                 </td>
                 <td className="px-1 py-4 text-gray-400">
                   {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -544,40 +546,42 @@ function Groups() {
                 </td>
                 <td className="px-4 py-4 text-sm text-gray-500">{new Date(group.created_at).toLocaleDateString()}</td>
                 <td className="px-4 py-4">
-                  <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                    <IconBtn
-                      label="Edit Group"
-                      onClick={(e) => openEditModal(e, group)}
-                      className="text-gray-500 hover:text-primary-600 hover:bg-primary-50"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </IconBtn>
-                    <IconBtn
-                      label={group.enabled ? 'Disable Group' : 'Enable Group'}
-                      onClick={(e) => handleToggleEnabled(e, group.id, group.enabled)}
-                      className={
-                        group.enabled
-                          ? 'text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50'
-                          : 'text-green-500 hover:text-green-700 hover:bg-green-50'
-                      }
-                    >
-                      <Power className="h-4 w-4" />
-                    </IconBtn>
-                    <IconBtn
-                      label="Set Member Limit"
-                      onClick={(e) => openLimitModal(e, group)}
-                      className="text-blue-500 hover:text-blue-700 hover:bg-blue-50"
-                    >
-                      <Gauge className="h-4 w-4" />
-                    </IconBtn>
-                    <IconBtn
-                      label="Delete Group"
-                      onClick={(e) => handleDeleteGroup(e, group.id)}
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </IconBtn>
-                  </div>
+                  {canManage && (
+                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                      <IconBtn
+                        label="Edit Group"
+                        onClick={(e) => openEditModal(e, group)}
+                        className="text-gray-500 hover:text-primary-600 hover:bg-primary-50"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </IconBtn>
+                      <IconBtn
+                        label={group.enabled ? 'Disable Group' : 'Enable Group'}
+                        onClick={(e) => handleToggleEnabled(e, group.id, group.enabled)}
+                        className={
+                          group.enabled
+                            ? 'text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50'
+                            : 'text-green-500 hover:text-green-700 hover:bg-green-50'
+                        }
+                      >
+                        <Power className="h-4 w-4" />
+                      </IconBtn>
+                      <IconBtn
+                        label="Set Member Limit"
+                        onClick={(e) => openLimitModal(e, group)}
+                        className="text-blue-500 hover:text-blue-700 hover:bg-blue-50"
+                      >
+                        <Gauge className="h-4 w-4" />
+                      </IconBtn>
+                      <IconBtn
+                        label="Delete Group"
+                        onClick={(e) => handleDeleteGroup(e, group.id)}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </IconBtn>
+                    </div>
+                  )}
                 </td>
               </tr>,
 
@@ -627,7 +631,7 @@ function Groups() {
                                     <span className="text-xs text-gray-400 truncate">ID: {member.student_id}</span>
                                   )}
                                 </div>
-                                {isAssignmentManager && (
+                                {canManage && (
                                   <button
                                     onClick={() => handleRemoveMember(member.id)}
                                     aria-label={`Remove ${member.username}`}
@@ -641,7 +645,7 @@ function Groups() {
                           </ul>
                         )}
 
-                        {isAssignmentManager && available.length > 0 && canAddMore && (
+                        {canManage && available.length > 0 && canAddMore && (
                           <div className="flex items-center gap-2 max-w-sm">
                             <select
                               value={selectedUserId}
@@ -692,18 +696,20 @@ function Groups() {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <IndeterminateCheckbox
-              checked={allSelected}
-              indeterminate={someSelected}
-              onChange={() => toggleSectionAll(sectionGroups, allSelected)}
-              aria-label={`Select all ${title}`}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-            />
+            {canManage && (
+              <IndeterminateCheckbox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onChange={() => toggleSectionAll(sectionGroups, allSelected)}
+                aria-label={`Select all ${title}`}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+            )}
             <h3 className="text-base font-semibold text-gray-700">
               {title} <span className="text-sm font-normal text-gray-400">({sectionGroups.length})</span>
             </h3>
           </div>
-          {sectionSelectedIds.length > 0 && (
+          {canManage && sectionSelectedIds.length > 0 && (
             <button
               onClick={() => openBulkLimitModal(sectionSelectedIds)}
               className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded px-2 py-1 transition-colors"
@@ -734,18 +740,30 @@ function Groups() {
 
   return (
     <div className="flex-1 bg-gray-50">
-      <Header pageName="Group Management" />
+      <Header pageName={assignment?.name || 'Groups'} />
 
       <main className="w-[85%] mx-auto py-6">
         <div className="px-4 py-6 sm:px-0">
           {/* Toolbar */}
           <div className="mb-6 flex justify-between items-center">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Manage Groups</h2>
-              <p className="text-gray-600 mt-1">Create and manage team groups</p>
+              <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm text-gray-500">
+                <Link to="/subjects" className="hover:text-primary-600 hover:underline">
+                  Subjects
+                </Link>
+                <span aria-hidden="true">›</span>
+                <Link to={`/subjects/${subjectId}`} className="hover:text-primary-600 hover:underline">
+                  {assignment?.subject_name}
+                </Link>
+                <span aria-hidden="true">›</span>
+                <span className="font-medium text-gray-900">{assignment?.name}</span>
+              </nav>
+              <p className="text-gray-600 mt-1">
+                {canManage ? 'Create and manage groups for this assignment' : 'Groups for this assignment'}
+              </p>
             </div>
             <div className="flex items-center gap-2">
-              {selectedIds.size > 0 && (
+              {canManage && selectedIds.size > 0 && (
                 <button
                   onClick={() => setDeleteModal(selectedGroups)}
                   className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
@@ -761,24 +779,28 @@ function Groups() {
               >
                 {exporting ? 'Exporting...' : 'Export Mappings'}
               </button>
-              <Link
-                to="/groups/import"
-                className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
-              >
-                Import Mappings
-              </Link>
-              <button
-                onClick={() => setBulkCreateModal({ prefix: '', count: '1', maxMembers: '' })}
-                className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
-              >
-                Bulk Create
-              </button>
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
-              >
-                + Create Group
-              </button>
+              {canManage && (
+                <>
+                  <Link
+                    to={`/groups/import?subjectId=${subjectId}&assignmentId=${assignmentId}`}
+                    className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
+                  >
+                    Import Mappings
+                  </Link>
+                  <button
+                    onClick={() => setBulkCreateModal({ prefix: '', count: '1', maxMembers: '' })}
+                    className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
+                  >
+                    Bulk Create
+                  </button>
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+                  >
+                    + Create Group
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -808,12 +830,14 @@ function Groups() {
           {groups.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-lg shadow">
               <p className="text-gray-500">No groups created yet</p>
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="mt-4 text-primary-600 hover:text-primary-700 font-medium"
-              >
-                Create your first group
-              </button>
+              {canManage && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="mt-4 text-primary-600 hover:text-primary-700 font-medium"
+                >
+                  Create your first group
+                </button>
+              )}
             </div>
           ) : matchingGroups.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-lg shadow">

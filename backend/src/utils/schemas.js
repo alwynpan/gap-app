@@ -85,6 +85,11 @@ const groupNameSchema = sanitizedString.pipe(
   z.string().min(1, 'Group name is required').max(100, 'Group name must be at most 100 characters')
 );
 
+const subjectNameSchema = nameSchema('Subject name');
+const assignmentNameSchema = nameSchema('Assignment name');
+
+const uuidArraySchema = z.array(z.string().uuid('Invalid ID format'));
+
 // ── Endpoint schemas ─────────────────────────────────────────────────────────
 
 const ROLE_VALUES = /** @type {const} */ (['admin', 'assignment_manager', 'user']);
@@ -109,7 +114,13 @@ const createUserSchema = z.object({
   lastName: nameSchema('Last name'),
   studentId: studentIdSchema,
   role: z.enum(ROLE_VALUES).optional(),
+  // role 'user': subjects to enrol in (required — enforced in the route),
+  // plus optional immediate group placement (assignment ∈ subjectIds).
+  subjectIds: uuidArraySchema.optional(),
+  assignmentId: z.string().uuid().optional().nullable(),
   groupId: z.string().uuid().optional().nullable(),
+  // role 'assignment_manager': assignments the new AM will manage.
+  assignmentIds: uuidArraySchema.optional(),
   sendSetupEmail: z.boolean().optional(),
 });
 
@@ -121,7 +132,6 @@ const updateUserSchema = z.object({
   role: z.enum(ROLE_VALUES).optional(),
   enabled: z.boolean().optional(),
   username: usernameSchema.optional(),
-  groupId: z.string().uuid().optional().nullable(),
 });
 
 const changePasswordSchema = z.object({
@@ -165,9 +175,40 @@ const importGroupMappingRowSchema = z.object({
 });
 
 const createGroupSchema = z.object({
+  assignmentId: z.string().uuid('Invalid assignment ID'),
   name: groupNameSchema,
   enabled: z.boolean().optional(),
   maxMembers: z.number().int().positive().optional().nullable(),
+});
+
+const createSubjectSchema = z.object({
+  name: subjectNameSchema,
+});
+
+const updateSubjectSchema = z.object({
+  name: subjectNameSchema,
+});
+
+const createAssignmentSchema = z.object({
+  subjectId: z.string().uuid('Invalid subject ID'),
+  name: assignmentNameSchema,
+});
+
+const updateAssignmentSchema = z.object({
+  name: assignmentNameSchema,
+});
+
+const addSubjectUsersSchema = z.object({
+  userIds: uuidArraySchema.min(1, 'At least one user is required').max(2000, 'At most 2000 users per request'),
+});
+
+const setAssignmentManagersSchema = z.object({
+  userIds: uuidArraySchema.max(2000, 'At most 2000 users per request'),
+});
+
+const updateUserGroupSchema = z.object({
+  assignmentId: z.string().uuid('Invalid assignment ID'),
+  groupId: z.string().uuid('Invalid group ID').nullable(),
 });
 
 const updateGroupSchema = z.object({
@@ -182,6 +223,14 @@ const bulkCreateGroupItemSchema = z.object({
   name: groupNameSchema,
   enabled: z.boolean().optional(),
   maxMembers: z.number().int().positive().optional().nullable(),
+});
+
+const bulkCreateGroupsSchema = z.object({
+  assignmentId: z.string().uuid('Invalid assignment ID'),
+  groups: z
+    .array(bulkCreateGroupItemSchema)
+    .min(1, 'At least one group is required')
+    .max(BULK_CREATE_MAX, `At most ${BULK_CREATE_MAX} groups per request`),
 });
 
 const updateConfigSchema = z.object({
@@ -225,4 +274,12 @@ module.exports = {
   updateGroupSchema,
   forgotPasswordSchema,
   setPasswordSchema,
+  createSubjectSchema,
+  updateSubjectSchema,
+  createAssignmentSchema,
+  updateAssignmentSchema,
+  addSubjectUsersSchema,
+  setAssignmentManagersSchema,
+  updateUserGroupSchema,
+  bulkCreateGroupsSchema,
 };

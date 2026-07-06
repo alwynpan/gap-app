@@ -9,6 +9,8 @@ const { logger } = require('./utils/logger');
 const authRoutes = require('./routes/auth');
 const usersRoutes = require('./routes/users');
 const groupsRoutes = require('./routes/groups');
+const subjectsRoutes = require('./routes/subjects');
+const assignmentsRoutes = require('./routes/assignments');
 const configRoutes = require('./routes/config');
 
 // Import plugins
@@ -133,6 +135,28 @@ async function buildServer({ logger: disableLogger } = {}) {
             update: 'PUT /api/groups/:id (admin)',
             delete: 'DELETE /api/groups/:id (admin)',
           },
+          subjects: {
+            list: 'GET /api/subjects',
+            get: 'GET /api/subjects/:id',
+            create: 'POST /api/subjects (admin)',
+            update: 'PUT /api/subjects/:id (admin)',
+            delete: 'DELETE /api/subjects/:id (admin)',
+            listUsers: 'GET /api/subjects/:id/users (admin/assignment_manager)',
+            addUsers: 'POST /api/subjects/:id/users (admin)',
+            removeUser: 'DELETE /api/subjects/:id/users/:userId (admin)',
+          },
+          assignments: {
+            list: 'GET /api/assignments',
+            get: 'GET /api/assignments/:id',
+            create: 'POST /api/assignments (admin)',
+            update: 'PUT /api/assignments/:id (admin)',
+            delete: 'DELETE /api/assignments/:id (admin)',
+            listGroups: 'GET /api/assignments/:id/groups',
+            listManagers: 'GET /api/assignments/:id/managers (admin)',
+            setManagers: 'PUT /api/assignments/:id/managers (admin)',
+            exportMappings: 'GET /api/assignments/:id/export-mappings (admin/manager)',
+            importMappings: 'POST /api/assignments/:id/import-mappings (admin/manager)',
+          },
         },
       };
     }
@@ -142,6 +166,8 @@ async function buildServer({ logger: disableLogger } = {}) {
   await fastify.register(authRoutes, { prefix: '/api' });
   await fastify.register(usersRoutes, { prefix: '/api' });
   await fastify.register(groupsRoutes, { prefix: '/api' });
+  await fastify.register(subjectsRoutes, { prefix: '/api' });
+  await fastify.register(assignmentsRoutes, { prefix: '/api' });
   await fastify.register(configRoutes, { prefix: '/api' });
 
   return fastify;

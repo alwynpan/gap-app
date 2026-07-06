@@ -34,6 +34,18 @@ jest.mock('../../src/services/email', () => ({
   sendEmail: jest.fn(),
 }));
 
+jest.mock('../../src/models/Subject', () => ({
+  findForUser: jest.fn(),
+}));
+
+jest.mock('../../src/models/Assignment', () => ({
+  findManagedBy: jest.fn(),
+}));
+
+jest.mock('../../src/models/UserGroup', () => ({
+  findMembershipsForUser: jest.fn(),
+}));
+
 jest.mock('../../src/config/index', () => ({
   app: {
     registrationEnabled: true,
@@ -51,11 +63,18 @@ jest.mock('../../src/utils/logger', () => ({
 
 const User = require('../../src/models/User');
 const Role = require('../../src/models/Role');
+const Subject = require('../../src/models/Subject');
+const Assignment = require('../../src/models/Assignment');
+const UserGroup = require('../../src/models/UserGroup');
 const PasswordResetToken = require('../../src/models/PasswordResetToken');
 const { sendPasswordResetEmail } = require('../../src/services/email');
 const config = require('../../src/config/index');
 
 describe('Auth Routes', () => {
+  const SUBJECT_ID = '30000000-0000-4000-8000-000000000001';
+  const ASSIGNMENT_ID = '40000000-0000-4000-8000-000000000001';
+  const GROUP_ID = '10000000-0000-4000-8000-000000000001';
+
   let mockReply;
   let mockFastify;
   let capturedHandlers;
@@ -87,6 +106,11 @@ describe('Auth Routes', () => {
       }),
       generateToken: jest.fn().mockResolvedValue('mock-token'),
     };
+
+    // Default hierarchy enrichment mocks
+    Subject.findForUser.mockResolvedValue([]);
+    UserGroup.findMembershipsForUser.mockResolvedValue([]);
+    Assignment.findManagedBy.mockResolvedValue([]);
   });
 
   describe('POST /auth/register', () => {
@@ -484,34 +508,45 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid credentials' });
     });
 
-    it('successfully logs in user', async () => {
+    it('successfully logs in user with subjects and memberships and no group claims in the JWT', async () => {
       const mockUser = {
         id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
+        first_name: 'Test',
+        last_name: 'User',
         enabled: true,
         password_hash: 'hash',
         role_name: 'admin',
-        group_id: '10000000-0000-4000-8000-000000000001',
-        group_name: 'Team A',
         student_id: 'S123',
       };
       User.findByUsername.mockResolvedValue(mockUser);
       User.verifyPassword.mockResolvedValue(true);
       mockFastify.generateToken.mockResolvedValue('jwt-token-123');
+      Subject.findForUser.mockResolvedValue([{ id: SUBJECT_ID, name: 'Subject 1', created_at: 'now' }]);
+      const memberships = [
+        {
+          assignment_id: ASSIGNMENT_ID,
+          assignment_name: 'Assignment 1',
+          subject_id: SUBJECT_ID,
+          subject_name: 'Subject 1',
+          group_id: GROUP_ID,
+          group_name: 'Group 1',
+        },
+      ];
+      UserGroup.findMembershipsForUser.mockResolvedValue(memberships);
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/login']({ body: { username: 'testuser', password: 'correctpassword' } }, mockReply);
 
+      // JWT payload must contain only id/username/email/role — no groupId/groupName claims
       expect(mockFastify.generateToken).toHaveBeenCalledWith({
         id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
         role: 'admin',
-        groupId: '10000000-0000-4000-8000-000000000001',
-        groupName: 'Team A',
       });
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'Login successful',
@@ -520,12 +555,73 @@ describe('Auth Routes', () => {
           id: '00000000-0000-4000-8000-000000000001',
           username: 'testuser',
           email: 'test@test.com',
+          firstName: 'Test',
+          lastName: 'User',
           role: 'admin',
-          groupId: '10000000-0000-4000-8000-000000000001',
-          groupName: 'Team A',
           studentId: 'S123',
+          subjects: [{ id: SUBJECT_ID, name: 'Subject 1' }],
+          memberships,
+          managedAssignments: [],
         },
       });
+    });
+
+    it('includes managedAssignments for assignment_manager login', async () => {
+      const mockUser = {
+        id: '00000000-0000-4000-8000-000000000002',
+        username: 'manager',
+        email: 'am@test.com',
+        first_name: 'Man',
+        last_name: 'Ager',
+        enabled: true,
+        password_hash: 'hash',
+        role_name: 'assignment_manager',
+        student_id: null,
+      };
+      User.findByUsername.mockResolvedValue(mockUser);
+      User.verifyPassword.mockResolvedValue(true);
+      const managed = [{ id: ASSIGNMENT_ID, name: 'Assignment 1', subject_id: SUBJECT_ID, subject_name: 'Subject 1' }];
+      Assignment.findManagedBy.mockResolvedValue(managed);
+
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/login']({ body: { username: 'manager', password: 'correctpassword' } }, mockReply);
+
+      expect(Assignment.findManagedBy).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002');
+      expect(mockReply.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: expect.objectContaining({ role: 'assignment_manager', managedAssignments: managed }),
+        })
+      );
+    });
+
+    it('does not query managed assignments for regular user login', async () => {
+      const mockUser = {
+        id: '00000000-0000-4000-8000-000000000003',
+        username: 'regular',
+        email: 'reg@test.com',
+        first_name: 'Reg',
+        last_name: 'User',
+        enabled: true,
+        password_hash: 'hash',
+        role_name: 'user',
+        student_id: null,
+      };
+      User.findByUsername.mockResolvedValue(mockUser);
+      User.verifyPassword.mockResolvedValue(true);
+
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/login']({ body: { username: 'regular', password: 'correctpassword' } }, mockReply);
+
+      expect(Assignment.findManagedBy).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: expect.objectContaining({ managedAssignments: [] }),
+        })
+      );
     });
 
     it('handles login error', async () => {
@@ -608,7 +704,7 @@ describe('Auth Routes', () => {
       expect(result).toBeUndefined();
     });
 
-    it('returns current user info', async () => {
+    it('returns current user info enriched with subjects, memberships and managedAssignments', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
@@ -616,11 +712,23 @@ describe('Auth Routes', () => {
         id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
+        first_name: 'Test',
+        last_name: 'User',
         role_name: 'admin',
-        group_id: '10000000-0000-4000-8000-000000000001',
-        group_name: 'Team A',
         student_id: null,
       });
+      Subject.findForUser.mockResolvedValue([{ id: SUBJECT_ID, name: 'Subject 1', created_at: 'now' }]);
+      const memberships = [
+        {
+          assignment_id: ASSIGNMENT_ID,
+          assignment_name: 'Assignment 1',
+          subject_id: SUBJECT_ID,
+          subject_name: 'Subject 1',
+          group_id: GROUP_ID,
+          group_name: 'Group 1',
+        },
+      ];
+      UserGroup.findMembershipsForUser.mockResolvedValue(memberships);
 
       const request = {
         user: {
@@ -628,24 +736,55 @@ describe('Auth Routes', () => {
           username: 'testuser',
           email: 'test@test.com',
           role: 'admin',
-          groupId: '10000000-0000-4000-8000-000000000001',
-          groupName: 'Team A',
         },
       };
 
       await capturedHandlers['/auth/me'](request, mockReply);
 
       expect(User.findById).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
+      expect(Subject.findForUser).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
+      expect(UserGroup.findMembershipsForUser).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
       expect(mockReply.send).toHaveBeenCalledWith({
         user: {
           id: '00000000-0000-4000-8000-000000000001',
           username: 'testuser',
           email: 'test@test.com',
+          firstName: 'Test',
+          lastName: 'User',
           role: 'admin',
-          groupId: '10000000-0000-4000-8000-000000000001',
-          groupName: 'Team A',
           studentId: null,
+          subjects: [{ id: SUBJECT_ID, name: 'Subject 1' }],
+          memberships,
+          managedAssignments: [],
         },
+      });
+    });
+
+    it('includes managedAssignments for assignment_manager in /auth/me', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000002',
+        username: 'manager',
+        email: 'am@test.com',
+        first_name: 'Man',
+        last_name: 'Ager',
+        role_name: 'assignment_manager',
+        student_id: null,
+      });
+      const managed = [{ id: ASSIGNMENT_ID, name: 'Assignment 1', subject_id: SUBJECT_ID, subject_name: 'Subject 1' }];
+      Assignment.findManagedBy.mockResolvedValue(managed);
+
+      const request = { user: { id: '00000000-0000-4000-8000-000000000002' } };
+      await capturedHandlers['/auth/me'](request, mockReply);
+
+      expect(Assignment.findManagedBy).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002');
+      expect(mockReply.send).toHaveBeenCalledWith({
+        user: expect.objectContaining({
+          role: 'assignment_manager',
+          managedAssignments: managed,
+        }),
       });
     });
 

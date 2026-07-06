@@ -1,65 +1,22 @@
 const Group = require('../models/Group');
-const User = require('../models/User');
+const UserGroup = require('../models/UserGroup');
+const Assignment = require('../models/Assignment');
+const Subject = require('../models/Subject');
 const Config = require('../models/Config');
+const User = require('../models/User');
 const {
-  sanitize,
   parseBody,
   createGroupSchema,
   updateGroupSchema,
+  bulkCreateGroupsSchema,
   validateUUID,
-  importGroupMappingRowSchema,
-  bulkCreateGroupItemSchema,
-  BULK_CREATE_MAX,
 } = require('../utils/schemas');
 const { logger } = require('../utils/logger');
 
-const _parsedImportMax = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
-const MAX_IMPORT_MAPPINGS = Number.isNaN(_parsedImportMax) ? 2000 : _parsedImportMax;
+const MAX_BULK_DELETE = 2000;
 
 async function groupsRoutes(fastify, _options) {
-  // Get all groups (authenticated users)
-  fastify.get(
-    '/groups',
-    {
-      preHandler: async (request, reply) => {
-        if (!request.user) {
-          return reply.code(401).send({ error: 'Unauthorized' });
-        }
-      },
-    },
-    async (request, reply) => {
-      try {
-        const groups = await Group.findAll();
-        return reply.send({ groups });
-      } catch (error) {
-        logger.error('Get groups error', { err: error.message, code: error.code });
-        return reply.code(500).send({ error: 'Failed to retrieve groups' });
-      }
-    }
-  );
-
-  // Get enabled groups only (for user assignment dropdowns)
-  fastify.get(
-    '/groups/enabled',
-    {
-      preHandler: async (request, reply) => {
-        if (!request.user) {
-          return reply.code(401).send({ error: 'Unauthorized' });
-        }
-      },
-    },
-    async (request, reply) => {
-      try {
-        const groups = await Group.findEnabled();
-        return reply.send({ groups });
-      } catch (error) {
-        logger.error('Get enabled groups error', { err: error.message, code: error.code });
-        return reply.code(500).send({ error: 'Failed to retrieve groups' });
-      }
-    }
-  );
-
-  // Get group by ID
+  // Get group by ID (admin, subject members, or managing assignment managers)
   fastify.get(
     '/groups/:id',
     {
@@ -81,8 +38,21 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'Group not found' });
         }
 
+        // Scope: admin, subject member, or assignment manager of the parent assignment
+        const user = request.user;
+        let allowed = user.role === 'admin';
+        if (!allowed) {
+          allowed = await Subject.isMember(group.subject_id, user.id);
+        }
+        if (!allowed && user.role === 'assignment_manager') {
+          allowed = await Assignment.isManager(user.id, group.assignment_id);
+        }
+        if (!allowed) {
+          return reply.code(403).send({ error: 'Forbidden: You do not have access to this group' });
+        }
+
         // Get group members
-        const members = await Group.getMembers(groupId);
+        const members = await UserGroup.getMembers(groupId);
 
         return reply.send({
           group: {
@@ -91,6 +61,10 @@ async function groupsRoutes(fastify, _options) {
             enabled: group.enabled,
             maxMembers: group.max_members,
             memberCount: group.member_count,
+            assignmentId: group.assignment_id,
+            assignmentName: group.assignment_name,
+            subjectId: group.subject_id,
+            subjectName: group.subject_name,
             createdAt: group.created_at,
             updatedAt: group.updated_at,
           },
@@ -103,17 +77,13 @@ async function groupsRoutes(fastify, _options) {
     }
   );
 
-  // Create new group (admin only)
+  // Create new group (admin or managing assignment manager)
   fastify.post(
     '/groups',
     {
       preHandler: async (request, reply) => {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
-        }
-        const allowed = await fastify.requireAdmin(request, reply);
-        if (!allowed) {
-          return reply;
         }
       },
     },
@@ -124,15 +94,25 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(400).send({ error: validationError });
         }
 
-        const { name, enabled, maxMembers } = body;
+        const { assignmentId, name, enabled, maxMembers } = body;
 
-        // Check if group name already exists
-        const existingGroup = await Group.findByName(name);
+        const assignment = await Assignment.findById(assignmentId);
+        if (!assignment) {
+          return reply.code(404).send({ error: 'Assignment not found' });
+        }
+
+        const allowed = await fastify.assertManagesAssignment(request, reply, assignmentId);
+        if (!allowed) {
+          return reply;
+        }
+
+        // Check if group name already exists within the assignment
+        const existingGroup = await Group.findByName(assignmentId, name);
         if (existingGroup) {
           return reply.code(409).send({ error: 'Group name already exists' });
         }
 
-        const newGroup = await Group.create(name, enabled !== false, maxMembers ?? null);
+        const newGroup = await Group.create(assignmentId, name, enabled !== false, maxMembers ?? null);
 
         return reply.code(201).send({
           message: 'Group created successfully',
@@ -141,6 +121,7 @@ async function groupsRoutes(fastify, _options) {
             name: newGroup.name,
             enabled: newGroup.enabled,
             maxMembers: newGroup.max_members,
+            assignmentId: newGroup.assignment_id,
           },
         });
       } catch (error) {
@@ -150,7 +131,7 @@ async function groupsRoutes(fastify, _options) {
     }
   );
 
-  // Bulk create groups (admin only)
+  // Bulk create groups (admin or managing assignment manager)
   fastify.post(
     '/groups/bulk',
     {
@@ -158,43 +139,32 @@ async function groupsRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const allowed = await fastify.requireAdmin(request, reply);
-        if (!allowed) {
-          return reply;
-        }
       },
     },
     async (request, reply) => {
       try {
-        const body = request.body;
-
-        if (!Array.isArray(body)) {
-          return reply.code(400).send({ error: 'Request body must be a non-empty array' });
+        const { data: body, error: validationError } = parseBody(bulkCreateGroupsSchema, request.body);
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
         }
 
-        if (body.length === 0) {
-          return reply.code(400).send({ error: 'Request body must be a non-empty array' });
+        const { assignmentId, groups: items } = body;
+
+        const assignment = await Assignment.findById(assignmentId);
+        if (!assignment) {
+          return reply.code(404).send({ error: 'Assignment not found' });
         }
 
-        if (body.length > BULK_CREATE_MAX) {
-          return reply.code(400).send({ error: `Batch size exceeds maximum of ${BULK_CREATE_MAX} groups per request` });
+        const allowed = await fastify.assertManagesAssignment(request, reply, assignmentId);
+        if (!allowed) {
+          return reply;
         }
 
-        // Validate each item and collect parsed results
-        const parsed = [];
-        for (let i = 0; i < body.length; i++) {
-          // eslint-disable-next-line security/detect-object-injection
-          const result = bulkCreateGroupItemSchema.safeParse(body[i]);
-          if (!result.success) {
-            const msg = result.error.issues[0]?.message || 'Validation failed';
-            return reply.code(400).send({ error: `items[${i}]: ${msg}` });
-          }
-          parsed.push({
-            name: result.data.name,
-            enabled: result.data.enabled !== false,
-            maxMembers: result.data.maxMembers ?? null,
-          });
-        }
+        const parsed = items.map((item) => ({
+          name: item.name,
+          enabled: item.enabled !== false,
+          maxMembers: item.maxMembers ?? null,
+        }));
 
         // Reject duplicate names within the batch (case-insensitive)
         const lowerNames = parsed.map((g) => g.name.toLowerCase());
@@ -203,7 +173,17 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'Duplicate group names within the batch are not allowed' });
         }
 
-        const groups = await Group.bulkCreate(parsed);
+        // Reject names that already exist within the assignment, listing conflicts
+        const existing = await Group.findByNames(
+          assignmentId,
+          parsed.map((g) => g.name)
+        );
+        if (existing.length > 0) {
+          const conflictNames = existing.map((g) => g.name).join(', ');
+          return reply.code(409).send({ error: `One or more group names already exist: ${conflictNames}` });
+        }
+
+        const groups = await Group.bulkCreate(assignmentId, parsed);
 
         return reply.code(201).send({
           message: 'Groups created successfully',
@@ -219,17 +199,13 @@ async function groupsRoutes(fastify, _options) {
     }
   );
 
-  // Update group (admin only)
+  // Update group (admin or managing assignment manager)
   fastify.put(
     '/groups/:id',
     {
       preHandler: async (request, reply) => {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
-        }
-        const allowed = await fastify.requireAdmin(request, reply);
-        if (!allowed) {
-          return reply;
         }
       },
     },
@@ -239,6 +215,17 @@ async function groupsRoutes(fastify, _options) {
         if (!validateUUID(groupId)) {
           return reply.code(400).send({ error: 'Invalid ID format' });
         }
+
+        const group = await Group.findById(groupId);
+        if (!group) {
+          return reply.code(404).send({ error: 'Group not found' });
+        }
+
+        const allowed = await fastify.assertManagesAssignment(request, reply, group.assignment_id);
+        if (!allowed) {
+          return reply;
+        }
+
         const { data: body, error: validationError } = parseBody(updateGroupSchema, request.body);
         if (validationError) {
           return reply.code(400).send({ error: validationError });
@@ -246,9 +233,12 @@ async function groupsRoutes(fastify, _options) {
 
         const { name, enabled, maxMembers } = body;
 
-        const group = await Group.findById(groupId);
-        if (!group) {
-          return reply.code(404).send({ error: 'Group not found' });
+        // If renaming, check the name is not taken by a different group in the assignment
+        if (name !== undefined) {
+          const existingGroup = await Group.findByName(group.assignment_id, name);
+          if (existingGroup && existingGroup.id !== groupId) {
+            return reply.code(409).send({ error: 'Group name already exists' });
+          }
         }
 
         // Validate maxMembers if provided
@@ -280,7 +270,7 @@ async function groupsRoutes(fastify, _options) {
     }
   );
 
-  // Bulk delete groups (admin only)
+  // Bulk delete groups (admin, or assignment manager for assignments they manage)
   fastify.delete(
     '/groups/bulk',
     {
@@ -288,7 +278,7 @@ async function groupsRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const allowed = await fastify.requireAdmin(request, reply);
+        const allowed = await fastify.requireAssignmentManager(request, reply);
         if (!allowed) {
           return reply;
         }
@@ -298,7 +288,7 @@ async function groupsRoutes(fastify, _options) {
       try {
         const { ids } = request.body || {};
 
-        if (!Array.isArray(ids) || ids.length === 0 || ids.length > 2000) {
+        if (!Array.isArray(ids) || ids.length === 0 || ids.length > MAX_BULK_DELETE) {
           return reply.code(400).send({ error: 'ids must be a non-empty array of up to 2000 items' });
         }
 
@@ -308,6 +298,18 @@ async function groupsRoutes(fastify, _options) {
         }
 
         const uniqueIds = [...new Set(ids)];
+
+        // Assignment managers may only delete groups of assignments they manage
+        if (request.user.role !== 'admin') {
+          const groups = await Group.findByIds(uniqueIds);
+          const assignmentIds = [...new Set(groups.map((g) => g.assignment_id))];
+          for (const assignmentId of assignmentIds) {
+            if (!(await Assignment.isManager(request.user.id, assignmentId))) {
+              return reply.code(403).send({ error: 'Forbidden: You do not manage this assignment' });
+            }
+          }
+        }
+
         const deleted = await Group.bulkDelete(uniqueIds);
         return reply.send({ message: 'Groups deleted successfully', deleted });
       } catch (error) {
@@ -317,17 +319,13 @@ async function groupsRoutes(fastify, _options) {
     }
   );
 
-  // Delete group (admin only)
+  // Delete group (admin or managing assignment manager)
   fastify.delete(
     '/groups/:id',
     {
       preHandler: async (request, reply) => {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
-        }
-        const allowed = await fastify.requireAdmin(request, reply);
-        if (!allowed) {
-          return reply;
         }
       },
     },
@@ -338,11 +336,17 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'Invalid ID format' });
         }
 
-        const deletedGroup = await Group.delete(groupId);
-
-        if (!deletedGroup) {
+        const group = await Group.findById(groupId);
+        if (!group) {
           return reply.code(404).send({ error: 'Group not found' });
         }
+
+        const allowed = await fastify.assertManagesAssignment(request, reply, group.assignment_id);
+        if (!allowed) {
+          return reply;
+        }
+
+        await Group.delete(groupId);
 
         return reply.send({ message: 'Group deleted successfully' });
       } catch (error) {
@@ -381,6 +385,16 @@ async function groupsRoutes(fastify, _options) {
           }
         }
 
+        // Re-check account state against the database — a disabled user may
+        // still hold a valid JWT.
+        const caller = await User.findById(userId);
+        if (!caller) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
+        if (!caller.enabled) {
+          return reply.code(403).send({ error: 'Account is disabled' });
+        }
+
         const group = await Group.findById(groupId);
         if (!group) {
           return reply.code(404).send({ error: 'Group not found' });
@@ -390,29 +404,16 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'Cannot join a disabled group' });
         }
 
-        // Check user is not already in a group
-        const user = await User.findById(userId);
-        if (!user) {
-          return reply.code(404).send({ error: 'User not found' });
-        }
-        if (!user.enabled) {
-          return reply.code(403).send({ error: 'Account is disabled' });
-        }
-        if (user.group_id) {
-          return reply.code(400).send({ error: 'You are already in a group. Leave your current group first.' });
-        }
-
-        // Optimistic capacity pre-check (fast path) — the transactional lock inside
-        // assignUserToGroup prevents race conditions for near-simultaneous requests
-        if (group.max_members !== null && group.member_count >= group.max_members) {
-          return reply.code(409).send({ error: 'Group is full' });
-        }
-
-        // Assign user to group inside a transaction with row-level lock to prevent race conditions (H2)
-        await Group.assignUserToGroup(userId, groupId);
+        // Assign user to group inside a transaction with row-level lock; the model
+        // enforces subject membership (403), one-group-per-assignment (409), and
+        // capacity (409) via errors carrying a statusCode.
+        await UserGroup.assignUserToGroup(userId, groupId, { replace: false });
 
         return reply.send({ message: 'Successfully joined group', groupId, groupName: group.name });
       } catch (error) {
+        if (error.statusCode) {
+          return reply.code(error.statusCode).send({ error: error.message });
+        }
         logger.error('Join group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to join group' });
       }
@@ -448,184 +449,33 @@ async function groupsRoutes(fastify, _options) {
           }
         }
 
+        // Re-check account state against the database — a disabled user may
+        // still hold a valid JWT.
+        const caller = await User.findById(userId);
+        if (!caller) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
+        if (!caller.enabled) {
+          return reply.code(403).send({ error: 'Account is disabled' });
+        }
+
         const group = await Group.findById(groupId);
         if (!group) {
           return reply.code(404).send({ error: 'Group not found' });
         }
 
-        // Check user is actually in this group
-        const user = await User.findById(userId);
-        if (!user) {
-          return reply.code(404).send({ error: 'User not found' });
-        }
-        if (!user.enabled) {
-          return reply.code(403).send({ error: 'Account is disabled' });
-        }
-        if (user.group_id !== groupId) {
+        // Check user is actually in this group for the assignment
+        const membership = await UserGroup.findMembership(userId, group.assignment_id);
+        if (!membership || membership.group_id !== groupId) {
           return reply.code(400).send({ error: 'You are not a member of this group' });
         }
 
-        await User.updateGroup(userId, null);
+        await UserGroup.remove(userId, group.assignment_id);
 
         return reply.send({ message: 'Successfully left group' });
       } catch (error) {
         logger.error('Leave group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to leave group' });
-      }
-    }
-  );
-  // Import user-group mappings from CSV (admin/AM only)
-  fastify.post(
-    '/groups/import-mappings',
-    {
-      preHandler: async (request, reply) => {
-        if (!request.user) {
-          return reply.code(401).send({ error: 'Unauthorized' });
-        }
-        const allowed = await fastify.requireAssignmentManager(request, reply);
-        if (!allowed) {
-          return reply;
-        }
-      },
-    },
-    async (request, reply) => {
-      try {
-        const { rows } = request.body || {};
-
-        if (!Array.isArray(rows) || rows.length === 0) {
-          return reply.code(400).send({ error: 'No mappings to import' });
-        }
-
-        if (rows.length > MAX_IMPORT_MAPPINGS) {
-          return reply.code(400).send({ error: `Import exceeds maximum of ${MAX_IMPORT_MAPPINGS} rows` });
-        }
-
-        let imported = 0;
-        const skipped = [];
-        const errors = [];
-
-        // First pass: parse all rows while preserving input order for deterministic output
-        const parsedRows = [];
-        for (const rawRow of rows) {
-          if (rawRow.action === 'skip') {
-            const email = typeof rawRow.email === 'string' ? sanitize(rawRow.email).slice(0, 255) : '?';
-            const groupName = typeof rawRow.groupName === 'string' ? sanitize(rawRow.groupName).slice(0, 100) : '?';
-            const rawReason = typeof rawRow.skipReason === 'string' ? rawRow.skipReason : '';
-            const reason = sanitize(rawReason).slice(0, 500) || 'Skipped';
-            parsedRows.push({ type: 'skip', email, groupName, reason });
-            continue;
-          }
-
-          const parseResult = importGroupMappingRowSchema.safeParse(rawRow);
-          if (!parseResult.success) {
-            parsedRows.push({
-              type: 'invalid',
-              email: typeof rawRow.email === 'string' ? sanitize(rawRow.email).slice(0, 255) : '?',
-              groupName: typeof rawRow.groupName === 'string' ? sanitize(rawRow.groupName).slice(0, 100) : '?',
-              error: parseResult.error.issues[0]?.message || 'Validation failed',
-            });
-            continue;
-          }
-
-          parsedRows.push({ type: 'valid', ...parseResult.data });
-        }
-
-        // Batch lookups — 2 queries regardless of import size
-        const validRows = parsedRows.filter((r) => r.type === 'valid');
-        const uniqueEmails = [...new Set(validRows.map((r) => r.email))];
-        const uniqueGroupNames = [...new Set(validRows.map((r) => r.groupName))];
-
-        const [usersArr, groupsArr] = await Promise.all([
-          User.findByEmails(uniqueEmails),
-          Group.findByNames(uniqueGroupNames),
-        ]);
-
-        const usersByEmail = new Map(usersArr.map((u) => [u.email, u]));
-        const groupsByName = new Map();
-        for (const group of groupsArr) {
-          const normalizedName = group.name.toLowerCase();
-          const existing = groupsByName.get(normalizedName);
-          if (existing && existing.id !== group.id) {
-            return reply.code(409).send({
-              error: `Ambiguous group name: "${group.name}" matches multiple groups that differ only by case`,
-            });
-          }
-          groupsByName.set(normalizedName, group);
-        }
-
-        // Second pass: emit results in original row order
-        for (const parsed of parsedRows) {
-          if (parsed.type === 'skip') {
-            skipped.push({ email: parsed.email, groupName: parsed.groupName, reason: parsed.reason });
-            continue;
-          }
-          if (parsed.type === 'invalid') {
-            errors.push({ email: parsed.email, groupName: parsed.groupName, error: parsed.error });
-            continue;
-          }
-
-          const { email, groupName } = parsed;
-          try {
-            const user = usersByEmail.get(email);
-            if (!user) {
-              skipped.push({ email, groupName, reason: 'User not found' });
-              continue;
-            }
-
-            if (user.role_name === 'admin' || user.role_name === 'assignment_manager') {
-              skipped.push({
-                email,
-                groupName,
-                reason: 'Admins and Assignment Managers cannot be assigned to a group',
-              });
-              continue;
-            }
-
-            const group = groupsByName.get(groupName.toLowerCase());
-            if (!group) {
-              skipped.push({ email, groupName, reason: 'Group not found' });
-              continue;
-            }
-
-            await Group.assignUserToGroup(user.id, group.id);
-            imported++;
-          } catch (rowErr) {
-            const reason = rowErr.statusCode === 409 ? 'Group is full' : 'Failed to process row';
-            logger.error('Import mapping row error', { err: rowErr.message, code: rowErr.code });
-            errors.push({ email, groupName, error: reason });
-          }
-        }
-
-        return reply.send({ imported, skipped, errors });
-      } catch (error) {
-        logger.error('Import group mappings error', { err: error.message, code: error.code });
-        return reply.code(500).send({ error: 'Failed to import mappings' });
-      }
-    }
-  );
-
-  // Export user-group mappings to CSV (admin/AM only)
-  fastify.get(
-    '/groups/export-mappings',
-    {
-      preHandler: async (request, reply) => {
-        if (!request.user) {
-          return reply.code(401).send({ error: 'Unauthorized' });
-        }
-        const allowed = await fastify.requireAssignmentManager(request, reply);
-        if (!allowed) {
-          return reply;
-        }
-      },
-    },
-    async (request, reply) => {
-      try {
-        const rows = await Group.getExportMappings();
-        const mappings = rows.map((r) => ({ email: r.email, groupName: r.group_name }));
-        return reply.send({ mappings });
-      } catch (error) {
-        logger.error('Export group mappings error', { err: error.message, code: error.code });
-        return reply.code(500).send({ error: 'Failed to export mappings' });
       }
     }
   );

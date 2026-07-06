@@ -1,12 +1,29 @@
 'use strict';
 
 const { buildTestServer, closeTestServer } = require('./helpers/server');
-const { cleanDatabase, createUser, createGroup, loginAs, getPool } = require('./helpers/db');
+const {
+  cleanDatabase,
+  createUser,
+  createSubject,
+  createAssignment,
+  createGroup,
+  addUserToSubject,
+  assignManager,
+  addUserToGroup,
+  loginAs,
+  getPool,
+} = require('./helpers/db');
 
 let app;
 let adminToken;
-let amToken; // assignment_manager token
+let amToken; // manages assignment1 (in subject1)
 let userToken;
+let am1;
+let user1;
+let subject1;
+let subject2;
+let assignment1;
+let assignment2;
 
 beforeAll(async () => {
   app = await buildTestServer();
@@ -20,11 +37,17 @@ beforeEach(async () => {
   await cleanDatabase();
   adminToken = await loginAs(app, 'admin', 'AdminPass123!');
 
-  // Seed a fresh assignment_manager and regular user for each test
-  await createUser({ username: 'am1', email: 'am1@test.com', role: 'assignment_manager' });
+  subject1 = await createSubject({ name: 'Subject1' });
+  subject2 = await createSubject({ name: 'Subject2' });
+  assignment1 = await createAssignment({ subjectId: subject1.id, name: 'A1' });
+  assignment2 = await createAssignment({ subjectId: subject2.id, name: 'A2' });
+
+  am1 = await createUser({ username: 'am1', email: 'am1@test.com', role: 'assignment_manager' });
+  await assignManager(am1.id, assignment1.id);
   amToken = await loginAs(app, 'am1', 'TestPass123!');
 
-  await createUser({ username: 'user1', email: 'user1@test.com', role: 'user' });
+  user1 = await createUser({ username: 'user1', email: 'user1@test.com', role: 'user' });
+  await addUserToSubject(user1.id, subject1.id);
   userToken = await loginAs(app, 'user1', 'TestPass123!');
 });
 
@@ -32,7 +55,10 @@ beforeEach(async () => {
 // GET /api/users
 // ---------------------------------------------------------------------------
 describe('GET /api/users', () => {
-  it('admin can list all users', async () => {
+  it('admin can list all users with subjects and memberships enrichment', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'EnrichGroup' });
+    await addUserToGroup(user1.id, g.id, assignment1.id);
+
     const res = await app.inject({
       method: 'GET',
       url: '/api/users',
@@ -41,82 +67,162 @@ describe('GET /api/users', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(Array.isArray(body.users)).toBe(true);
-    expect(body.users.length).toBeGreaterThanOrEqual(1);
+
+    const u1 = body.users.find((u) => u.username === 'user1');
+    expect(u1.subjects.map((s) => s.name)).toEqual(['Subject1']);
+    expect(u1.memberships).toHaveLength(1);
+    expect(u1.memberships[0].group_id).toBe(g.id);
+    expect(u1.memberships[0].assignment_id).toBe(assignment1.id);
+    expect(u1.memberships[0].group_name).toBe('EnrichGroup');
+
+    const admin = body.users.find((u) => u.username === 'admin');
+    expect(admin.subjects).toEqual([]);
+    expect(admin.memberships).toEqual([]);
   });
 
-  it('assignment_manager can list users', async () => {
+  it('AM sees only users in subjects containing their managed assignments', async () => {
+    const s2only = await createUser({ username: 's2only', email: 's2only@test.com' });
+    await addUserToSubject(s2only.id, subject2.id);
+
     const res = await app.inject({
       method: 'GET',
       url: '/api/users',
       headers: { authorization: `Bearer ${amToken}` },
     });
     expect(res.statusCode).toBe(200);
+    const usernames = JSON.parse(res.body).users.map((u) => u.username);
+    expect(usernames).toContain('user1');
+    expect(usernames).not.toContain('s2only');
+
+    // Admin sees both
+    const adminRes = await app.inject({
+      method: 'GET',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const allUsernames = JSON.parse(adminRes.body).users.map((u) => u.username);
+    expect(allUsernames).toContain('user1');
+    expect(allUsernames).toContain('s2only');
   });
 
-  it('regular user cannot list all users', async () => {
-    const res = await app.inject({
+  it('regular user cannot list users and 401 without token', async () => {
+    const forbidden = await app.inject({
       method: 'GET',
       url: '/api/users',
       headers: { authorization: `Bearer ${userToken}` },
     });
-    expect(res.statusCode).toBe(403);
+    expect(forbidden.statusCode).toBe(403);
+    const noToken = await app.inject({ method: 'GET', url: '/api/users' });
+    expect(noToken.statusCode).toBe(401);
   });
 
-  it('returns 401 without token', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/users' });
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('filters by role', async () => {
-    const res = await app.inject({
+  it('filters by role and status; rejects invalid values', async () => {
+    const byRole = await app.inject({
       method: 'GET',
       url: '/api/users?role=admin',
       headers: { authorization: `Bearer ${adminToken}` },
     });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.users.every((u) => u.role_name === 'admin')).toBe(true);
-  });
+    expect(byRole.statusCode).toBe(200);
+    expect(JSON.parse(byRole.body).users.every((u) => u.role_name === 'admin')).toBe(true);
 
-  it('returns 400 for invalid role filter', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/users?role=superadmin',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('filters by status=active', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/users?status=active',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.users.every((u) => u.status === 'active')).toBe(true);
-  });
-
-  it('filters by combined role + status', async () => {
-    const res = await app.inject({
+    const byStatus = await app.inject({
       method: 'GET',
       url: '/api/users?role=user&status=active',
       headers: { authorization: `Bearer ${adminToken}` },
     });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.users.every((u) => u.role_name === 'user' && u.status === 'active')).toBe(true);
-    expect(body.users.length).toBeGreaterThan(0);
-  });
+    expect(byStatus.statusCode).toBe(200);
+    const users = JSON.parse(byStatus.body).users;
+    expect(users.length).toBeGreaterThan(0);
+    expect(users.every((u) => u.role_name === 'user' && u.status === 'active')).toBe(true);
 
-  it('returns 400 for invalid status filter', async () => {
-    const res = await app.inject({
+    const badRole = await app.inject({
+      method: 'GET',
+      url: '/api/users?role=superadmin',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(badRole.statusCode).toBe(400);
+    const badStatus = await app.inject({
       method: 'GET',
       url: '/api/users?status=unknown',
       headers: { authorization: `Bearer ${adminToken}` },
     });
+    expect(badStatus.statusCode).toBe(400);
+  });
+
+  it('filters by subjectId', async () => {
+    const s2user = await createUser({ username: 's2user', email: 's2user@test.com' });
+    await addUserToSubject(s2user.id, subject2.id);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/users?subjectId=${subject1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const usernames = JSON.parse(res.body).users.map((u) => u.username);
+    expect(usernames).toEqual(['user1']);
+
+    const bad = await app.inject({
+      method: 'GET',
+      url: '/api/users?subjectId=not-a-uuid',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it('filters by groupId=<uuid>', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'FilterGroup' });
+    await addUserToGroup(user1.id, g.id, assignment1.id);
+    const ungrouped = await createUser({ username: 'ungrouped', email: 'ungrouped@test.com' });
+    await addUserToSubject(ungrouped.id, subject1.id);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/users?groupId=${g.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const usernames = JSON.parse(res.body).users.map((u) => u.username);
+    expect(usernames).toEqual(['user1']);
+
+    const bad = await app.inject({
+      method: 'GET',
+      url: '/api/users?groupId=not-a-uuid',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it('groupId=none with assignmentId returns enrolled-but-ungrouped users', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'SomeGroup' });
+    await addUserToGroup(user1.id, g.id, assignment1.id);
+    const ungrouped = await createUser({ username: 'ungrouped', email: 'ungrouped@test.com' });
+    await addUserToSubject(ungrouped.id, subject1.id);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/users?groupId=none&assignmentId=${assignment1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const usernames = JSON.parse(res.body).users.map((u) => u.username);
+    expect(usernames).toContain('ungrouped');
+    expect(usernames).not.toContain('user1');
+  });
+
+  it('groupId=none without assignmentId returns 400', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/users?groupId=none',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
     expect(res.statusCode).toBe(400);
+    const badAssignment = await app.inject({
+      method: 'GET',
+      url: '/api/users?groupId=none&assignmentId=not-a-uuid',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(badAssignment.statusCode).toBe(400);
   });
 });
 
@@ -124,36 +230,31 @@ describe('GET /api/users', () => {
 // GET /api/users/:id
 // ---------------------------------------------------------------------------
 describe('GET /api/users/:id', () => {
-  it('admin can get any user', async () => {
-    const u = await createUser({ username: 'target', email: 'target@test.com' });
+  it('admin can get any user, enriched with subjects and memberships', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'ProfileGroup' });
+    await addUserToGroup(user1.id, g.id, assignment1.id);
     const res = await app.inject({
       method: 'GET',
-      url: `/api/users/${u.id}`,
+      url: `/api/users/${user1.id}`,
       headers: { authorization: `Bearer ${adminToken}` },
     });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).user.username).toBe('target');
+    const body = JSON.parse(res.body);
+    expect(body.user.username).toBe('user1');
+    expect(body.user.subjects.map((s) => s.name)).toEqual(['Subject1']);
+    expect(body.user.memberships).toHaveLength(1);
+    expect(body.user.memberships[0].group_name).toBe('ProfileGroup');
+    expect(body.user).not.toHaveProperty('password_hash');
   });
 
-  it('user can get their own profile', async () => {
-    // Get the user1 id
-    const listRes = await app.inject({
-      method: 'GET',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    const users = JSON.parse(listRes.body).users;
-    const user1 = users.find((u) => u.username === 'user1');
-
-    const res = await app.inject({
+  it('user can get their own profile but not another user', async () => {
+    const own = await app.inject({
       method: 'GET',
       url: `/api/users/${user1.id}`,
       headers: { authorization: `Bearer ${userToken}` },
     });
-    expect(res.statusCode).toBe(200);
-  });
+    expect(own.statusCode).toBe(200);
 
-  it('user cannot get another user profile', async () => {
     const other = await createUser({ username: 'other', email: 'other@test.com' });
     const res = await app.inject({
       method: 'GET',
@@ -163,33 +264,19 @@ describe('GET /api/users/:id', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('returns 404 for non-existent user', async () => {
-    const res = await app.inject({
+  it('returns 404 for non-existent user and 400 for invalid UUID', async () => {
+    const missing = await app.inject({
       method: 'GET',
       url: '/api/users/00000000-0000-0000-0000-000000000000',
       headers: { authorization: `Bearer ${adminToken}` },
     });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('returns 400 for invalid UUID', async () => {
-    const res = await app.inject({
+    expect(missing.statusCode).toBe(404);
+    const bad = await app.inject({
       method: 'GET',
       url: '/api/users/not-a-uuid',
       headers: { authorization: `Bearer ${adminToken}` },
     });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('password_hash is not exposed in response', async () => {
-    const u = await createUser({ username: 'safe', email: 'safe@test.com' });
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    const body = JSON.parse(res.body);
-    expect(body.user).not.toHaveProperty('password_hash');
+    expect(bad.statusCode).toBe(400);
   });
 });
 
@@ -197,7 +284,7 @@ describe('GET /api/users/:id', () => {
 // POST /api/users
 // ---------------------------------------------------------------------------
 describe('POST /api/users', () => {
-  it('admin creates user with role=user', async () => {
+  it('admin creates user with subjectIds; user is pending and enrolled', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/users',
@@ -207,6 +294,7 @@ describe('POST /api/users', () => {
         email: 'new@test.com',
         firstName: 'New',
         lastName: 'User',
+        subjectIds: [subject1.id],
         sendSetupEmail: false,
       },
     });
@@ -214,9 +302,220 @@ describe('POST /api/users', () => {
     const body = JSON.parse(res.body);
     expect(body.user.username).toBe('newuser');
     expect(body.user.status).toBe('pending');
+
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/users/${body.user.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(JSON.parse(getRes.body).user.subjects.map((s) => s.id)).toEqual([subject1.id]);
   });
 
-  it('admin creates assignment_manager', async () => {
+  it('role user without subjectIds returns 400 "Subject is required"', async () => {
+    for (const subjectIds of [undefined, []]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/users',
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: {
+          username: 'nosubject',
+          email: 'nosubject@test.com',
+          firstName: 'No',
+          lastName: 'Subject',
+          subjectIds,
+          sendSetupEmail: false,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).error).toBe('Subject is required');
+    }
+  });
+
+  it('AM cannot create a user in a subject they do not manage (403)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: {
+        username: 'scoped1',
+        email: 'scoped1@test.com',
+        firstName: 'Scoped',
+        lastName: 'User',
+        subjectIds: [subject2.id],
+      },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('Forbidden: You do not manage any assignment in this subject');
+  });
+
+  it('AM can create a user in a subject they manage', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: {
+        username: 'scoped2',
+        email: 'scoped2@test.com',
+        firstName: 'Scoped',
+        lastName: 'User',
+        subjectIds: [subject1.id],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('returns 404 for unknown subject in subjectIds', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'ghostsubject',
+        email: 'ghostsubject@test.com',
+        firstName: 'G',
+        lastName: 'S',
+        subjectIds: ['00000000-0000-0000-0000-000000000000'],
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('creates user with immediate group placement', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'PlacementGroup' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'placed',
+        email: 'placed@test.com',
+        firstName: 'P',
+        lastName: 'L',
+        subjectIds: [subject1.id],
+        assignmentId: assignment1.id,
+        groupId: g.id,
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.warning).toBeUndefined();
+
+    const db = getPool();
+    const rows = await db.query('SELECT group_id FROM user_groups WHERE user_id = $1', [body.user.id]);
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].group_id).toBe(g.id);
+  });
+
+  it('groupId without assignmentId returns 400', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'NoAssignmentGroup' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'noassignment',
+        email: 'noassignment@test.com',
+        firstName: 'N',
+        lastName: 'A',
+        subjectIds: [subject1.id],
+        groupId: g.id,
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/assignmentId is required/i);
+  });
+
+  it('assignment not in selected subjects returns 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'wrongsubject',
+        email: 'wrongsubject@test.com',
+        firstName: 'W',
+        lastName: 'S',
+        subjectIds: [subject1.id],
+        assignmentId: assignment2.id,
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/does not belong to the selected subjects/i);
+  });
+
+  it('group not in the selected assignment returns 400', async () => {
+    const g2 = await createGroup({ assignmentId: assignment2.id, name: 'OtherAssignmentGroup' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'wronggroup',
+        email: 'wronggroup@test.com',
+        firstName: 'W',
+        lastName: 'G',
+        subjectIds: [subject1.id],
+        assignmentId: assignment1.id,
+        groupId: g2.id,
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/does not belong to the selected assignment/i);
+  });
+
+  it('returns 404 when placement group does not exist', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'withghostgroup',
+        email: 'withghostgroup@test.com',
+        firstName: 'W',
+        lastName: 'G',
+        subjectIds: [subject1.id],
+        assignmentId: assignment1.id,
+        groupId: '00000000-0000-0000-0000-000000000000',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('placement into a full group still creates the user with a warning', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'FullGroup', maxMembers: 1 });
+    await addUserToGroup(user1.id, g.id, assignment1.id);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username: 'overflow',
+        email: 'overflow@test.com',
+        firstName: 'O',
+        lastName: 'F',
+        subjectIds: [subject1.id],
+        assignmentId: assignment1.id,
+        groupId: g.id,
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.warning).toMatch(/full/i);
+
+    const db = getPool();
+    const rows = await db.query('SELECT COUNT(*)::int AS c FROM user_groups WHERE user_id = $1', [body.user.id]);
+    expect(rows.rows[0].c).toBe(0);
+  });
+
+  it('admin creates assignment_manager with managed assignmentIds', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/users',
@@ -227,27 +526,55 @@ describe('POST /api/users', () => {
         firstName: 'AM',
         lastName: 'User',
         role: 'assignment_manager',
+        assignmentIds: [assignment1.id, assignment2.id],
         sendSetupEmail: false,
       },
     });
     expect(res.statusCode).toBe(201);
+    const newAmId = JSON.parse(res.body).user.id;
+
+    const managers = await app.inject({
+      method: 'GET',
+      url: `/api/assignments/${assignment2.id}/managers`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(JSON.parse(managers.body).managers.map((m) => m.id)).toContain(newAmId);
   });
 
-  it('assignment_manager cannot create admin user', async () => {
+  it('AM cannot create admin or assignment_manager users', async () => {
+    for (const role of ['admin', 'assignment_manager']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/users',
+        headers: { authorization: `Bearer ${amToken}` },
+        payload: {
+          username: `bad-${role}`,
+          email: `bad-${role}@test.com`,
+          firstName: 'B',
+          lastName: 'A',
+          role,
+          sendSetupEmail: false,
+        },
+      });
+      expect(res.statusCode).toBe(403);
+    }
+  });
+
+  it('AM can create a regular user', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/users',
       headers: { authorization: `Bearer ${amToken}` },
       payload: {
-        username: 'badAdmin',
-        email: 'bad@test.com',
-        firstName: 'B',
-        lastName: 'A',
-        role: 'admin',
+        username: 'amcreated',
+        email: 'amcreated@test.com',
+        firstName: 'AM',
+        lastName: 'Created',
+        subjectIds: [subject1.id],
         sendSetupEmail: false,
       },
     });
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(201);
   });
 
   it('regular user cannot create users', async () => {
@@ -255,90 +582,46 @@ describe('POST /api/users', () => {
       method: 'POST',
       url: '/api/users',
       headers: { authorization: `Bearer ${userToken}` },
-      payload: { username: 'x', email: 'x@test.com', firstName: 'X', lastName: 'Y', sendSetupEmail: false },
+      payload: {
+        username: 'x',
+        email: 'x@test.com',
+        firstName: 'X',
+        lastName: 'Y',
+        subjectIds: [subject1.id],
+        sendSetupEmail: false,
+      },
     });
     expect(res.statusCode).toBe(403);
   });
 
-  it('returns 409 for duplicate username', async () => {
-    await createUser({ username: 'dup', email: 'dup@test.com' });
-    const res = await app.inject({
+  it('returns 409 for duplicate username, email and studentId', async () => {
+    await createUser({ username: 'dup', email: 'dup@test.com', studentId: 'S123' });
+    const base = { firstName: 'D', lastName: 'U', subjectIds: [subject1.id], sendSetupEmail: false };
+
+    const dupUsername = await app.inject({
       method: 'POST',
       url: '/api/users',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { username: 'dup', email: 'other@test.com', firstName: 'D', lastName: 'U', sendSetupEmail: false },
+      payload: { ...base, username: 'dup', email: 'unique1@test.com' },
     });
-    expect(res.statusCode).toBe(409);
-  });
+    expect(dupUsername.statusCode).toBe(409);
 
-  it('returns 409 for duplicate email', async () => {
-    await createUser({ username: 'uniqueuser', email: 'shared@test.com' });
-    const res = await app.inject({
+    const dupEmail = await app.inject({
       method: 'POST',
       url: '/api/users',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        username: 'anotheruser',
-        email: 'shared@test.com',
-        firstName: 'A',
-        lastName: 'B',
-        sendSetupEmail: false,
-      },
+      payload: { ...base, username: 'unique1', email: 'dup@test.com' },
     });
-    expect(res.statusCode).toBe(409);
-  });
+    expect(dupEmail.statusCode).toBe(409);
 
-  it('returns 404 when specified group does not exist', async () => {
-    const res = await app.inject({
+    const dupStudentId = await app.inject({
       method: 'POST',
       url: '/api/users',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        username: 'withgroup',
-        email: 'withgroup@test.com',
-        firstName: 'W',
-        lastName: 'G',
-        groupId: '00000000-0000-0000-0000-000000000000',
-        sendSetupEmail: false,
-      },
+      payload: { ...base, username: 'unique2', email: 'unique2@test.com', studentId: 'S123' },
     });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('returns 400 when group is full', async () => {
-    const group = await createGroup({ name: 'FullGroup', maxMembers: 1 });
-    await createUser({ username: 'member1', email: 'member1@test.com' });
-
-    // Assign member1 to group
-    const listRes = await app.inject({
-      method: 'GET',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    const member1 = JSON.parse(listRes.body).users.find((u) => u.username === 'member1');
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${member1.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: group.id },
-    });
-
-    // Now try to create another user in the same full group
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        username: 'member2',
-        email: 'member2@test.com',
-        firstName: 'M',
-        lastName: '2',
-        groupId: group.id,
-        sendSetupEmail: false,
-      },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toMatch(/full/i);
+    expect(dupStudentId.statusCode).toBe(409);
+    expect(JSON.parse(dupStudentId.body).error).toMatch(/student id/i);
   });
 });
 
@@ -404,13 +687,6 @@ describe('PUT /api/users/:id', () => {
   });
 
   it('user can edit their own non-role fields', async () => {
-    const listRes = await app.inject({
-      method: 'GET',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    const user1 = JSON.parse(listRes.body).users.find((u) => u.username === 'user1');
-
     const res = await app.inject({
       method: 'PUT',
       url: `/api/users/${user1.id}`,
@@ -419,6 +695,18 @@ describe('PUT /api/users/:id', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).user.email).toBe('user1updated@test.com');
+  });
+
+  it('regular user editing another user returns 403', async () => {
+    const other = await createUser({ username: 'editvictim', email: 'editvictim@test.com' });
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${other.id}`,
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: { email: 'hijacked@test.com', firstName: 'H', lastName: 'J' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toMatch(/your own profile/i);
   });
 
   it('prevents username change', async () => {
@@ -432,64 +720,161 @@ describe('PUT /api/users/:id', () => {
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).error).toMatch(/username/i);
   });
+
+  it('AM cannot escalate a user role; admin can change roles', async () => {
+    const u = await createUser({ username: 'rolechange', email: 'rolechange@test.com' });
+
+    const amRes = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { email: u.email, firstName: 'No', lastName: 'Change', role: 'admin' },
+    });
+    expect(amRes.statusCode).toBe(200);
+    let getRes = await app.inject({
+      method: 'GET',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(JSON.parse(getRes.body).user.role_name).toBe('user');
+
+    const adminRes = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { email: u.email, firstName: 'Role', lastName: 'Change', role: 'assignment_manager' },
+    });
+    expect(adminRes.statusCode).toBe(200);
+    getRes = await app.inject({
+      method: 'GET',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(JSON.parse(getRes.body).user.role_name).toBe('assignment_manager');
+  });
 });
 
 // ---------------------------------------------------------------------------
 // PUT /api/users/:id/group
 // ---------------------------------------------------------------------------
 describe('PUT /api/users/:id/group', () => {
-  it('admin assigns user to group', async () => {
-    const u = await createUser({ username: 'groupable', email: 'groupable@test.com' });
-    const g = await createGroup({ name: 'TestGroup' });
+  it('admin assigns a subject member to a group', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'TestGroup' });
     const res = await app.inject({
       method: 'PUT',
-      url: `/api/users/${u.id}/group`,
+      url: `/api/users/${user1.id}/group`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g.id },
+      payload: { assignmentId: assignment1.id, groupId: g.id },
     });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).user.groupId).toBe(g.id);
+    const body = JSON.parse(res.body);
+    expect(body.user.groupId).toBe(g.id);
+    expect(body.user.assignmentId).toBe(assignment1.id);
   });
 
-  it('admin removes user from group by setting groupId to null', async () => {
-    const u = await createUser({ username: 'removable', email: 'removable@test.com' });
-    const g = await createGroup({ name: 'RemovableGroup' });
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${u.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g.id },
-    });
+  it('admin removes user from group with groupId null', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'RemovableGroup' });
+    await addUserToGroup(user1.id, g.id, assignment1.id);
     const res = await app.inject({
       method: 'PUT',
-      url: `/api/users/${u.id}/group`,
+      url: `/api/users/${user1.id}/group`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: null },
+      payload: { assignmentId: assignment1.id, groupId: null },
     });
     expect(res.statusCode).toBe(200);
+    const db = getPool();
+    const rows = await db.query('SELECT COUNT(*)::int AS c FROM user_groups WHERE user_id = $1', [user1.id]);
+    expect(rows.rows[0].c).toBe(0);
   });
 
-  it('returns 400 when groupId is missing from body', async () => {
-    const u = await createUser({ username: 'nogroup', email: 'nogroup@test.com' });
+  it('managing AM can place users; unmanaged AM gets 403', async () => {
+    const g1 = await createGroup({ assignmentId: assignment1.id, name: 'AMGroup1' });
+    const ok = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${user1.id}/group`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { assignmentId: assignment1.id, groupId: g1.id },
+    });
+    expect(ok.statusCode).toBe(200);
+
+    // am1 does not manage assignment2
+    const g2 = await createGroup({ assignmentId: assignment2.id, name: 'AMGroup2' });
+    const forbidden = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${user1.id}/group`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { assignmentId: assignment2.id, groupId: g2.id },
+    });
+    expect(forbidden.statusCode).toBe(403);
+  });
+
+  it('returns 400 when body is missing assignmentId or groupId', async () => {
+    for (const payload of [{}, { groupId: null }, { assignmentId: assignment1.id }]) {
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/api/users/${user1.id}/group`,
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload,
+      });
+      expect(res.statusCode).toBe(400);
+    }
+  });
+
+  it('returns 400 when the group belongs to a different assignment', async () => {
+    const g2 = await createGroup({ assignmentId: assignment2.id, name: 'MismatchGroup' });
     const res = await app.inject({
       method: 'PUT',
-      url: `/api/users/${u.id}/group`,
+      url: `/api/users/${user1.id}/group`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: {},
+      payload: { assignmentId: assignment1.id, groupId: g2.id },
     });
     expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/does not belong/i);
   });
 
-  it('regular user cannot update group assignment', async () => {
-    const u = await createUser({ username: 'victim', email: 'victim@test.com' });
-    const g = await createGroup({ name: 'VictimGroup' });
+  it('returns 404 for non-existent group or assignment', async () => {
+    const missingGroup = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${user1.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { assignmentId: assignment1.id, groupId: '00000000-0000-0000-0000-000000000000' },
+    });
+    expect(missingGroup.statusCode).toBe(404);
+
+    const missingAssignment = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${user1.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { assignmentId: '00000000-0000-0000-0000-000000000000', groupId: null },
+    });
+    expect(missingAssignment.statusCode).toBe(404);
+  });
+
+  it('regular user cannot update group placements', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'VictimGroup' });
     const res = await app.inject({
       method: 'PUT',
-      url: `/api/users/${u.id}/group`,
+      url: `/api/users/${user1.id}/group`,
       headers: { authorization: `Bearer ${userToken}` },
-      payload: { groupId: g.id },
+      payload: { assignmentId: assignment1.id, groupId: g.id },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it('returns 409 when the target group is full', async () => {
+    const g = await createGroup({ assignmentId: assignment1.id, name: 'TxnFullGroup', maxMembers: 1 });
+    const second = await createUser({ username: 'txnsecond', email: 'txnsecond@test.com' });
+    await addUserToSubject(second.id, subject1.id);
+    await addUserToGroup(user1.id, g.id, assignment1.id);
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${second.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { assignmentId: assignment1.id, groupId: g.id },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body).error).toMatch(/full/i);
   });
 });
 
@@ -498,14 +883,6 @@ describe('PUT /api/users/:id/group', () => {
 // ---------------------------------------------------------------------------
 describe('PUT /api/users/:id/password', () => {
   it('user can change their own password', async () => {
-    // Get user1 id
-    const listRes = await app.inject({
-      method: 'GET',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    const user1 = JSON.parse(listRes.body).users.find((u) => u.username === 'user1');
-
     const res = await app.inject({
       method: 'PUT',
       url: `/api/users/${user1.id}/password`,
@@ -516,13 +893,6 @@ describe('PUT /api/users/:id/password', () => {
   });
 
   it('returns 401 for wrong current password', async () => {
-    const listRes = await app.inject({
-      method: 'GET',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    const user1 = JSON.parse(listRes.body).users.find((u) => u.username === 'user1');
-
     const res = await app.inject({
       method: 'PUT',
       url: `/api/users/${user1.id}/password`,
@@ -533,13 +903,6 @@ describe('PUT /api/users/:id/password', () => {
   });
 
   it('returns 400 for too-short new password', async () => {
-    const listRes = await app.inject({
-      method: 'GET',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    const user1 = JSON.parse(listRes.body).users.find((u) => u.username === 'user1');
-
     const res = await app.inject({
       method: 'PUT',
       url: `/api/users/${user1.id}/password`,
@@ -549,22 +912,30 @@ describe('PUT /api/users/:id/password', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('user cannot change another user password', async () => {
+  it('user cannot change another user password (admin included)', async () => {
     const other = await createUser({ username: 'otherpass', email: 'otherpass@test.com' });
-    const res = await app.inject({
+    const asUser = await app.inject({
       method: 'PUT',
       url: `/api/users/${other.id}/password`,
       headers: { authorization: `Bearer ${userToken}` },
       payload: { currentPassword: 'TestPass123!', newPassword: 'NewPass456!' },
     });
-    expect(res.statusCode).toBe(403);
+    expect(asUser.statusCode).toBe(403);
+
+    const asAdmin = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${other.id}/password`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { currentPassword: 'TestPass123!', newPassword: 'NewPass456!' },
+    });
+    expect(asAdmin.statusCode).toBe(403);
   });
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /api/users/:id
+// DELETE /api/users/:id and /api/users/bulk
 // ---------------------------------------------------------------------------
-describe('DELETE /api/users/:id', () => {
+describe('DELETE /api/users', () => {
   it('admin deletes a user', async () => {
     const u = await createUser({ username: 'deleteme', email: 'deleteme@test.com' });
     const res = await app.inject({
@@ -575,47 +946,60 @@ describe('DELETE /api/users/:id', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('returns 404 for non-existent user', async () => {
-    const res = await app.inject({
+  it('deleting a user cascades reset tokens', async () => {
+    const PasswordResetToken = require('../../src/models/PasswordResetToken');
+    const u = await createUser({ username: 'tokenowner', email: 'tokenowner@test.com' });
+    await PasswordResetToken.create(u.id, 'reset', 1);
+
+    const db = getPool();
+    const before = await db.query('SELECT COUNT(*)::int AS c FROM password_reset_tokens WHERE user_id = $1', [u.id]);
+    expect(before.rows[0].c).toBe(1);
+
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(delRes.statusCode).toBe(200);
+
+    const after = await db.query('SELECT COUNT(*)::int AS c FROM password_reset_tokens WHERE user_id = $1', [u.id]);
+    expect(after.rows[0].c).toBe(0);
+  });
+
+  it('returns 404 for non-existent user; admin cannot delete self; AM/user get 403', async () => {
+    const missing = await app.inject({
       method: 'DELETE',
       url: '/api/users/00000000-0000-0000-0000-000000000000',
       headers: { authorization: `Bearer ${adminToken}` },
     });
-    expect(res.statusCode).toBe(404);
-  });
+    expect(missing.statusCode).toBe(404);
 
-  it('admin cannot delete their own account', async () => {
     const listRes = await app.inject({
       method: 'GET',
       url: '/api/users?role=admin',
       headers: { authorization: `Bearer ${adminToken}` },
     });
     const adminUser = JSON.parse(listRes.body).users.find((u) => u.username === 'admin');
-    const res = await app.inject({
+    const self = await app.inject({
       method: 'DELETE',
       url: `/api/users/${adminUser.id}`,
       headers: { authorization: `Bearer ${adminToken}` },
     });
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toMatch(/own account/i);
-  });
+    expect(self.statusCode).toBe(400);
+    expect(JSON.parse(self.body).error).toMatch(/own account/i);
 
-  it('regular user cannot delete users', async () => {
     const u = await createUser({ username: 'protected', email: 'protected@test.com' });
-    const res = await app.inject({
-      method: 'DELETE',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${userToken}` },
-    });
-    expect(res.statusCode).toBe(403);
+    for (const token of [amToken, userToken]) {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/api/users/${u.id}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+    }
   });
-});
 
-// ---------------------------------------------------------------------------
-// DELETE /api/users/bulk
-// ---------------------------------------------------------------------------
-describe('DELETE /api/users/bulk', () => {
-  it('admin bulk deletes users', async () => {
+  it('admin bulk deletes users; validation errors covered', async () => {
     const u1 = await createUser({ username: 'bulk1', email: 'bulk1@test.com' });
     const u2 = await createUser({ username: 'bulk2', email: 'bulk2@test.com' });
     const res = await app.inject({
@@ -626,42 +1010,36 @@ describe('DELETE /api/users/bulk', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).deleted).toBe(2);
-  });
 
-  it('returns 400 for empty ids array', async () => {
-    const res = await app.inject({
+    const empty = await app.inject({
       method: 'DELETE',
       url: '/api/users/bulk',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: { ids: [] },
     });
-    expect(res.statusCode).toBe(400);
-  });
+    expect(empty.statusCode).toBe(400);
 
-  it('returns 400 when ids contain invalid UUIDs', async () => {
-    const res = await app.inject({
+    const invalid = await app.inject({
       method: 'DELETE',
       url: '/api/users/bulk',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: { ids: ['not-a-uuid'] },
     });
-    expect(res.statusCode).toBe(400);
-  });
+    expect(invalid.statusCode).toBe(400);
 
-  it('returns 400 when admin id is in the list', async () => {
     const listRes = await app.inject({
       method: 'GET',
       url: '/api/users?role=admin',
       headers: { authorization: `Bearer ${adminToken}` },
     });
     const adminUser = JSON.parse(listRes.body).users.find((u) => u.username === 'admin');
-    const res = await app.inject({
+    const withSelf = await app.inject({
       method: 'DELETE',
       url: '/api/users/bulk',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: { ids: [adminUser.id] },
     });
-    expect(res.statusCode).toBe(400);
+    expect(withSelf.statusCode).toBe(400);
   });
 });
 
@@ -669,7 +1047,38 @@ describe('DELETE /api/users/bulk', () => {
 // POST /api/users/import
 // ---------------------------------------------------------------------------
 describe('POST /api/users/import', () => {
-  it('admin imports new users', async () => {
+  it('requires a valid subjectId', async () => {
+    for (const subjectId of [undefined, 'not-a-uuid']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/users/import',
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: {
+          users: [{ username: 'imp1', email: 'imp1@test.com', firstName: 'Imp', lastName: 'One' }],
+          subjectId,
+          sendSetupEmail: false,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).error).toBe('Subject is required');
+    }
+  });
+
+  it('returns 404 for unknown subject', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        users: [{ username: 'imp1', email: 'imp1@test.com', firstName: 'Imp', lastName: 'One' }],
+        subjectId: '00000000-0000-0000-0000-000000000000',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('admin imports new users and they are enrolled in the subject', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/users/import',
@@ -679,6 +1088,7 @@ describe('POST /api/users/import', () => {
           { username: 'imp1', email: 'imp1@test.com', firstName: 'Imp', lastName: 'One' },
           { username: 'imp2', email: 'imp2@test.com', firstName: 'Imp', lastName: 'Two' },
         ],
+        subjectId: subject1.id,
         conflictAction: 'skip',
         sendSetupEmail: false,
       },
@@ -688,6 +1098,15 @@ describe('POST /api/users/import', () => {
     expect(body.imported).toBe(2);
     expect(body.skipped).toBe(0);
     expect(body.errors).toHaveLength(0);
+
+    const db = getPool();
+    const rows = await db.query(
+      `SELECT COUNT(*)::int AS c FROM user_subjects us
+       JOIN users u ON u.id = us.user_id
+       WHERE us.subject_id = $1 AND u.username IN ('imp1', 'imp2')`,
+      [subject1.id]
+    );
+    expect(rows.rows[0].c).toBe(2);
   });
 
   it('skips existing users when conflictAction=skip', async () => {
@@ -698,6 +1117,7 @@ describe('POST /api/users/import', () => {
       headers: { authorization: `Bearer ${adminToken}` },
       payload: {
         users: [{ username: 'existing', email: 'existing@test.com', firstName: 'E', lastName: 'X' }],
+        subjectId: subject1.id,
         conflictAction: 'skip',
         sendSetupEmail: false,
       },
@@ -708,20 +1128,28 @@ describe('POST /api/users/import', () => {
     expect(body.imported).toBe(0);
   });
 
-  it('overwrites existing users when conflictAction=overwrite', async () => {
-    await createUser({ username: 'overwriteuser', email: 'overwrite@test.com', firstName: 'Old', lastName: 'Name' });
+  it('overwrites existing users when conflictAction=overwrite and enrols them', async () => {
+    const existing = await createUser({ username: 'overwriteuser', email: 'overwrite@test.com', firstName: 'Old' });
     const res = await app.inject({
       method: 'POST',
       url: '/api/users/import',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: {
         users: [{ username: 'overwriteuser', email: 'overwrite@test.com', firstName: 'New', lastName: 'Name' }],
+        subjectId: subject1.id,
         conflictAction: 'overwrite',
         sendSetupEmail: false,
       },
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).imported).toBe(1);
+
+    const db = getPool();
+    const rows = await db.query('SELECT COUNT(*)::int AS c FROM user_subjects WHERE user_id = $1 AND subject_id = $2', [
+      existing.id,
+      subject1.id,
+    ]);
+    expect(rows.rows[0].c).toBe(1);
   });
 
   it('cannot overwrite admin account via import', async () => {
@@ -731,341 +1159,80 @@ describe('POST /api/users/import', () => {
       headers: { authorization: `Bearer ${adminToken}` },
       payload: {
         users: [{ username: 'admin', email: 'admin@test.com', firstName: 'H', lastName: 'K' }],
+        subjectId: subject1.id,
         conflictAction: 'overwrite',
         sendSetupEmail: false,
       },
     });
     expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.errors[0].reason).toMatch(/admin/i);
+    expect(JSON.parse(res.body).errors[0].reason).toMatch(/admin/i);
   });
 
-  it('AM importing skips admin/AM accounts on overwrite', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/import',
-      headers: { authorization: `Bearer ${amToken}` },
-      payload: {
-        users: [
-          { username: 'admin', email: 'admin@test.com', firstName: 'H', lastName: 'K' },
-          { username: 'am1', email: 'am1@test.com', firstName: 'A', lastName: 'M' },
-          { username: 'newuser', email: 'new@test.com', firstName: 'New', lastName: 'User' },
-        ],
-        conflictAction: 'overwrite',
-        sendSetupEmail: false,
-      },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    const serializedErrors = body.errors.map((e) => JSON.stringify(e));
-    expect(body.imported).toBe(1);
-    expect(body.errors.length).toBeGreaterThanOrEqual(2);
-    expect(serializedErrors.some((error) => /admin/i.test(error))).toBe(true);
-    expect(serializedErrors.some((error) => /am1|assignment manager/i.test(error))).toBe(true);
-    expect(serializedErrors.some((error) => /newuser/i.test(error))).toBe(false);
-  });
-
-  it('returns 400 for empty users array', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/import',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { users: [], conflictAction: 'skip', sendSetupEmail: false },
-    });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('assignment_manager can import users', async () => {
-    const res = await app.inject({
+  it('AM managing an assignment in the subject can import; unmanaged subject returns 403', async () => {
+    const ok = await app.inject({
       method: 'POST',
       url: '/api/users/import',
       headers: { authorization: `Bearer ${amToken}` },
       payload: {
         users: [{ username: 'amimp1', email: 'amimp1@test.com', firstName: 'AM', lastName: 'Imp' }],
+        subjectId: subject1.id,
         conflictAction: 'skip',
         sendSetupEmail: false,
       },
     });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.imported).toBe(1);
+    expect(ok.statusCode).toBe(200);
+    expect(JSON.parse(ok.body).imported).toBe(1);
+
+    const forbidden = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: {
+        users: [{ username: 'amimp2', email: 'amimp2@test.com', firstName: 'AM', lastName: 'Imp' }],
+        subjectId: subject2.id,
+        conflictAction: 'skip',
+        sendSetupEmail: false,
+      },
+    });
+    expect(forbidden.statusCode).toBe(403);
   });
 
-  it('regular user cannot import', async () => {
-    const res = await app.inject({
+  it('returns 400 for empty users array and invalid conflictAction; 403 for regular user', async () => {
+    const empty = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { users: [], subjectId: subject1.id, sendSetupEmail: false },
+    });
+    expect(empty.statusCode).toBe(400);
+
+    const badAction = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        users: [{ username: 'x', email: 'x@test.com', firstName: 'X', lastName: 'Y' }],
+        subjectId: subject1.id,
+        conflictAction: 'merge',
+        sendSetupEmail: false,
+      },
+    });
+    expect(badAction.statusCode).toBe(400);
+    expect(JSON.parse(badAction.body).error).toMatch(/conflictAction/i);
+
+    const forbidden = await app.inject({
       method: 'POST',
       url: '/api/users/import',
       headers: { authorization: `Bearer ${userToken}` },
       payload: {
         users: [{ username: 'x', email: 'x@test.com', firstName: 'X', lastName: 'Y' }],
-        conflictAction: 'skip',
+        subjectId: subject1.id,
         sendSetupEmail: false,
       },
     });
-    expect(res.statusCode).toBe(403);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/users/send-setup-emails
-// ---------------------------------------------------------------------------
-describe('POST /api/users/send-setup-emails', () => {
-  it('admin can send setup emails to all pending users', async () => {
-    // Create pending users via the API (no password = pending)
-    const res1 = await app.inject({
-      method: 'POST',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        username: 'pending1',
-        email: 'pending1@test.com',
-        firstName: 'P',
-        lastName: 'One',
-        sendSetupEmail: false,
-      },
-    });
-    expect(res1.statusCode).toBe(201);
-    const res2 = await app.inject({
-      method: 'POST',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        username: 'pending2',
-        email: 'pending2@test.com',
-        firstName: 'P',
-        lastName: 'Two',
-        sendSetupEmail: false,
-      },
-    });
-    expect(res2.statusCode).toBe(201);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/send-setup-emails',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {},
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.sent).toBeGreaterThanOrEqual(2);
+    expect(forbidden.statusCode).toBe(403);
   });
 
-  it('admin can send to specific userIds list', async () => {
-    const createRes = await app.inject({
-      method: 'POST',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        username: 'specific1',
-        email: 'specific1@test.com',
-        firstName: 'S',
-        lastName: 'One',
-        sendSetupEmail: false,
-      },
-    });
-    const userId = JSON.parse(createRes.body).user.id;
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/send-setup-emails',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { userIds: [userId] },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.sent).toBe(1);
-  });
-
-  it('returns 401 without token', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/send-setup-emails',
-      payload: {},
-    });
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('returns 403 for regular user', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/send-setup-emails',
-      headers: { authorization: `Bearer ${userToken}` },
-      payload: {},
-    });
-    expect(res.statusCode).toBe(403);
-  });
-
-  it('returns 400 when exceeding 500 userIds', async () => {
-    const fakeIds = Array.from({ length: 501 }, (_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`);
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/send-setup-emails',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { userIds: fakeIds },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toMatch(/500/);
-  });
-
-  it('returns 400 for invalid UUID in userIds', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/send-setup-emails',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { userIds: ['not-a-uuid'] },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toMatch(/invalid/i);
-  });
-
-  it('silently skips non-pending users in userIds', async () => {
-    // user1 is active (created with password via createUser helper), not pending
-    const listRes = await app.inject({
-      method: 'GET',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    const user1 = JSON.parse(listRes.body).users.find((u) => u.username === 'user1');
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/send-setup-emails',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { userIds: [user1.id] },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    // user1 is active, not pending — should be filtered out
-    expect(body.sent).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// PUT /api/users/:id/group — AM RBAC
-// ---------------------------------------------------------------------------
-describe('PUT /api/users/:id/group — AM RBAC', () => {
-  it('assignment_manager can assign a user to a group', async () => {
-    const u = await createUser({ username: 'amtarget', email: 'amtarget@test.com' });
-    const g = await createGroup({ name: 'AMAssignGroup' });
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/api/users/${u.id}/group`,
-      headers: { authorization: `Bearer ${amToken}` },
-      payload: { groupId: g.id },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).user.groupId).toBe(g.id);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// PUT /api/users/:id — AM role escalation prevention
-// ---------------------------------------------------------------------------
-describe('PUT /api/users/:id — AM role escalation', () => {
-  it('assignment_manager cannot change a user role', async () => {
-    const u = await createUser({ username: 'norolechange', email: 'norolechange@test.com' });
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${amToken}` },
-      payload: { email: u.email, firstName: 'No', lastName: 'Change', role: 'admin' },
-    });
-    // AM cannot escalate role — the role field should be ignored (not applied)
-    expect(res.statusCode).toBe(200);
-
-    // Verify via a fresh GET that the role was NOT changed
-    const getRes = await app.inject({
-      method: 'GET',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(JSON.parse(getRes.body).user.role_name).toBe('user');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// RBAC: AM on admin-only endpoints (users)
-// ---------------------------------------------------------------------------
-describe('RBAC: AM on admin-only user endpoints', () => {
-  it('DELETE /api/users/:id with AM token returns 403', async () => {
-    const u = await createUser({ username: 'amdeletetarget', email: 'amdel@test.com' });
-    const res = await app.inject({
-      method: 'DELETE',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${amToken}` },
-    });
-    expect(res.statusCode).toBe(403);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/users?groupId= — filter by group
-// ---------------------------------------------------------------------------
-describe('GET /api/users?groupId=<uuid>', () => {
-  it('returns only users in the specified group', async () => {
-    const g = await createGroup({ name: 'FilterGroup' });
-    const inGroup = await createUser({ username: 'ingroup', email: 'ingroup@test.com' });
-    await createUser({ username: 'nogroup', email: 'nogroup@test.com' });
-
-    // Assign inGroup user to the group
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${inGroup.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g.id },
-    });
-
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/users?groupId=${g.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.users.every((u) => u.group_id === g.id)).toBe(true);
-    expect(body.users.some((u) => u.username === 'ingroup')).toBe(true);
-    expect(body.users.some((u) => u.username === 'nogroup')).toBe(false);
-  });
-
-  it('groupId=none returns only ungrouped users', async () => {
-    const g = await createGroup({ name: 'SomeGroup' });
-    const grouped = await createUser({ username: 'grouped', email: 'grouped@test.com' });
-    await createUser({ username: 'ungrouped', email: 'ungrouped@test.com' });
-
-    await app.inject({
-      method: 'PUT',
-      url: `/api/users/${grouped.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g.id },
-    });
-
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/users?groupId=none',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.users.every((u) => u.group_id === null)).toBe(true);
-    expect(body.users.some((u) => u.username === 'ungrouped')).toBe(true);
-    expect(body.users.some((u) => u.username === 'grouped')).toBe(false);
-  });
-
-  it('returns 400 for invalid groupId filter', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/users?groupId=not-a-uuid',
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toMatch(/groupId/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/users/import — within-batch duplicate detection
-// ---------------------------------------------------------------------------
-describe('POST /api/users/import — within-batch duplicate email', () => {
   it('detects duplicate emails within the same batch', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -1076,234 +1243,29 @@ describe('POST /api/users/import — within-batch duplicate email', () => {
           { username: 'dup1', email: 'same@test.com', firstName: 'Dup', lastName: 'One' },
           { username: 'dup2', email: 'same@test.com', firstName: 'Dup', lastName: 'Two' },
         ],
+        subjectId: subject1.id,
         conflictAction: 'skip',
         sendSetupEmail: false,
       },
     });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    // First row imports, second row errors because email is already taken by the first
     expect(body.imported).toBe(1);
     expect(body.errors.length).toBe(1);
     expect(body.errors[0].reason).toMatch(/email/i);
   });
-});
 
-// ---------------------------------------------------------------------------
-// POST /api/users/import — invalid conflictAction
-// ---------------------------------------------------------------------------
-describe('POST /api/users/import — invalid conflictAction', () => {
-  it('returns 400 for an invalid conflictAction value', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/import',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        users: [{ username: 'x', email: 'x@test.com', firstName: 'X', lastName: 'Y' }],
-        conflictAction: 'merge',
-        sendSetupEmail: false,
-      },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toMatch(/conflictAction/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// PUT /api/users/:id — admin changes role from user to assignment_manager
-// ---------------------------------------------------------------------------
-describe('PUT /api/users/:id — admin role change', () => {
-  it('admin changes role from user to assignment_manager and verifies via GET', async () => {
-    const u = await createUser({ username: 'rolechange', email: 'rolechange@test.com', role: 'user' });
-
-    const putRes = await app.inject({
-      method: 'PUT',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { email: u.email, firstName: 'Role', lastName: 'Change', role: 'assignment_manager' },
-    });
-    expect(putRes.statusCode).toBe(200);
-
-    // Verify the role was actually updated
-    const getRes = await app.inject({
-      method: 'GET',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(getRes.statusCode).toBe(200);
-    expect(JSON.parse(getRes.body).user.role_name).toBe('assignment_manager');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// PUT /api/users/:id/password — admin cannot change another user's password
-// ---------------------------------------------------------------------------
-describe('PUT /api/users/:id/password — admin cross-user', () => {
-  it('admin cannot change another user password (returns 403)', async () => {
-    const other = await createUser({ username: 'adminpassvictim', email: 'apv@test.com' });
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/api/users/${other.id}/password`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { currentPassword: 'TestPass123!', newPassword: 'NewPass456!' },
-    });
-    expect(res.statusCode).toBe(403);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// PUT /api/users/:id/group — transactional capacity guard (409)
-// ---------------------------------------------------------------------------
-describe('PUT /api/users/:id/group — transactional capacity guard', () => {
-  it('returns 409 when assigning a second user to a maxMembers=1 group', async () => {
-    const g = await createGroup({ name: 'TxnFullGroup', maxMembers: 1 });
-    const first = await createUser({ username: 'txnfirst', email: 'txnfirst@test.com' });
-    const second = await createUser({ username: 'txnsecond', email: 'txnsecond@test.com' });
-
-    // Fill the group via PUT (the same endpoint under test)
-    const fillRes = await app.inject({
-      method: 'PUT',
-      url: `/api/users/${first.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g.id },
-    });
-    expect(fillRes.statusCode).toBe(200);
-
-    // Second assignment must hit the row-locked transaction's full-group throw
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/api/users/${second.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: g.id },
-    });
-    expect(res.statusCode).toBe(409);
-    expect(JSON.parse(res.body).error).toMatch(/full/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// PUT /api/users/:id/group — transactional not-found guard (404)
-// ---------------------------------------------------------------------------
-describe('PUT /api/users/:id/group — transactional not-found guard', () => {
-  it('returns 404 when groupId is a valid but non-existent UUID', async () => {
-    // Real user so the route-level user pre-check passes and the transaction runs
-    const u = await createUser({ username: 'txnnogroup', email: 'txnnogroup@test.com' });
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/api/users/${u.id}/group`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { groupId: '00000000-0000-0000-0000-000000000000' },
-    });
-    expect(res.statusCode).toBe(404);
-    expect(JSON.parse(res.body).error).toMatch(/group not found/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// DELETE /api/users/:id — password_reset_tokens cascade (ON DELETE CASCADE)
-// ---------------------------------------------------------------------------
-describe('DELETE /api/users/:id — reset token cascade', () => {
-  it('deletes outstanding password_reset_tokens when the user is deleted', async () => {
-    const PasswordResetToken = require('../../src/models/PasswordResetToken');
-    const u = await createUser({ username: 'tokenowner', email: 'tokenowner@test.com' });
-
-    // Create an outstanding reset token for the user
-    await PasswordResetToken.create(u.id, 'reset', 1);
-
-    const db = getPool();
-    const before = await db.query('SELECT COUNT(*)::int AS count FROM password_reset_tokens WHERE user_id = $1', [
-      u.id,
-    ]);
-    expect(before.rows[0].count).toBe(1);
-
-    // Delete the user via the API
-    const delRes = await app.inject({
-      method: 'DELETE',
-      url: `/api/users/${u.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(delRes.statusCode).toBe(200);
-
-    // The cascade must have removed the token row
-    const after = await db.query('SELECT COUNT(*)::int AS count FROM password_reset_tokens WHERE user_id = $1', [u.id]);
-    expect(after.rows[0].count).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/users — duplicate studentId (409)
-// ---------------------------------------------------------------------------
-describe('POST /api/users — duplicate studentId', () => {
-  it('returns 409 when studentId is already taken by another user', async () => {
-    await createUser({ username: 'sidowner', email: 'sidowner@test.com', studentId: 'S123' });
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        username: 'sidclash',
-        email: 'sidclash@test.com',
-        firstName: 'Sid',
-        lastName: 'Clash',
-        studentId: 'S123',
-        sendSetupEmail: false,
-      },
-    });
-    expect(res.statusCode).toBe(409);
-    expect(JSON.parse(res.body).error).toMatch(/student id/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/users/import — overwrite collides with another existing user's email
-// ---------------------------------------------------------------------------
-describe('POST /api/users/import — overwrite email owned by a different user', () => {
-  it('rejects the row when the new email already belongs to another existing user', async () => {
-    const userA = await createUser({ username: 'ovrA', email: 'a@test.com' });
-    await createUser({ username: 'ovrB', email: 'b@test.com' });
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/users/import',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        users: [{ username: 'ovrA', email: 'b@test.com', firstName: 'A', lastName: 'Overwrite' }],
-        conflictAction: 'overwrite',
-        sendSetupEmail: false,
-      },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.imported).toBe(0);
-    expect(body.errors.length).toBe(1);
-    expect(body.errors[0].reason).toMatch(/email already in use/i);
-
-    // userA's email must be unchanged
-    const getRes = await app.inject({
-      method: 'GET',
-      url: `/api/users/${userA.id}`,
-      headers: { authorization: `Bearer ${adminToken}` },
-    });
-    expect(getRes.statusCode).toBe(200);
-    expect(JSON.parse(getRes.body).user.email).toBe('a@test.com');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/users/import — within-batch duplicate studentId for new users
-// ---------------------------------------------------------------------------
-describe('POST /api/users/import — within-batch duplicate studentId', () => {
-  it('imports the first new-user row and errors the second sharing a studentId', async () => {
+  it('detects within-batch duplicate studentId', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/users/import',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: {
         users: [
-          { username: 'sidnew1', email: 'sidnew1@test.com', firstName: 'Sid', lastName: 'One', studentId: 'SBATCH1' },
-          { username: 'sidnew2', email: 'sidnew2@test.com', firstName: 'Sid', lastName: 'Two', studentId: 'SBATCH1' },
+          { username: 'sidnew1', email: 'sidnew1@test.com', firstName: 'S', lastName: 'One', studentId: 'SBATCH1' },
+          { username: 'sidnew2', email: 'sidnew2@test.com', firstName: 'S', lastName: 'Two', studentId: 'SBATCH1' },
         ],
+        subjectId: subject1.id,
         conflictAction: 'skip',
         sendSetupEmail: false,
       },
@@ -1314,21 +1276,126 @@ describe('POST /api/users/import — within-batch duplicate studentId', () => {
     expect(body.errors.length).toBe(1);
     expect(body.errors[0].reason).toMatch(/student id/i);
   });
+
+  it('rejects overwrite when the new email belongs to another existing user', async () => {
+    const userA = await createUser({ username: 'ovrA', email: 'a@test.com' });
+    await createUser({ username: 'ovrB', email: 'b@test.com' });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/import',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        users: [{ username: 'ovrA', email: 'b@test.com', firstName: 'A', lastName: 'Overwrite' }],
+        subjectId: subject1.id,
+        conflictAction: 'overwrite',
+        sendSetupEmail: false,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.imported).toBe(0);
+    expect(body.errors.length).toBe(1);
+    expect(body.errors[0].reason).toMatch(/email already in use/i);
+
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/users/${userA.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(JSON.parse(getRes.body).user.email).toBe('a@test.com');
+  });
 });
 
 // ---------------------------------------------------------------------------
-// PUT /api/users/:id — regular user editing another user (403)
+// POST /api/users/send-setup-emails
 // ---------------------------------------------------------------------------
-describe('PUT /api/users/:id — horizontal privilege escalation guard', () => {
-  it('regular user editing another user returns 403', async () => {
-    const other = await createUser({ username: 'editvictim', email: 'editvictim@test.com' });
+describe('POST /api/users/send-setup-emails', () => {
+  async function createPendingUser(username, email) {
     const res = await app.inject({
-      method: 'PUT',
-      url: `/api/users/${other.id}`,
-      headers: { authorization: `Bearer ${userToken}` },
-      payload: { email: 'hijacked@test.com', firstName: 'H', lastName: 'J' },
+      method: 'POST',
+      url: '/api/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        username,
+        email,
+        firstName: 'P',
+        lastName: 'User',
+        subjectIds: [subject1.id],
+        sendSetupEmail: false,
+      },
     });
-    expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).error).toMatch(/your own profile/i);
+    expect(res.statusCode).toBe(201);
+    return JSON.parse(res.body).user;
+  }
+
+  it('admin can send setup emails to all pending users', async () => {
+    await createPendingUser('pending1', 'pending1@test.com');
+    await createPendingUser('pending2', 'pending2@test.com');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).sent).toBeGreaterThanOrEqual(2);
+  });
+
+  it('admin can send to specific userIds list', async () => {
+    const u = await createPendingUser('specific1', 'specific1@test.com');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { userIds: [u.id] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).sent).toBe(1);
+  });
+
+  it('silently skips non-pending users in userIds', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { userIds: [user1.id] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).sent).toBe(0);
+  });
+
+  it('returns 401 without token and 403 for regular user', async () => {
+    const noToken = await app.inject({ method: 'POST', url: '/api/users/send-setup-emails', payload: {} });
+    expect(noToken.statusCode).toBe(401);
+    const forbidden = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: {},
+    });
+    expect(forbidden.statusCode).toBe(403);
+  });
+
+  it('validates userIds (max 500, valid UUIDs)', async () => {
+    const fakeIds = Array.from({ length: 501 }, (_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`);
+    const tooMany = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { userIds: fakeIds },
+    });
+    expect(tooMany.statusCode).toBe(400);
+    expect(JSON.parse(tooMany.body).error).toMatch(/500/);
+
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { userIds: ['not-a-uuid'] },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(JSON.parse(invalid.body).error).toMatch(/invalid/i);
   });
 });
