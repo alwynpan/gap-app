@@ -111,16 +111,36 @@ async function createAssignment({ subjectId, name }) {
 
 /**
  * Enrol a user in a subject (idempotent).
+ * `enabled` seeds the per-subject suspension flag (false = suspended).
  */
-async function addUserToSubject(userId, subjectId) {
+async function addUserToSubject(userId, subjectId, enabled = true) {
   const db = getPool();
   const { rows } = await db.query(
-    `INSERT INTO user_subjects (user_id, subject_id) VALUES ($1, $2)
+    `INSERT INTO user_subjects (user_id, subject_id, enabled) VALUES ($1, $2, $3)
      ON CONFLICT (user_id, subject_id) DO NOTHING
      RETURNING *`,
-    [userId, subjectId]
+    [userId, subjectId, enabled]
   );
   return rows[0] || null;
+}
+
+/**
+ * Set the enabled flag on an existing subject membership directly in the DB.
+ * Unlike the API, this does NOT touch group memberships — use it to seed
+ * suspended states without side effects.
+ */
+async function setMembershipEnabled(userId, subjectId, enabled) {
+  const db = getPool();
+  const { rows } = await db.query(
+    `UPDATE user_subjects SET enabled = $3
+     WHERE user_id = $1 AND subject_id = $2
+     RETURNING *`,
+    [userId, subjectId, enabled]
+  );
+  if (!rows[0]) {
+    throw new Error(`setMembershipEnabled: no membership for user ${userId} in subject ${subjectId}`);
+  }
+  return rows[0];
 }
 
 /**
@@ -242,6 +262,7 @@ module.exports = {
   createSubject,
   createAssignment,
   addUserToSubject,
+  setMembershipEnabled,
   assignManager,
   createGroup,
   createHierarchy,

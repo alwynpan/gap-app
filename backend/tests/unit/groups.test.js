@@ -966,15 +966,15 @@ describe('Groups Routes', () => {
       });
     });
 
-    it('maps 403 when user is not a member of the subject', async () => {
+    it('maps 403 when user is not an active member of the subject', async () => {
       const { handlers } = setupRoute();
-      const err = new Error('User is not a member of this subject');
+      const err = new Error('User is not an active member of this subject');
       err.statusCode = 403;
       UserGroup.assignUserToGroup.mockRejectedValue(err);
       const reply = mockReply();
       await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
       expect(reply.code).toHaveBeenCalledWith(403);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'User is not a member of this subject' });
+      expect(reply.send).toHaveBeenCalledWith({ error: 'User is not an active member of this subject' });
     });
 
     it('maps 409 when user is already in a group for the assignment', async () => {

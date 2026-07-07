@@ -16,6 +16,22 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
   useAuth: jest.fn(),
 }));
 
+// Keep the page tests light: replace the members section with a probe div that
+// exposes the props it received.
+jest.mock('../../../src/components/SubjectMembersSection.jsx', () => {
+  const MockSubjectMembersSection = ({ subject, isAdmin, canManage }) => (
+    <div
+      data-testid="subject-members-section"
+      data-subject-id={subject?.id}
+      data-subject-name={subject?.name}
+      data-is-admin={String(isAdmin)}
+      data-can-manage={String(canManage)}
+    />
+  );
+  MockSubjectMembersSection.displayName = 'MockSubjectMembersSection';
+  return MockSubjectMembersSection;
+});
+
 const SUBJECT_ID = '11111111-1111-4111-8111-111111111111';
 const ASSIGNMENT_ID = 'a0000000-0000-0000-0000-000000000001';
 
@@ -124,6 +140,61 @@ describe('SubjectDetail page', () => {
       expect(screen.getByText('Assignment 1')).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /\+ create assignment/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Delete Assignment' })).not.toBeInTheDocument();
+    });
+  });
+
+  // ── Members section ────────────────────────────────────────────────────
+  describe('Members section', () => {
+    it('renders the members section for admins with the expected props', async () => {
+      await setupPage();
+
+      const probe = screen.getByTestId('subject-members-section');
+      expect(probe).toHaveAttribute('data-subject-id', SUBJECT_ID);
+      expect(probe).toHaveAttribute('data-subject-name', 'Mathematics');
+      expect(probe).toHaveAttribute('data-is-admin', 'true');
+      expect(probe).toHaveAttribute('data-can-manage', 'true');
+    });
+
+    it('renders the members section for an AM managing an assignment in this subject', async () => {
+      useAuth.mockReturnValue({
+        isAdmin: false,
+        isAssignmentManager: true,
+        user: {
+          username: 'tm',
+          managedAssignments: [
+            { id: 'a0000000-0000-0000-0000-000000000009', subject_id: 'other-subject' },
+            { id: ASSIGNMENT_ID, subject_id: SUBJECT_ID },
+          ],
+        },
+      });
+      await setupPage();
+
+      const probe = screen.getByTestId('subject-members-section');
+      expect(probe).toHaveAttribute('data-subject-id', SUBJECT_ID);
+      expect(probe).toHaveAttribute('data-is-admin', 'false');
+      expect(probe).toHaveAttribute('data-can-manage', 'true');
+    });
+
+    it('hides the members section from an AM who manages no assignment in this subject', async () => {
+      useAuth.mockReturnValue({
+        isAdmin: false,
+        isAssignmentManager: true,
+        user: {
+          username: 'tm',
+          managedAssignments: [{ id: 'a0000000-0000-0000-0000-000000000009', subject_id: 'other-subject' }],
+        },
+      });
+      await setupPage();
+
+      expect(screen.getByText('Assignment 1')).toBeInTheDocument();
+      expect(screen.queryByTestId('subject-members-section')).not.toBeInTheDocument();
+    });
+
+    it('hides the members section from an AM without managedAssignments', async () => {
+      useAuth.mockReturnValue({ isAdmin: false, isAssignmentManager: true, user: { username: 'tm' } });
+      await setupPage();
+
+      expect(screen.queryByTestId('subject-members-section')).not.toBeInTheDocument();
     });
   });
 

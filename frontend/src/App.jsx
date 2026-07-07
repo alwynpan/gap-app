@@ -73,11 +73,11 @@ function AppRoutes() {
         }
       />
 
-      {/* Admin/Assignment Manager Routes */}
+      {/* Admin-only Routes */}
       <Route
         path="/users"
         element={
-          <ProtectedRoute requireAssignmentManager>
+          <ProtectedRoute requireAdmin>
             <Users />
           </ProtectedRoute>
         }
@@ -85,7 +85,7 @@ function AppRoutes() {
       <Route
         path="/users/import"
         element={
-          <ProtectedRoute requireAssignmentManager>
+          <ProtectedRoute requireAdmin>
             <ImportUsers />
           </ProtectedRoute>
         }

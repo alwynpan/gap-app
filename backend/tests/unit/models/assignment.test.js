@@ -130,6 +130,14 @@ describe('Assignment Model', () => {
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('user_subjects'), [USER_ID]);
       expect(result).toEqual(rows);
     });
+
+    it('excludes assignments of subjects where the membership is suspended', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await Assignment.findForUser(USER_ID);
+
+      expect(pool.query.mock.calls[0][0]).toEqual(expect.stringContaining('us.enabled = true'));
+    });
   });
 
   describe('findManagedBy', () => {

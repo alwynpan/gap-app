@@ -100,11 +100,19 @@ pnpm --filter gap-frontend lint:fix     # Auto-fix frontend lint issues
 
 ### Three-Tier Role System
 
-- **Admin** — Full CRUD on subjects, assignments, groups, and users; enrols users in subjects
+- **Admin** — Full CRUD on subjects, assignments, groups, and users; enrols users in subjects. `GET /users` (and the
+  frontend `/users` + `/users/import` routes) are admin-only.
 - **Assignment Manager** — Scoped via `assignment_managers`: create/update/delete groups and assign subject members to
-  groups only in managed assignments; sees/imports users only for subjects where they manage an assignment
+  groups only in managed assignments; manages members per subject (create, suspend/enable, setup emails) only for
+  subjects containing an assignment they manage — same scope applies to `PUT /users/:id`; setting `enabled` there is
+  admin-only
 - **User** — View own profile/subjects; self join/leave one group per assignment within enrolled subjects (global join
   lock applies)
+
+Per-subject suspension (`user_subjects.enabled`, migration 014, `PUT /subjects/:id/users/:userId`): suspending deletes
+the member's group memberships within that subject (not restored on re-enable); suspended members are hidden from their
+own session (`/auth/me`) and treated as non-members by all scope checks, but staff still see them in
+`GET /subjects/:id/users` with `membership_enabled: false`.
 
 Deleting subjects/assignments uses two-step typed confirmation in the UI; cascades assignments → groups → memberships,
 never user accounts. Migration 013 destructively drops legacy flat groups and `users.group_id` (user accounts

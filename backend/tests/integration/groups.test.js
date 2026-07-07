@@ -573,7 +573,7 @@ describe('POST /api/groups/:id/join', () => {
       headers: { authorization: `Bearer ${strangerToken}` },
     });
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).error).toMatch(/not a member of this subject/i);
+    expect(JSON.parse(res.body).error).toMatch(/not an active member of this subject/i);
   });
 
   it('a user disabled after login cannot join (stale JWT) — 403 Account is disabled', async () => {
@@ -823,7 +823,7 @@ describe('PUT /api/users/:id/group — placement rules', () => {
       payload: { assignmentId: assignment.id, groupId: g.id },
     });
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).error).toMatch(/not a member of this subject/i);
+    expect(JSON.parse(res.body).error).toMatch(/not an active member of this subject/i);
   });
 
   it('admin reassigns a user to another group in the same assignment (replace)', async () => {

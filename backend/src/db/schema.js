@@ -75,10 +75,13 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- User ↔ Subject membership (m2m)
+-- User ↔ Subject membership (m2m). "enabled" is the per-subject suspension
+-- flag: suspended members keep their roster row but lose subject access and
+-- group memberships (cleanup enforced in Subject.setMemberEnabled).
 CREATE TABLE IF NOT EXISTS user_subjects (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  enabled BOOLEAN DEFAULT true,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, subject_id)
 );

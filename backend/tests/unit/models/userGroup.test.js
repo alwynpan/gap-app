@@ -144,7 +144,7 @@ describe('UserGroup Model', () => {
       pool.connect.mockResolvedValue(mockClient);
     });
 
-    it('assigns when the group exists, the user is a subject member, no existing membership, and capacity allows', async () => {
+    it('assigns when the group exists, the user is an active subject member, no existing membership, and capacity allows', async () => {
       mockClient.query
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [groupRow] }) // lock group
@@ -157,6 +157,8 @@ describe('UserGroup Model', () => {
 
       expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
       expect(mockClient.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FOR UPDATE'), [GROUP_ID]);
+      // The membership check must exclude suspended (enabled = false) memberships
+      expect(mockClient.query.mock.calls[2][0]).toEqual(expect.stringContaining('enabled = true'));
       expect(mockClient.query).toHaveBeenNthCalledWith(5, expect.stringContaining('INSERT INTO user_groups'), [
         USER_ID,
         GROUP_ID,
@@ -178,14 +180,15 @@ describe('UserGroup Model', () => {
       expect(mockClient.release).toHaveBeenCalled();
     });
 
-    it('throws 403 when the user is not a member of the parent subject (applies to ALL callers, admin included)', async () => {
+    it('throws 403 when the user is not an active member of the parent subject (applies to ALL callers, admin included)', async () => {
       mockClient.query
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [groupRow] }) // lock group
-        .mockResolvedValueOnce({ rows: [] }); // subject membership — missing
+        .mockResolvedValueOnce({ rows: [] }); // subject membership — missing or suspended
 
       await expect(UserGroup.assignUserToGroup(USER_ID, GROUP_ID)).rejects.toMatchObject({
         statusCode: 403,
+        message: 'User is not an active member of this subject',
       });
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
     });

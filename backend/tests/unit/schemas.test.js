@@ -34,6 +34,7 @@ const {
   createAssignmentSchema,
   updateAssignmentSchema,
   addSubjectUsersSchema,
+  setMemberEnabledSchema,
   setAssignmentManagersSchema,
   updateUserGroupSchema,
   bulkCreateGroupsSchema,
@@ -865,6 +866,28 @@ describe('addSubjectUsersSchema', () => {
 
   it('rejects a missing userIds field', () => {
     expect(err(addSubjectUsersSchema, {})).toEqual(expect.any(String));
+  });
+});
+
+describe('setMemberEnabledSchema', () => {
+  it('accepts enabled true', () => {
+    const data = ok(setMemberEnabledSchema, { enabled: true });
+    expect(data.enabled).toBe(true);
+  });
+
+  it('accepts enabled false', () => {
+    const data = ok(setMemberEnabledSchema, { enabled: false });
+    expect(data.enabled).toBe(false);
+  });
+
+  it('rejects a missing enabled field', () => {
+    expect(err(setMemberEnabledSchema, {})).toEqual(expect.any(String));
+  });
+
+  it('rejects a non-boolean enabled value', () => {
+    expect(err(setMemberEnabledSchema, { enabled: 'true' })).toEqual(expect.any(String));
+    expect(err(setMemberEnabledSchema, { enabled: 1 })).toEqual(expect.any(String));
+    expect(err(setMemberEnabledSchema, { enabled: null })).toEqual(expect.any(String));
   });
 });
 

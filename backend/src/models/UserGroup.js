@@ -126,13 +126,14 @@ class UserGroup {
         throw err;
       }
 
-      // Universal constraint: the target user must belong to the parent subject
-      const memberResult = await client.query('SELECT 1 FROM user_subjects WHERE user_id = $1 AND subject_id = $2', [
-        userId,
-        group.subject_id,
-      ]);
+      // Universal constraint: the target user must be an active (non-suspended)
+      // member of the parent subject
+      const memberResult = await client.query(
+        'SELECT 1 FROM user_subjects WHERE user_id = $1 AND subject_id = $2 AND enabled = true',
+        [userId, group.subject_id]
+      );
       if (memberResult.rows.length === 0) {
-        const err = new Error('User is not a member of this subject');
+        const err = new Error('User is not an active member of this subject');
         err.statusCode = 403;
         throw err;
       }

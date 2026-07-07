@@ -202,6 +202,10 @@ const addSubjectUsersSchema = z.object({
   userIds: uuidArraySchema.min(1, 'At least one user is required').max(2000, 'At most 2000 users per request'),
 });
 
+const setMemberEnabledSchema = z.object({
+  enabled: z.boolean(),
+});
+
 const setAssignmentManagersSchema = z.object({
   userIds: uuidArraySchema.max(2000, 'At most 2000 users per request'),
 });
@@ -279,6 +283,7 @@ module.exports = {
   createAssignmentSchema,
   updateAssignmentSchema,
   addSubjectUsersSchema,
+  setMemberEnabledSchema,
   setAssignmentManagersSchema,
   updateUserGroupSchema,
   bulkCreateGroupsSchema,

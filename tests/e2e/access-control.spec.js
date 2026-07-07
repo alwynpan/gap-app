@@ -66,9 +66,9 @@ test.describe('Access control', () => {
       await loginAs(page, 'amuser');
     });
 
-    test('can access /users', async ({ page }) => {
+    test('cannot access /users — redirected to dashboard (admin-only)', async ({ page }) => {
       await page.goto('/users');
-      await expect(page).toHaveURL(/\/users/);
+      await expect(page).toHaveURL(/\/dashboard/);
     });
 
     test('/groups redirects to /subjects', async ({ page }) => {
@@ -87,9 +87,9 @@ test.describe('Access control', () => {
       await expect(page).toHaveURL(/\/groups\/import/);
     });
 
-    test('can access /users/import', async ({ page }) => {
+    test('cannot access /users/import — redirected to dashboard (admin-only)', async ({ page }) => {
       await page.goto('/users/import');
-      await expect(page).toHaveURL(/\/users\/import/);
+      await expect(page).toHaveURL(/\/dashboard/);
     });
 
     test('can access /settings', async ({ page }) => {

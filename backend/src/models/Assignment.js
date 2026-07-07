@@ -91,13 +91,13 @@ class Assignment {
     return result.rows[0];
   }
 
-  /** Assignments in the user's subjects (derived participation). */
+  /** Assignments in the user's subjects (derived participation, enabled memberships only). */
   static async findForUser(userId) {
     const result = await pool.query(
       `SELECT a.*, s.name AS subject_name
        FROM assignments a
        JOIN subjects s ON s.id = a.subject_id
-       JOIN user_subjects us ON us.subject_id = a.subject_id
+       JOIN user_subjects us ON us.subject_id = a.subject_id AND us.enabled = true
        WHERE us.user_id = $1
        ORDER BY s.name, a.name`,
       [userId]

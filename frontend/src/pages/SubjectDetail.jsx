@@ -5,13 +5,14 @@ import { useAuth } from '../context/AuthContext.jsx';
 import Header from '../components/Header.jsx';
 import IconBtn from '../components/IconBtn.jsx';
 import TypedDeleteConfirmModal from '../components/TypedDeleteConfirmModal.jsx';
+import SubjectMembersSection from '../components/SubjectMembersSection.jsx';
 import { Trash2 } from 'lucide-react';
 import { parseBody, createAssignmentSchema } from '../utils/schemas.js';
 import { API_BASE } from '../config.js';
 
 function SubjectDetail() {
   const { subjectId } = useParams();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -119,6 +120,10 @@ function SubjectDetail() {
       setDeleting(false);
     }
   };
+
+  // Admins manage every subject; assignment managers only manage subjects where
+  // they manage at least one assignment (managedAssignments rows carry subject_id).
+  const canManage = isAdmin || (user?.managedAssignments || []).some((a) => a.subject_id === subject?.id);
 
   if (loading) {
     return (
@@ -255,6 +260,9 @@ function SubjectDetail() {
               </table>
             </div>
           )}
+
+          {/* Members section — visible only to admins and managers of this subject */}
+          {subject && canManage && <SubjectMembersSection subject={subject} isAdmin={isAdmin} canManage={canManage} />}
         </div>
       </main>
 

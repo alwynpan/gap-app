@@ -7,7 +7,8 @@ Group Assignment Portal — a role-based access control system for managing stud
 - **Subject → Assignment → Group hierarchy** — Subjects contain assignments, assignments contain groups; users enrol in
   subjects and hold at most one group per assignment
 - **JWT Authentication** — Secure login/logout with token-based auth; account setup and password reset via email
-- **User Management** — Create, update, enable/disable, bulk-delete, and CSV-import users into a target subject
+- **User Management** — Create, update, enable/disable, bulk-delete, and CSV-import users into a target subject;
+  per-subject membership suspension without touching the account
 - **Group Management** — Create, edit, bulk-create, enable/disable per-assignment groups with optional member caps
 - **Role-Based Access Control (RBAC)** — Three-tier role system (Admin, Assignment Manager, User) with per-assignment
   manager scoping
@@ -254,6 +255,9 @@ migration file — never edit existing ones.
 > `migrate` on a legacy database also converges to the new schema but still destroys all existing group data. **Back up
 > your database before upgrading.** Databases created from the current schema are unaffected.
 
+Migration `014_user_subjects_enabled.sql` adds the per-subject suspension flag (`user_subjects.enabled`) and is
+non-destructive — all existing memberships default to enabled.
+
 ## Testing
 
 ### Backend unit tests
@@ -295,11 +299,11 @@ Pre-commit hooks (Husky + lint-staged) automatically apply Prettier and ESLint o
 
 ## Role System
 
-| Role                   | Capabilities                                                                                                                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Admin**              | Full access: manage subjects, assignments, groups, users, and config; enrol users in subjects; assign users to groups; bulk operations                                         |
-| **Assignment Manager** | Scoped to managed assignments: create/edit/delete groups and assign subject members to groups; sees and creates/imports users only in subjects where they manage an assignment |
-| **User**               | View own profile and enrolled subjects; self-join/leave one group per assignment (when join lock is off)                                                                       |
+| Role                   | Capabilities                                                                                                                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Admin**              | Full access: manage subjects, assignments, groups, users, and config; enrol users in subjects; suspend/re-enable subject memberships; assign users to groups; bulk operations; the global Users page is Admin-only          |
+| **Assignment Manager** | Scoped to managed assignments: create/edit/delete groups and assign subject members to groups; manages members (create, suspend/enable, setup emails) inside subjects where they manage an assignment, via the subject page |
+| **User**               | View own profile and enrolled subjects; self-join/leave one group per assignment (when join lock is off)                                                                                                                    |
 
 ## Environment Variables Reference
 

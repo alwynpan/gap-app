@@ -560,6 +560,239 @@ describe('POST /api/subjects/:id/users', () => {
 });
 
 // ---------------------------------------------------------------------------
+// PUT /api/subjects/:id/users/:userId — per-subject membership suspension
+// ---------------------------------------------------------------------------
+describe('PUT /api/subjects/:id/users/:userId', () => {
+  let s1;
+  let s2;
+  let a1;
+  let a2;
+  let g1;
+  let g2;
+
+  beforeEach(async () => {
+    s1 = await createSubject({ name: 'SuspendSubject' });
+    s2 = await createSubject({ name: 'OtherSubject' });
+    a1 = await createAssignment({ subjectId: s1.id, name: 'A1' });
+    a2 = await createAssignment({ subjectId: s2.id, name: 'A2' });
+    g1 = await createGroup({ assignmentId: a1.id, name: 'G1' });
+    g2 = await createGroup({ assignmentId: a2.id, name: 'G2' });
+    await assignManager(am1.id, a1.id);
+    await addUserToSubject(user1.id, s1.id);
+    await addUserToSubject(user1.id, s2.id);
+    await addUserToGroup(user1.id, g1.id, a1.id);
+    await addUserToGroup(user1.id, g2.id, a2.id);
+  });
+
+  it('managing AM suspends a member end-to-end; re-enable restores the subject but not the group', async () => {
+    // AM suspends user1 in the managed subject
+    const suspendRes = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { enabled: false },
+    });
+    expect(suspendRes.statusCode).toBe(200);
+    expect(JSON.parse(suspendRes.body)).toEqual({ message: 'Member suspended', membershipEnabled: false });
+
+    const db = getPool();
+    // Group membership within the suspended subject is deleted…
+    const inS1 = await db.query(
+      'SELECT COUNT(*)::int AS c FROM user_groups WHERE user_id = $1 AND assignment_id = $2',
+      [user1.id, a1.id]
+    );
+    expect(inS1.rows[0].c).toBe(0);
+    // …but the membership in the other subject survives
+    const inS2 = await db.query(
+      'SELECT COUNT(*)::int AS c FROM user_groups WHERE user_id = $1 AND assignment_id = $2',
+      [user1.id, a2.id]
+    );
+    expect(inS2.rows[0].c).toBe(1);
+    // The enrolment row itself survives, flagged as disabled
+    const enrolment = await db.query('SELECT enabled FROM user_subjects WHERE user_id = $1 AND subject_id = $2', [
+      user1.id,
+      s1.id,
+    ]);
+    expect(enrolment.rows).toHaveLength(1);
+    expect(enrolment.rows[0].enabled).toBe(false);
+
+    // The member's own session no longer lists the suspended subject
+    const meRes = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    const meSubjects = JSON.parse(meRes.body).user.subjects.map((s) => s.name);
+    expect(meSubjects).not.toContain('SuspendSubject');
+    expect(meSubjects).toContain('OtherSubject');
+
+    // Self-join into a group of the suspended subject is rejected
+    const joinRes = await app.inject({
+      method: 'POST',
+      url: `/api/groups/${g1.id}/join`,
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(joinRes.statusCode).toBe(403);
+    expect(JSON.parse(joinRes.body).error).toMatch(/not an active member/i);
+
+    // Re-enable restores subject visibility, but the user stays ungrouped
+    const enableRes = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { enabled: true },
+    });
+    expect(enableRes.statusCode).toBe(200);
+    expect(JSON.parse(enableRes.body)).toEqual({ message: 'Member enabled', membershipEnabled: true });
+
+    const meAfter = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    const afterBody = JSON.parse(meAfter.body).user;
+    expect(afterBody.subjects.map((s) => s.name)).toContain('SuspendSubject');
+    expect(afterBody.memberships.filter((m) => m.assignment_id === a1.id)).toHaveLength(0);
+  });
+
+  it('admin can suspend and re-enable a member', async () => {
+    const suspendRes = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { enabled: false },
+    });
+    expect(suspendRes.statusCode).toBe(200);
+    expect(JSON.parse(suspendRes.body).membershipEnabled).toBe(false);
+
+    const enableRes = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { enabled: true },
+    });
+    expect(enableRes.statusCode).toBe(200);
+    expect(JSON.parse(enableRes.body).membershipEnabled).toBe(true);
+  });
+
+  it('suspended member gets 403 on GET /subjects/:id', async () => {
+    await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { enabled: false },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/subjects/${s1.id}`,
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('admin placing a suspended member into a group returns 403', async () => {
+    await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { enabled: false },
+    });
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${user1.id}/group`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { assignmentId: a1.id, groupId: g1.id },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toMatch(/not an active member/i);
+  });
+
+  it('returns 401 without token and 403 for a regular user', async () => {
+    const noToken = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      payload: { enabled: false },
+    });
+    expect(noToken.statusCode).toBe(401);
+
+    const forbidden = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: { enabled: false },
+    });
+    expect(forbidden.statusCode).toBe(403);
+  });
+
+  it('AM not managing any assignment in the subject gets 403', async () => {
+    // user1 is enrolled in s2, but am1 manages no assignment there
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s2.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { enabled: false },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns 400 for invalid UUIDs and invalid body', async () => {
+    const badSubject = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/not-a-uuid/users/${user1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { enabled: false },
+    });
+    expect(badSubject.statusCode).toBe(400);
+
+    const badUser = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/not-a-uuid`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { enabled: false },
+    });
+    expect(badUser.statusCode).toBe(400);
+
+    const missingEnabled = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {},
+    });
+    expect(missingEnabled.statusCode).toBe(400);
+
+    const nonBoolean = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${user1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { enabled: 'false' },
+    });
+    expect(nonBoolean.statusCode).toBe(400);
+  });
+
+  it('returns 404 for a non-existent subject and for a non-member user', async () => {
+    const ghostSubject = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/00000000-0000-0000-0000-000000000000/users/${user1.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { enabled: false },
+    });
+    expect(ghostSubject.statusCode).toBe(404);
+
+    const notMember = await createUser({ username: 'notmember', email: 'notmember@test.com' });
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/subjects/${s1.id}/users/${notMember.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { enabled: false },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).error).toBe('User is not a member of this subject');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // DELETE /api/subjects/:id/users/:userId
 // ---------------------------------------------------------------------------
 describe('DELETE /api/subjects/:id/users/:userId', () => {

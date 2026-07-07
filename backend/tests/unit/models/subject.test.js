@@ -133,13 +133,28 @@ describe('Subject Model', () => {
   });
 
   describe('findForUser', () => {
-    it('returns subjects the user belongs to', async () => {
+    it('returns only enabled memberships by default', async () => {
       const rows = [{ id: SUBJECT_ID, name: 'Subject A' }];
       pool.query.mockResolvedValue({ rows });
 
       const result = await Subject.findForUser(USER_ID);
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('user_subjects'), [USER_ID]);
+      expect(pool.query.mock.calls[0][0]).toEqual(expect.stringContaining('us.enabled = true'));
+      expect(result).toEqual(rows);
+    });
+
+    it('returns all memberships tagged with membership_enabled when includeDisabled is true', async () => {
+      const rows = [
+        { id: SUBJECT_ID, name: 'Subject A', membership_enabled: true },
+        { id: 's0000000-0000-0000-0000-000000000002', name: 'Subject B', membership_enabled: false },
+      ];
+      pool.query.mockResolvedValue({ rows });
+
+      const result = await Subject.findForUser(USER_ID, { includeDisabled: true });
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('us.enabled AS membership_enabled'), [USER_ID]);
+      expect(pool.query.mock.calls[0][0]).not.toEqual(expect.stringContaining('us.enabled = true'));
       expect(result).toEqual(rows);
     });
 
@@ -150,13 +165,15 @@ describe('Subject Model', () => {
   });
 
   describe('findForUsers', () => {
-    it('returns subject rows keyed by user for a batch of users', async () => {
-      const rows = [{ user_id: USER_ID, id: SUBJECT_ID, name: 'Subject A' }];
+    it('returns subject rows keyed by user for a batch of users, tagged with membership_enabled', async () => {
+      const rows = [{ user_id: USER_ID, id: SUBJECT_ID, name: 'Subject A', membership_enabled: false }];
       pool.query.mockResolvedValue({ rows });
 
       const result = await Subject.findForUsers([USER_ID]);
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('user_subjects'), [[USER_ID]]);
+      expect(pool.query.mock.calls[0][0]).toEqual(expect.stringContaining('us.enabled AS membership_enabled'));
+      expect(pool.query.mock.calls[0][0]).not.toEqual(expect.stringContaining('us.enabled = true'));
       expect(result).toEqual(rows);
     });
 
@@ -167,13 +184,14 @@ describe('Subject Model', () => {
   });
 
   describe('getMembers', () => {
-    it('returns member users with role names', async () => {
-      const rows = [{ id: USER_ID, username: 'u1', role_name: 'user' }];
+    it('returns member users with role names and membership_enabled', async () => {
+      const rows = [{ id: USER_ID, username: 'u1', role_name: 'user', membership_enabled: true }];
       pool.query.mockResolvedValue({ rows });
 
       const result = await Subject.getMembers(SUBJECT_ID);
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('JOIN user_subjects'), [SUBJECT_ID]);
+      expect(pool.query.mock.calls[0][0]).toEqual(expect.stringContaining('us.enabled AS membership_enabled'));
       expect(result).toEqual(rows);
     });
   });
@@ -251,10 +269,86 @@ describe('Subject Model', () => {
     });
   });
 
+  describe('setMemberEnabled', () => {
+    let mockClient;
+
+    beforeEach(() => {
+      mockClient = { query: jest.fn(), release: jest.fn() };
+      pool.connect.mockResolvedValue(mockClient);
+    });
+
+    it('suspending deletes the group memberships within the subject before updating, in one transaction', async () => {
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rowCount: 1 }) // DELETE user_groups within subject
+        .mockResolvedValueOnce({ rowCount: 1 }) // UPDATE user_subjects
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await Subject.setMemberEnabled(SUBJECT_ID, USER_ID, false);
+
+      expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+      expect(mockClient.query).toHaveBeenNthCalledWith(2, expect.stringContaining('DELETE FROM user_groups'), [
+        SUBJECT_ID,
+        USER_ID,
+      ]);
+      expect(mockClient.query).toHaveBeenNthCalledWith(3, expect.stringContaining('UPDATE user_subjects'), [
+        SUBJECT_ID,
+        USER_ID,
+        false,
+      ]);
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
+      expect(mockClient.release).toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
+    it('enabling skips the group-membership delete and only updates the row', async () => {
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rowCount: 1 }) // UPDATE user_subjects
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await Subject.setMemberEnabled(SUBJECT_ID, USER_ID, true);
+
+      const deleteCalls = mockClient.query.mock.calls.filter(([sql]) =>
+        String(sql).includes('DELETE FROM user_groups')
+      );
+      expect(deleteCalls).toHaveLength(0);
+      expect(mockClient.query).toHaveBeenNthCalledWith(2, expect.stringContaining('UPDATE user_subjects'), [
+        SUBJECT_ID,
+        USER_ID,
+        true,
+      ]);
+      expect(mockClient.query).toHaveBeenLastCalledWith('COMMIT');
+      expect(result).toBe(true);
+    });
+
+    it('returns false when the user is not a member', async () => {
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rowCount: 0 }) // DELETE user_groups
+        .mockResolvedValueOnce({ rowCount: 0 }) // UPDATE user_subjects
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await Subject.setMemberEnabled(SUBJECT_ID, USER_ID, false);
+      expect(result).toBe(false);
+    });
+
+    it('rolls back and re-throws on error', async () => {
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockRejectedValueOnce(new Error('boom')); // DELETE user_groups
+
+      await expect(Subject.setMemberEnabled(SUBJECT_ID, USER_ID, false)).rejects.toThrow('boom');
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+  });
+
   describe('isMember', () => {
-    it('returns true when a membership row exists', async () => {
+    it('returns true when an enabled membership row exists', async () => {
       pool.query.mockResolvedValue({ rows: [{ exists: true }] });
       expect(await Subject.isMember(SUBJECT_ID, USER_ID)).toBe(true);
+      expect(pool.query.mock.calls[0][0]).toEqual(expect.stringContaining('enabled = true'));
     });
 
     it('returns false when no membership row exists', async () => {

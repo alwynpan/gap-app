@@ -26,9 +26,8 @@ const MAX_IMPORT_SIZE = Number.isNaN(_parsed) ? 2000 : _parsed;
 async function usersRoutes(fastify, _options) {
   const isDev = config.app.nodeEnv === 'development';
 
-  // Get all users (admin/assignment_manager only) — supports ?role=, ?status=,
-  // ?subjectId=, ?assignmentId= and ?groupId= (uuid or 'none') filters.
-  // Assignment managers only see users enrolled in subjects they manage.
+  // Get all users (admin only) — supports ?role=, ?status=, ?subjectId=,
+  // ?assignmentId= and ?groupId= (uuid or 'none') filters.
   fastify.get(
     '/users',
     {
@@ -36,7 +35,7 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
+        const allowed = await fastify.requireAdmin(request, reply);
         if (!allowed) {
           return reply;
         }
@@ -66,11 +65,9 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'assignmentId is required when filtering ungrouped users' });
         }
 
+        // GET /users is admin-only since the AM authorization tightening — the
+        // User model's managedBy filter is retained but no longer set here.
         const filters = { role, status, subjectId, assignmentId, groupId };
-        // AM scoping: assignment managers only see users in subjects they manage
-        if (request.user?.role === 'assignment_manager') {
-          filters.managedBy = request.user.id;
-        }
 
         const users = await User.findAll(filters);
 
@@ -517,6 +514,29 @@ async function usersRoutes(fastify, _options) {
 
         const isAdmin = request.user.role === 'admin';
         const isAssignmentManager = request.user.role === 'assignment_manager';
+        const isSelfEdit = request.user.id === userId;
+
+        // Assignment managers may only edit users enrolled (any enabled state)
+        // in a subject containing an assignment they manage; self-edit stays allowed
+        if (isAssignmentManager && !isSelfEdit) {
+          const targetSubjects = await Subject.findForUser(userId, { includeDisabled: true });
+          let inScope = false;
+          for (const subject of targetSubjects) {
+            if (await Assignment.managesAnyInSubject(request.user.id, subject.id)) {
+              inScope = true;
+              break;
+            }
+          }
+          if (!inScope) {
+            return reply.code(403).send({ error: 'Forbidden: user is not in a subject you manage' });
+          }
+        }
+
+        // Only admins may enable or disable accounts — explicit reject for everyone else
+        if (enabled !== undefined && !isAdmin) {
+          return reply.code(403).send({ error: 'Only admins can enable or disable accounts' });
+        }
+
         const updates = { email, firstName, lastName };
 
         // Only include studentId for regular users
@@ -535,9 +555,8 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
-        // Admins and assignment managers can enable/disable users; sync status accordingly
-        // (assignment managers cannot edit admin users — enforced in preHandler)
-        if ((isAdmin || isAssignmentManager) && enabled !== undefined) {
+        // Admins can enable/disable users; sync status accordingly
+        if (isAdmin && enabled !== undefined) {
           updates.enabled = enabled;
           if (enabled === false) {
             updates.status = 'inactive';
@@ -961,6 +980,23 @@ async function usersRoutes(fastify, _options) {
         await PasswordResetToken.deleteExpired();
 
         const { userIds } = request.body || {};
+        const isAssignmentManager = request.user.role === 'assignment_manager';
+
+        // AM scoping: users enrolled (any enabled state) in a subject containing
+        // an assignment the caller manages
+        let managedSubjectIds;
+        if (isAssignmentManager) {
+          const managed = await Assignment.findManagedBy(request.user.id);
+          managedSubjectIds = new Set(managed.map((a) => a.subject_id));
+        }
+        const idsInManagedSubjects = async (users) => {
+          if (users.length === 0) {
+            return new Set();
+          }
+          const rows = await Subject.findForUsers(users.map((u) => u.id));
+          return new Set(rows.filter((r) => managedSubjectIds.has(r.id)).map((r) => r.user_id));
+        };
+
         // If userIds provided, send only to those; otherwise send to all pending users
         let targets;
         if (Array.isArray(userIds) && userIds.length > 0) {
@@ -972,10 +1008,22 @@ async function usersRoutes(fastify, _options) {
             return reply.code(400).send({ error: 'One or more user IDs have an invalid format' });
           }
           const found = await User.findByIds(userIds);
+          if (isAssignmentManager) {
+            // Every explicit target must be in scope — reject before any email is sent
+            const inScope = await idsInManagedSubjects(found);
+            if (found.some((u) => !inScope.has(u.id))) {
+              return reply.code(403).send({ error: 'Forbidden: user is not in a subject you manage' });
+            }
+          }
           targets = found.filter((u) => u.status === 'pending');
         } else {
           const all = await User.findAll({ status: 'pending' });
-          targets = all;
+          if (isAssignmentManager) {
+            const inScope = await idsInManagedSubjects(all);
+            targets = all.filter((u) => inScope.has(u.id));
+          } else {
+            targets = all;
+          }
         }
 
         let sent = 0;

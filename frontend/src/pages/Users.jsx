@@ -28,6 +28,31 @@ const emptySelection = { subjectId: '', assignmentId: '', groupId: '' };
 const membershipLines = (u) =>
   (u.memberships || []).map((m) => `${m.subject_name} › ${m.assignment_name} › ${m.group_name}`);
 
+/**
+ * Render a user's subject names for the Subjects column. Subjects whose
+ * membership is suspended (membership_enabled === false; undefined counts as
+ * enabled) get a " (suspended)" suffix and line-through styling.
+ */
+const renderSubjectNames = (u) => {
+  const subjectList = u.subjects || [];
+  if (subjectList.length === 0) {
+    return '—';
+  }
+  if (subjectList.every((s) => s.membership_enabled !== false)) {
+    return subjectList.map((s) => s.name).join(', ');
+  }
+  return subjectList.map((s, index) => (
+    <span key={s.id}>
+      {index > 0 && ', '}
+      {s.membership_enabled === false ? (
+        <span className="line-through text-gray-400">{s.name} (suspended)</span>
+      ) : (
+        s.name
+      )}
+    </span>
+  ));
+};
+
 function Users() {
   const { user, isAdmin, isAssignmentManager } = useAuth();
   const navigate = useNavigate();
@@ -517,7 +542,7 @@ function Users() {
                   <div className="text-sm">&nbsp;</div>
                 ) : (
                   <div className="text-sm text-gray-900 truncate" title={membershipLines(u).join('\n')}>
-                    {(u.subjects || []).map((s) => s.name).join(', ') || '—'}
+                    {renderSubjectNames(u)}
                   </div>
                 )}
               </td>

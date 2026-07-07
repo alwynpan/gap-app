@@ -42,7 +42,15 @@ function MemberList({ loading, members, currentUserId }) {
 }
 
 function Dashboard() {
-  const { user, isAdmin, isAssignmentManager, refreshUser, memberships = [] } = useAuth();
+  const {
+    user,
+    isAdmin,
+    isAssignmentManager,
+    refreshUser,
+    memberships = [],
+    currentSubjectId,
+    setCurrentSubject,
+  } = useAuth();
   const [subjectData, setSubjectData] = useState(new Map()); // subjectId -> { loading, error, assignments }
   const [assignmentGroups, setAssignmentGroups] = useState(new Map()); // assignmentId -> { loading, error, groups }
   const [expandedAssignments, setExpandedAssignments] = useState(new Map()); // assignmentId -> boolean
@@ -54,6 +62,14 @@ function Dashboard() {
   const [groupJoinLocked, setGroupJoinLocked] = useState(false);
   const isNormalUser = !isAdmin && !isAssignmentManager;
   const subjects = useMemo(() => user?.subjects ?? [], [user]);
+  // The one subject whose card is shown; single-subject users land straight on theirs.
+  const selectedSubject = useMemo(() => {
+    const match = subjects.find((subject) => subject.id === currentSubjectId);
+    if (match) {
+      return match;
+    }
+    return subjects.length === 1 ? subjects[0] : null;
+  }, [subjects, currentSubjectId]);
 
   useEffect(() => {
     if (isNormalUser) {
@@ -394,7 +410,7 @@ function Dashboard() {
               <div className="px-4 py-5 sm:p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Administration</h3>
                 <div className="space-y-3">
-                  {isAssignmentManager && (
+                  {isAdmin && (
                     <Link
                       to="/users"
                       className="block w-full text-left px-4 py-2 bg-primary-50 text-primary-700 rounded-md hover:bg-primary-100 transition-colors"
@@ -408,6 +424,9 @@ function Dashboard() {
                       className="block w-full text-left px-4 py-2 bg-primary-50 text-primary-700 rounded-md hover:bg-primary-100 transition-colors"
                     >
                       📚 Subjects & Assignments
+                      {!isAdmin && (
+                        <span className="block text-xs text-primary-600 mt-1">Manage users within your subjects.</span>
+                      )}
                     </Link>
                   )}
                   <Link
@@ -444,8 +463,47 @@ function Dashboard() {
                     </p>
                   </div>
                 </div>
+              ) : selectedSubject ? (
+                <>
+                  {subjects.length > 1 && (
+                    <div className="flex items-center justify-between bg-white shadow rounded-lg px-4 py-3 mb-4">
+                      <span className="text-sm font-medium text-gray-700">{selectedSubject.name}</span>
+                      <button
+                        onClick={() => setCurrentSubject(null)}
+                        className="text-sm text-primary-600 hover:text-primary-800 font-medium"
+                      >
+                        Switch subject
+                      </button>
+                    </div>
+                  )}
+                  {renderSubjectCard(selectedSubject)}
+                </>
               ) : (
-                subjects.map(renderSubjectCard)
+                <div className="bg-white overflow-hidden shadow rounded-lg mb-6">
+                  <div className="px-4 py-5 sm:p-6">
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Select your subject</h3>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {subjects.map((subject) => {
+                        const data = subjectData.get(subject.id);
+                        const assignmentCount = data && !data.loading && !data.error ? data.assignments.length : null;
+                        return (
+                          <button
+                            key={subject.id}
+                            onClick={() => setCurrentSubject(subject.id)}
+                            className="text-left px-4 py-4 border border-gray-200 rounded-lg hover:border-primary-400 hover:bg-primary-50 transition-colors"
+                          >
+                            <span className="block text-sm font-medium text-gray-900">{subject.name}</span>
+                            {assignmentCount !== null && (
+                              <span className="block text-xs text-gray-500 mt-1">
+                                {assignmentCount} assignment{assignmentCount === 1 ? '' : 's'}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               )}
             </>
           )}

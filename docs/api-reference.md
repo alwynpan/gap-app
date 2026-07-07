@@ -145,7 +145,9 @@ Rate limit: 5 req/min (production).
 ```
 
 `subjects` lists the subjects the user is enrolled in, `memberships` lists their per-assignment group placements, and
-`managedAssignments` lists the assignments an assignment manager manages (always `[]` for other roles).
+`managedAssignments` lists the assignments an assignment manager manages (always `[]` for other roles). Suspended
+subject memberships (see `PUT /api/subjects/:id/users/:userId`) are excluded — a suspended member does not see that
+subject in their own session.
 
 **Errors**
 
@@ -368,7 +370,8 @@ enrolments are deleted. User accounts are never deleted.
 
 ### `GET /api/subjects/:id/users`
 
-List the members (enrolled users) of a subject.
+List the members (enrolled users) of a subject. Suspended members are included, tagged with `membership_enabled: false`
+— staff always see them here even though the member no longer sees the subject themselves.
 
 | Access | Admin, or an AM managing an assignment in the subject |
 | ------ | ----------------------------------------------------- |
@@ -376,7 +379,7 @@ List the members (enrolled users) of a subject.
 **Response `200`**
 
 ```json
-{ "users": [{ "id": "uuid", "username": "jsmith", ... }] }
+{ "users": [{ "id": "uuid", "username": "jsmith", "membership_enabled": true, ... }] }
 ```
 
 ---
@@ -408,6 +411,45 @@ Enrol users in a subject.
 | ---- | ------------------------------ |
 | 400  | One or more users do not exist |
 | 404  | Subject not found              |
+
+---
+
+### `PUT /api/subjects/:id/users/:userId`
+
+Suspend or re-enable a user's membership in a subject. Suspending (`enabled: false`) also removes the user's group
+memberships within that subject's assignments (transactionally). **Re-enabling restores subject access but does NOT
+restore group memberships** — the user must be re-assigned or re-join.
+
+While suspended, the user is treated as a non-member of the subject everywhere: the subject disappears from their own
+session (`POST /api/auth/login`, `GET /api/auth/me`, dashboard), subject/assignment/group scope checks fail, and group
+placement is rejected with `User is not an active member of this subject`. Staff still see the user in
+`GET /api/subjects/:id/users` with `membership_enabled: false`.
+
+| Access | Admin, or an AM managing an assignment in the subject |
+| ------ | ----------------------------------------------------- |
+
+**Request body**
+
+```json
+{ "enabled": false }
+```
+
+**Response `200`**
+
+```json
+{ "message": "Member suspended", "membershipEnabled": false }
+```
+
+`message` is `"Member enabled"` when re-enabling.
+
+**Errors**
+
+| Code | Reason                                                        |
+| ---- | ------------------------------------------------------------- |
+| 400  | Invalid subject/user ID, or `enabled` missing / not a boolean |
+| 401  | Not authenticated                                             |
+| 403  | Not admin and not an AM managing an assignment in the subject |
+| 404  | Subject not found / user is not a member of this subject      |
 
 ---
 
@@ -663,11 +705,10 @@ is not a member of the assignment's subject, or the group is full.
 
 ### `GET /api/users`
 
-List users. Assignment managers only see users enrolled in subjects where they manage an assignment (plus admin/AM
-accounts per model scoping).
+List users. Admin only — assignment managers manage members through `GET /api/subjects/:id/users` instead.
 
-| Access | AM+ |
-| ------ | --- |
+| Access | Admin |
+| ------ | ----- |
 
 **Query parameters**
 
@@ -681,7 +722,8 @@ accounts per model scoping).
 
 **Response `200`**
 
-Each user is enriched with their subject enrolments and per-assignment group memberships:
+Each user is enriched with their subject enrolments and per-assignment group memberships. `subjects` includes suspended
+enrolments, each entry tagged with `membership_enabled`:
 
 ```json
 {
@@ -689,7 +731,7 @@ Each user is enriched with their subject enrolments and per-assignment group mem
     {
       "id": "uuid",
       "username": "jsmith",
-      "subjects": [{ "id": "uuid", "name": "COMP10001" }],
+      "subjects": [{ "id": "uuid", "name": "COMP10001", "membership_enabled": true }],
       "memberships": [{ "subject_id": "uuid", "assignment_id": "uuid", "group_id": "uuid", "group_name": "Group A" }]
     }
   ]
@@ -787,8 +829,8 @@ response includes a `warning` field:
 Update a user's profile, role, or enabled status. Group placement is **not** part of this endpoint — use
 `PUT /api/users/:id/group`.
 
-| Access | Admin can edit any user; AM can edit non-admin users; users can edit their own profile |
-| ------ | -------------------------------------------------------------------------------------- |
+| Access | Admin can edit any user; AMs can edit non-admin users in subjects they manage; users can edit their own profile |
+| ------ | --------------------------------------------------------------------------------------------------------------- |
 
 **Request body** (all fields optional)
 
@@ -807,7 +849,10 @@ Update a user's profile, role, or enabled status. Group placement is **not** par
 
 - `username` cannot be changed
 - `role` can only be changed by Admin
-- `enabled` can be changed by Admin or AM (AM cannot edit admin users)
+- `enabled` can only be changed by Admin — anyone else sending `enabled` receives `403`
+- AMs may only edit users enrolled (in any enabled state) in a subject containing an assignment they manage — `403`
+  otherwise; an AM editing their own profile is exempt from this check
+- AMs cannot edit admin users
 - The built-in `admin` account cannot be disabled or have its role changed
 
 **Response `200`**
@@ -972,8 +1017,8 @@ created or overwritten user is enrolled in the target subject.
 
 Send (or resend) account-setup emails to pending users.
 
-| Access | AM+ |
-| ------ | --- |
+| Access | AM+ — AM targets must be enrolled in a subject where the AM manages an assignment |
+| ------ | --------------------------------------------------------------------------------- |
 
 **Request body**
 
@@ -982,6 +1027,10 @@ Send (or resend) account-setup emails to pending users.
 ```
 
 Omit `userIds` to send to all pending users. Max 500 IDs per request.
+
+For assignment managers, every explicit target must be enrolled (in any enabled state) in a subject containing an
+assignment they manage — a single out-of-scope ID rejects the whole request with `403` before any email is sent. When
+`userIds` is omitted, an AM's "all pending users" is likewise filtered to those subjects.
 
 **Response `200`**
 

@@ -4,11 +4,14 @@ import { API_BASE } from '../config.js';
 
 const AuthContext = createContext(null);
 
+const CURRENT_SUBJECT_KEY = 'gap.currentSubject';
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const [currentSubjectId, setCurrentSubjectId] = useState(() => sessionStorage.getItem(CURRENT_SUBJECT_KEY));
 
   // Fetch server config on mount
   useEffect(() => {
@@ -41,6 +44,35 @@ export function AuthProvider({ children }) {
 
     checkAuth();
   }, [token]);
+
+  // Validate the current subject selection whenever the user changes:
+  // auto-select the only subject, and drop a stored id that no longer exists.
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    const subjects = user.subjects ?? [];
+    if (subjects.length === 1) {
+      if (currentSubjectId !== subjects[0].id) {
+        setCurrentSubjectId(subjects[0].id);
+        sessionStorage.setItem(CURRENT_SUBJECT_KEY, subjects[0].id);
+      }
+      return;
+    }
+    if (currentSubjectId !== null && !subjects.some((subject) => subject.id === currentSubjectId)) {
+      setCurrentSubjectId(null);
+      sessionStorage.removeItem(CURRENT_SUBJECT_KEY);
+    }
+  }, [user, currentSubjectId]);
+
+  const setCurrentSubject = (id) => {
+    setCurrentSubjectId(id);
+    if (id === null || id === undefined) {
+      sessionStorage.removeItem(CURRENT_SUBJECT_KEY);
+    } else {
+      sessionStorage.setItem(CURRENT_SUBJECT_KEY, id);
+    }
+  };
 
   const login = async (username, password) => {
     try {
@@ -92,8 +124,11 @@ export function AuthProvider({ children }) {
       // Ignore errors on logout
     } finally {
       localStorage.removeItem('token');
+      // Clear the remembered subject so it can't leak to the next user in this tab
+      sessionStorage.removeItem(CURRENT_SUBJECT_KEY);
       setToken(null);
       setUser(null);
+      setCurrentSubjectId(null);
     }
   };
 
@@ -123,6 +158,8 @@ export function AuthProvider({ children }) {
     registrationEnabled,
     memberships: user?.memberships ?? [],
     managedAssignmentIds: (user?.managedAssignments ?? []).map((a) => a.id),
+    currentSubjectId,
+    setCurrentSubject,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

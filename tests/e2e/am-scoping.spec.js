@@ -36,9 +36,14 @@ test.describe('Assignment manager scoping', () => {
     await expect(page.getByText('Scoped S2')).not.toBeVisible();
   });
 
-  test('sees S1 members but not S2-only members on /users', async ({ page }) => {
+  test('cannot open /users — redirected to dashboard (admin-only)', async ({ page }) => {
     await page.goto('/users');
-    await expect(page.getByText('Manage Users')).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard/);
+  });
+
+  test('managed subject Members section lists S1 members but not S2-only members', async ({ page }) => {
+    await page.goto(`/subjects/${managed.subject.id}`);
+    await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('scopeduser1', { exact: true })).toBeVisible();
     await expect(page.getByText('scopeduser2', { exact: true })).not.toBeVisible();
   });

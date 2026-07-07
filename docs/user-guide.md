@@ -31,16 +31,17 @@ including admins.
 
 ## Roles overview
 
-| Role                   | What they can do                                                                                                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Admin**              | Everything — full control over subjects, assignments, groups, users, enrolments, and system config                                                                      |
-| **Assignment Manager** | Scoped to the assignments they manage: create/edit/delete groups and assign subject members to groups in those assignments; create and import users into those subjects |
-| **User** (student)     | View their own profile and enrolled subjects; self-join or leave one group per assignment (when joining is unlocked)                                                    |
+| Role                   | What they can do                                                                                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Admin**              | Everything — full control over subjects, assignments, groups, users, enrolments, membership suspension, and system config                                                                               |
+| **Assignment Manager** | Scoped to the assignments they manage: create/edit/delete groups and assign subject members to groups in those assignments; manage members (create, suspend/enable, setup emails) inside those subjects |
+| **User** (student)     | View their own profile and enrolled subjects; self-join or leave one group per assignment (when joining is unlocked)                                                                                    |
 
 > **Assignment Manager scoping:** each AM is linked to specific assignments by an Admin. An AM can only manage groups
-> and group placements **within assignments they manage**, only sees users enrolled in subjects where they manage an
-> assignment, and can only create or import users into those subjects. Subjects and assignments themselves are
-> Admin-only.
+> and group placements **within assignments they manage**, and manages users **per subject**: from the page of a subject
+> where they manage an assignment, the **Members** section lets them create users, suspend or re-enable memberships,
+> assign groups, and send setup emails. The global **Users** page is Admin-only, and subjects and assignments themselves
+> are Admin-only.
 
 ---
 
@@ -83,7 +84,8 @@ out). Click the link in the email to set your password.
 If you did not receive the email:
 
 - Check your spam folder
-- Ask an admin or AM to resend it (Users page → select user → Send Setup Email)
+- Ask an admin or AM to resend it (admins: Users page → select user → Send Setup Email; AMs: the subject's Members
+  section → envelope icon)
 - If SMTP is not configured (development only), the admin can find the link in the backend logs; in production SMTP must
   be configured for emails to be sent
 
@@ -107,11 +109,14 @@ If you did not receive the email:
 After logging in you land on the **Dashboard**. What you see depends on your role:
 
 - **All roles** — your profile: name, username, email, role, student ID, and the subjects you are enrolled in
-- **Students** — one **card per enrolled subject**, each listing the subject's assignments; for every assignment you
-  either see your current group (with a **Leave Group** button) or the list of joinable groups (with **Join** buttons
-  and an **I'm Feeling Lucky** random-join button)
-- **Admins and Assignment Managers** — an **Administration** panel with links to **Users**, **Subjects & Assignments**,
-  and **Settings**
+- **Students** — the dashboard shows **one subject at a time**. If you are enrolled in more than one subject you first
+  land on a **subject picker**; your choice is remembered for the session and a **Switch subject** button lets you
+  change it at any time. If you are enrolled in a single subject you go straight to it. The subject card lists its
+  assignments; for every assignment you either see your current group (with a **Leave Group** button) or the list of
+  joinable groups (with **Join** buttons and an **I'm Feeling Lucky** random-join button)
+- **Admins** — an **Administration** panel with links to **Users**, **Subjects & Assignments**, and **Settings**
+- **Assignment Managers** — the same **Administration** panel without the **Users** link — AMs manage members inside
+  each subject's page instead
 
 ---
 
@@ -266,16 +271,21 @@ Deleting a group unassigns all its members; their accounts and subject enrolment
 
 ### Managing users
 
-Navigate to **Users** from the **Administration** panel on the Dashboard.
+Where you manage users depends on your role:
 
-> **Assignment Manager scope:** AMs only see users enrolled in subjects where they manage an assignment, and can only
-> create or import users into those subjects.
+- **Admins** use the global **Users** page (Administration panel → **Users**). The Users page and the user import wizard
+  are **Admin-only**.
+- **Assignment Managers** manage members inside a subject: open **Subjects** → the subject → the **Members** section. It
+  lists the subject's members and offers **Suspend/Enable**, **Assign Group**, **Create User**, and **Send Setup Email**
+  actions for subjects where the AM manages an assignment. Admins see the same section, plus an **Add Existing User**
+  button to enrol an already-existing account.
 
-#### Viewing and filtering users
+#### Viewing and filtering users (Admin only)
 
 The Users page groups accounts into three sections: **Administrators** (admins and AMs), **Users without a subject**,
 and **Users in subjects**. Each user row shows their subject enrolments and group memberships as
-`Subject › Assignment › Group`. Use the filter bar to narrow the list:
+`Subject › Assignment › Group`; suspended subject memberships are shown struck through with a **(suspended)** suffix.
+Use the filter bar to narrow the list:
 
 - **Role** — filter by `Admin`, `Assignment Manager`, or `User`
 - **Status** — filter by `Active`, `Inactive`, or `Pending`
@@ -285,6 +295,9 @@ and **Users in subjects**. Each user row shows their subject enrolments and grou
 Each section has its own **Export** button to download the listed users as CSV.
 
 #### Creating a user
+
+Admins create users from the Users page as described below. Assignment Managers use **+ Create User** in a subject's
+**Members** section instead — the form is the same, but the new user is automatically enrolled in that subject.
 
 1. Click **Add User** (top-right).
 2. Fill in the required fields (username, email, first name, last name).
@@ -313,13 +326,16 @@ warning tells you to place them manually.
 
 **What can be edited**
 
-| Field             | Who can change it                    |
-| ----------------- | ------------------------------------ |
-| Email             | Admin, AM, the user themselves       |
-| First / last name | Admin, AM, the user themselves       |
-| Student ID        | Admin, AM, the user themselves       |
-| Role              | Admin only                           |
-| Enabled           | Admin and AM (AM cannot edit admins) |
+| Field             | Who can change it              |
+| ----------------- | ------------------------------ |
+| Email             | Admin, AM, the user themselves |
+| First / last name | Admin, AM, the user themselves |
+| Student ID        | Admin, AM, the user themselves |
+| Role              | Admin only                     |
+| Enabled           | Admin only                     |
+
+> **Assignment Manager scope:** AMs can only edit users enrolled in a subject where they manage an assignment (editing
+> their own profile is always allowed), and cannot edit admin accounts.
 
 Subject enrolment and group placement are managed separately — see **Manage Subjects** and **Assign Group** below.
 
@@ -331,10 +347,28 @@ Subject enrolment and group placement are managed separately — see **Manage Su
 > Removing a user from a subject also removes their group memberships within that subject. The modal warns you when a
 > removal affects existing memberships.
 
-#### Enabling / disabling a user
+#### Enabling / disabling a user (Admin only)
 
 Toggle the **Enabled** field in the edit modal. Disabling a user sets their status to `inactive` and prevents login;
-disabled accounts are also rejected when trying to join or leave groups, even with a still-valid session.
+disabled accounts are also rejected when trying to join or leave groups, even with a still-valid session. This disables
+the whole account — to cut off a single subject only, use membership suspension below.
+
+#### Suspending / re-enabling a subject membership
+
+Suspension is **per subject**: it removes a student's access to one subject without touching their account or their
+other subjects. It is available to Admins and to AMs managing an assignment in the subject.
+
+1. Open **Subjects** → the subject → **Members** section.
+2. Click the **Suspend** (ban) icon on the member's row and confirm in the warning dialog.
+3. To re-enable, click the **Enable** (restore) icon on the suspended member's row.
+
+> **Warning — group memberships are not restored.** Suspending a member immediately **deletes their group memberships
+> within that subject's assignments**. Re-enabling restores their subject access but does **not** restore their groups —
+> they must re-join or be re-assigned.
+
+While suspended, the member no longer sees the subject on their own dashboard, cannot join or be placed in its groups,
+and is treated as a non-member by every access check. Staff still see them in the subject's member list with a
+**Suspended** badge, and Admins see the enrolment struck through as **(suspended)** on the Users page.
 
 #### Deleting users
 
@@ -345,10 +379,14 @@ disabled accounts are also rejected when trying to join or leave groups, even wi
 
 #### Sending setup emails
 
-To (re)send account-setup emails to pending users:
+To (re)send account-setup emails to pending users from the Users page (Admin):
 
 - **Selected users** — select users using checkboxes, then click the **Send Setup Email** icon and confirm.
 - **All pending users** — click the **envelope** icon in the toolbar (with no selection) and confirm.
+
+Assignment Managers send setup emails from a subject's **Members** section — pending members show a **Send Setup Email**
+(envelope) icon on their row. AMs can only send to users enrolled in subjects where they manage an assignment, and an
+AM's "all pending users" send is limited to those subjects as well.
 
 ---
 
@@ -378,16 +416,17 @@ existing members.
 
 ### CSV import and export
 
-#### Importing users (Users page)
+#### Importing users (Users page, Admin only)
 
-The user import wizard imports accounts **into a target subject** — every imported user is enrolled in that subject.
+The user import wizard imports accounts **into a target subject** — every imported user is enrolled in that subject. The
+wizard lives on the Admin-only Users page; Assignment Managers create users individually from a subject's Members
+section instead.
 
 1. Click the **Import** (upload) icon in the toolbar on the Users page.
 2. Upload a CSV file. Required columns: `username`, `email`, `firstName` (or `first_name`), `lastName` (or `last_name`).
    Optional: `studentId`.
 3. Review the column mapping and preview.
-4. Select the **target subject** the users will be enrolled in. AMs can only choose subjects where they manage an
-   assignment.
+4. Select the **target subject** the users will be enrolled in.
 5. Choose a **conflict action**:
    - **Skip** — skip rows where the username already exists
    - **Overwrite** — update existing users with the new data (and enrol them in the target subject)

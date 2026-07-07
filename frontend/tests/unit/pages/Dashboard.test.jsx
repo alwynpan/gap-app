@@ -12,6 +12,7 @@ jest.mock('../../../src/context/AuthContext.jsx', () => ({
 
 const mockLogout = jest.fn();
 const mockRefreshUser = jest.fn();
+const mockSetCurrentSubject = jest.fn();
 
 const SUBJECT_1 = { id: 'sub-1', name: 'Software Modelling' };
 const SUBJECT_2 = { id: 'sub-2', name: 'Distributed Systems' };
@@ -41,7 +42,7 @@ function makeUser(overrides = {}) {
   };
 }
 
-function mockAuth({ user, isAdmin = false, isAssignmentManager = false }) {
+function mockAuth({ user, isAdmin = false, isAssignmentManager = false, currentSubjectId = null }) {
   useAuth.mockReturnValue({
     user,
     logout: mockLogout,
@@ -50,6 +51,8 @@ function mockAuth({ user, isAdmin = false, isAssignmentManager = false }) {
     isAssignmentManager,
     memberships: user?.memberships ?? [],
     managedAssignmentIds: (user?.managedAssignments ?? []).map((a) => a.id),
+    currentSubjectId,
+    setCurrentSubject: mockSetCurrentSubject,
   });
 }
 
@@ -149,7 +152,7 @@ describe('Dashboard page', () => {
       expect(screen.queryByRole('link', { name: /manage groups/i })).not.toBeInTheDocument();
     });
 
-    it('shows Subjects & Assignments link for assignment managers', () => {
+    it('hides the Manage Users link for assignment managers and mentions user management in the Subjects card', () => {
       mockAuth({
         user: makeUser({ username: 'manager', role: 'assignment_manager', subjects: [] }),
         isAdmin: false,
@@ -158,8 +161,29 @@ describe('Dashboard page', () => {
 
       renderDashboard();
 
-      expect(screen.getByRole('link', { name: /subjects & assignments/i })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /manage users/i })).toBeInTheDocument();
+      // Manage Users is admin-only now
+      expect(screen.queryByRole('link', { name: /^👥 Manage Users$/ })).not.toBeInTheDocument();
+      expect(screen.queryAllByRole('link').some((l) => l.getAttribute('href') === '/users')).toBe(false);
+      // AM copy tweak: Subjects card mentions managing users within their subjects
+      const subjectsLink = screen.getByRole('link', { name: /subjects & assignments/i });
+      expect(subjectsLink).toHaveAttribute('href', '/subjects');
+      expect(subjectsLink).toHaveTextContent(/manage users within your subjects/i);
+    });
+
+    it('keeps the Manage Users link admin-only', () => {
+      mockAuth({
+        user: makeUser({ username: 'admin', role: 'admin', subjects: [] }),
+        isAdmin: true,
+        isAssignmentManager: true,
+      });
+
+      renderDashboard();
+
+      const usersLink = screen.getByRole('link', { name: /^👥 Manage Users$/ });
+      expect(usersLink).toHaveAttribute('href', '/users');
+      // Admin keeps the plain Subjects card copy
+      const subjectsLink = screen.getByRole('link', { name: /subjects & assignments/i });
+      expect(subjectsLink).not.toHaveTextContent(/manage users within your subjects/i);
     });
 
     it('hides the administration block for normal users', () => {
@@ -173,33 +197,99 @@ describe('Dashboard page', () => {
     });
   });
 
-  describe('per-subject cards', () => {
-    it('renders a card per subject listing its assignments', async () => {
+  describe('subject selection', () => {
+    const multiSubjectFixture = {
+      'sub-1': [
+        { id: 'a-1', name: 'Assignment 1', group_count: 2 },
+        { id: 'a-2', name: 'Assignment 2', group_count: 1 },
+      ],
+      'sub-2': [{ id: 'a-3', name: 'Assignment 3', group_count: 0 }],
+    };
+    const multiSubjectGroups = { 'a-1': [], 'a-2': [], 'a-3': [] };
+
+    it('shows the subject picker instead of subject cards when nothing is selected', async () => {
+      mockAuth({ user: makeUser({ subjects: [SUBJECT_1, SUBJECT_2] }) });
+      mockApi({ subjects: multiSubjectFixture, groupsByAssignment: multiSubjectGroups });
+
+      renderDashboard();
+
+      expect(screen.getByText('Select your subject')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /software modelling/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /distributed systems/i })).toBeInTheDocument();
+
+      // Assignment counts appear once the (already existing) subject fetches resolve
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /software modelling/i })).toHaveTextContent('2 assignments');
+        expect(screen.getByRole('button', { name: /distributed systems/i })).toHaveTextContent('1 assignment');
+      });
+
+      // No subject card content is rendered while the picker is showing
+      expect(screen.queryByText('Assignment 1')).not.toBeInTheDocument();
+      expect(screen.queryByText('Assignment 3')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /switch subject/i })).not.toBeInTheDocument();
+    });
+
+    it('selects a subject when its picker card is clicked', async () => {
+      mockAuth({ user: makeUser({ subjects: [SUBJECT_1, SUBJECT_2] }) });
+      mockApi({ subjects: multiSubjectFixture, groupsByAssignment: multiSubjectGroups });
+
+      renderDashboard();
+
+      await userEvent.click(screen.getByRole('button', { name: /distributed systems/i }));
+
+      expect(mockSetCurrentSubject).toHaveBeenCalledWith('sub-2');
+    });
+
+    it('renders only the selected subject card plus a switcher when a subject is selected', async () => {
       mockAuth({
         user: makeUser({ subjects: [SUBJECT_1, SUBJECT_2], memberships: [MEMBERSHIP_A1] }),
+        currentSubjectId: 'sub-1',
       });
-      mockApi({
-        subjects: {
-          'sub-1': [
-            { id: 'a-1', name: 'Assignment 1', group_count: 2 },
-            { id: 'a-2', name: 'Assignment 2', group_count: 1 },
-          ],
-          'sub-2': [{ id: 'a-3', name: 'Assignment 3', group_count: 0 }],
-        },
-        groupsByAssignment: { 'a-2': [], 'a-3': [] },
-      });
+      mockApi({ subjects: multiSubjectFixture, groupsByAssignment: multiSubjectGroups });
 
       renderDashboard();
 
       await waitFor(() => {
         expect(screen.getByText('Assignment 1')).toBeInTheDocument();
         expect(screen.getByText('Assignment 2')).toBeInTheDocument();
-        expect(screen.getByText('Assignment 3')).toBeInTheDocument();
       });
-      expect(screen.getByText('Software Modelling')).toBeInTheDocument();
-      expect(screen.getByText('Distributed Systems')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Software Modelling' })).toBeInTheDocument();
+      // The other subject's card is not rendered
+      expect(screen.queryByText('Assignment 3')).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Distributed Systems' })).not.toBeInTheDocument();
+      // No picker, but a switcher is available
+      expect(screen.queryByText('Select your subject')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /switch subject/i })).toBeInTheDocument();
     });
 
+    it('returns to the picker when Switch subject is clicked', async () => {
+      mockAuth({ user: makeUser({ subjects: [SUBJECT_1, SUBJECT_2] }), currentSubjectId: 'sub-1' });
+      mockApi({ subjects: multiSubjectFixture, groupsByAssignment: multiSubjectGroups });
+
+      renderDashboard();
+
+      await userEvent.click(screen.getByRole('button', { name: /switch subject/i }));
+
+      expect(mockSetCurrentSubject).toHaveBeenCalledWith(null);
+    });
+
+    it('lands single-subject users straight on their subject card with no picker or switcher', async () => {
+      mockAuth({ user: makeUser({ subjects: [SUBJECT_1], memberships: [MEMBERSHIP_A1] }) });
+      mockApi({ subjects: { 'sub-1': [{ id: 'a-1', name: 'Assignment 1', group_count: 2 }] } });
+
+      renderDashboard();
+
+      await waitFor(() => {
+        expect(screen.getByText('Assignment 1')).toBeInTheDocument();
+      });
+      expect(screen.getByRole('heading', { name: 'Software Modelling' })).toBeInTheDocument();
+      expect(screen.queryByText('Select your subject')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /switch subject/i })).not.toBeInTheDocument();
+      expect(mockSetCurrentSubject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('per-subject cards', () => {
     it('does not render subject cards or fetch subjects for admins', () => {
       mockAuth({
         user: makeUser({ username: 'admin', role: 'admin', subjects: [SUBJECT_1] }),
@@ -225,8 +315,8 @@ describe('Dashboard page', () => {
       ).toBeInTheDocument();
     });
 
-    it('shows an inline error in the failing subject card while other subjects render', async () => {
-      mockAuth({ user: makeUser({ subjects: [SUBJECT_1, SUBJECT_2] }) });
+    it('shows an inline error when the selected subject fails to load', async () => {
+      mockAuth({ user: makeUser({ subjects: [SUBJECT_1, SUBJECT_2] }), currentSubjectId: 'sub-1' });
       mockApi({
         subjects: { 'sub-2': [{ id: 'a-3', name: 'Assignment 3', group_count: 0 }] },
         groupsByAssignment: { 'a-3': [] },
@@ -237,8 +327,9 @@ describe('Dashboard page', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Failed to load subject details')).toBeInTheDocument();
-        expect(screen.getByText('Assignment 3')).toBeInTheDocument();
       });
+      // The other (healthy) subject stays hidden behind the switcher
+      expect(screen.queryByText('Assignment 3')).not.toBeInTheDocument();
     });
   });
 

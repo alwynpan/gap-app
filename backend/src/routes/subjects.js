@@ -1,11 +1,13 @@
 const Subject = require('../models/Subject');
 const Assignment = require('../models/Assignment');
 const User = require('../models/User');
+const UserGroup = require('../models/UserGroup');
 const {
   parseBody,
   createSubjectSchema,
   updateSubjectSchema,
   addSubjectUsersSchema,
+  setMemberEnabledSchema,
   validateUUID,
 } = require('../utils/schemas');
 const { logger } = require('../utils/logger');
@@ -242,7 +244,27 @@ async function subjectsRoutes(fastify, _options) {
         }
 
         const users = await Subject.getMembers(subjectId);
-        return reply.send({ users });
+
+        // Attach each member's group memberships WITHIN this subject so the
+        // members view can offer group unassignment.
+        let membershipRows = [];
+        if (users.length > 0) {
+          membershipRows = await UserGroup.findMembershipsForUsers(users.map((u) => u.id));
+        }
+        const membershipsByUser = new Map();
+        for (const row of membershipRows) {
+          if (row.subject_id !== subjectId) {
+            continue;
+          }
+          const { user_id: uid, ...membership } = row;
+          if (!membershipsByUser.has(uid)) {
+            membershipsByUser.set(uid, []);
+          }
+          membershipsByUser.get(uid).push(membership);
+        }
+        const enriched = users.map((u) => ({ ...u, memberships: membershipsByUser.get(u.id) || [] }));
+
+        return reply.send({ users: enriched });
       } catch (error) {
         logger.error('Get subject members error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve subject members' });
@@ -292,6 +314,63 @@ async function subjectsRoutes(fastify, _options) {
       } catch (error) {
         logger.error('Add subject users error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to add users to subject' });
+      }
+    }
+  );
+
+  // Enable or suspend a subject member (admin, or AM managing an assignment in
+  // the subject) — suspension transactionally removes the user's group
+  // memberships within the subject
+  fastify.put(
+    '/subjects/:id/users/:userId',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const subjectId = request.params.id;
+        const userId = request.params.userId;
+        if (!validateUUID(subjectId)) {
+          return reply.code(400).send({ error: 'Invalid subject ID' });
+        }
+        if (!validateUUID(userId)) {
+          return reply.code(400).send({ error: 'Invalid user ID' });
+        }
+
+        const { role, id: callerId } = request.user;
+        const allowed =
+          role === 'admin' ||
+          (role === 'assignment_manager' && (await Assignment.managesAnyInSubject(callerId, subjectId)));
+        if (!allowed) {
+          return reply.code(403).send({ error: 'Forbidden: You do not have access to this subject' });
+        }
+
+        const { data: body, error: validationError } = parseBody(setMemberEnabledSchema, request.body);
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
+        }
+
+        const subject = await Subject.findById(subjectId);
+        if (!subject) {
+          return reply.code(404).send({ error: 'Subject not found' });
+        }
+
+        const updated = await Subject.setMemberEnabled(subjectId, userId, body.enabled);
+        if (!updated) {
+          return reply.code(404).send({ error: 'User is not a member of this subject' });
+        }
+
+        return reply.send({
+          message: body.enabled ? 'Member enabled' : 'Member suspended',
+          membershipEnabled: body.enabled,
+        });
+      } catch (error) {
+        logger.error('Set subject member enabled error', { err: error.message, code: error.code });
+        return reply.code(500).send({ error: 'Failed to update subject member' });
       }
     }
   );

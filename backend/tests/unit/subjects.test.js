@@ -2,6 +2,7 @@
 jest.mock('../../src/models/Subject');
 jest.mock('../../src/models/Assignment');
 jest.mock('../../src/models/User');
+jest.mock('../../src/models/UserGroup');
 
 jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), trace: jest.fn(), fatal: jest.fn() },
@@ -15,6 +16,7 @@ jest.mock('../../src/utils/logger', () => ({
 const Subject = require('../../src/models/Subject');
 const Assignment = require('../../src/models/Assignment');
 const User = require('../../src/models/User');
+const UserGroup = require('../../src/models/UserGroup');
 
 const SUBJECT_ID = '30000000-0000-4000-8000-000000000001';
 const SUBJECT_ID_2 = '30000000-0000-4000-8000-000000000002';
@@ -474,30 +476,69 @@ describe('Subjects Routes', () => {
       expect(mockReply.code).toHaveBeenCalledWith(403);
     });
 
-    it('returns members for managing assignment_manager', async () => {
+    it("returns members enriched with this subject's memberships for managing assignment_manager", async () => {
       const { handlers, mockReply } = setup();
       Subject.findById.mockResolvedValue({ id: SUBJECT_ID });
       Assignment.managesAnyInSubject.mockResolvedValue(true);
       const users = [{ id: USER_ID, username: 'u1' }];
       Subject.getMembers.mockResolvedValue(users);
+      UserGroup.findMembershipsForUsers.mockResolvedValue([
+        {
+          user_id: USER_ID,
+          subject_id: SUBJECT_ID,
+          assignment_id: 'a0000000-0000-4000-8000-000000000001',
+          assignment_name: 'A1',
+          group_id: 'g0000000-0000-4000-8000-000000000001',
+          group_name: 'Team Alpha',
+        },
+        // Membership in ANOTHER subject must be filtered out of the response
+        {
+          user_id: USER_ID,
+          subject_id: 's0000000-0000-4000-8000-000000000099',
+          assignment_id: 'a0000000-0000-4000-8000-000000000002',
+          assignment_name: 'Other',
+          group_id: 'g0000000-0000-4000-8000-000000000002',
+          group_name: 'Elsewhere',
+        },
+      ]);
       await handlers['/subjects/:id/users_get'](
         { user: { id: USER_ID_2, role: 'assignment_manager' }, params: { id: SUBJECT_ID } },
         mockReply
       );
       expect(Subject.getMembers).toHaveBeenCalledWith(SUBJECT_ID);
-      expect(mockReply.send).toHaveBeenCalledWith({ users });
+      expect(UserGroup.findMembershipsForUsers).toHaveBeenCalledWith([USER_ID]);
+      expect(mockReply.send).toHaveBeenCalledWith({
+        users: [
+          {
+            id: USER_ID,
+            username: 'u1',
+            memberships: [
+              {
+                subject_id: SUBJECT_ID,
+                assignment_id: 'a0000000-0000-4000-8000-000000000001',
+                assignment_name: 'A1',
+                group_id: 'g0000000-0000-4000-8000-000000000001',
+                group_name: 'Team Alpha',
+              },
+            ],
+          },
+        ],
+      });
     });
 
-    it('returns members for admin', async () => {
+    it('returns members for admin (empty memberships when none in this subject)', async () => {
       const { handlers, mockReply } = setup();
       Subject.findById.mockResolvedValue({ id: SUBJECT_ID });
       const users = [{ id: USER_ID, username: 'u1' }];
       Subject.getMembers.mockResolvedValue(users);
+      UserGroup.findMembershipsForUsers.mockResolvedValue([]);
       await handlers['/subjects/:id/users_get'](
         { user: { id: ADMIN_ID, role: 'admin' }, params: { id: SUBJECT_ID } },
         mockReply
       );
-      expect(mockReply.send).toHaveBeenCalledWith({ users });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        users: [{ id: USER_ID, username: 'u1', memberships: [] }],
+      });
     });
 
     it('handles error when fetching members', async () => {
@@ -588,6 +629,170 @@ describe('Subjects Routes', () => {
       const { logger: mockLogger } = require('../../src/utils/logger');
       await handlers['/subjects/:id/users_post'](
         { params: { id: SUBJECT_ID }, body: { userIds: [USER_ID] } },
+        mockReply
+      );
+      expect(mockLogger.error).toHaveBeenCalled();
+      expect(mockReply.code).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('PUT /subjects/:id/users/:userId', () => {
+    it('rejects unauthenticated request in preHandler', async () => {
+      const { handlers, mockReply } = setup();
+      await handlers['/subjects/:id/users/:userId_put_pre']({ user: null }, mockReply);
+      expect(mockReply.code).toHaveBeenCalledWith(401);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
+    });
+
+    it('returns 400 for invalid subject UUID', async () => {
+      const { handlers, mockReply } = setup();
+      await handlers['/subjects/:id/users/:userId_put'](
+        { user: { id: ADMIN_ID, role: 'admin' }, params: { id: 'bad', userId: USER_ID }, body: { enabled: false } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid subject ID' });
+    });
+
+    it('returns 400 for invalid user UUID', async () => {
+      const { handlers, mockReply } = setup();
+      await handlers['/subjects/:id/users/:userId_put'](
+        { user: { id: ADMIN_ID, role: 'admin' }, params: { id: SUBJECT_ID, userId: 'bad' }, body: { enabled: false } },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid user ID' });
+    });
+
+    it('returns 403 for plain user', async () => {
+      const { handlers, mockReply } = setup();
+      await handlers['/subjects/:id/users/:userId_put'](
+        {
+          user: { id: USER_ID_2, role: 'user' },
+          params: { id: SUBJECT_ID, userId: USER_ID },
+          body: { enabled: false },
+        },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(Subject.setMemberEnabled).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 for assignment_manager not managing in subject', async () => {
+      const { handlers, mockReply } = setup();
+      Assignment.managesAnyInSubject.mockResolvedValue(false);
+      await handlers['/subjects/:id/users/:userId_put'](
+        {
+          user: { id: USER_ID_2, role: 'assignment_manager' },
+          params: { id: SUBJECT_ID, userId: USER_ID },
+          body: { enabled: false },
+        },
+        mockReply
+      );
+      expect(Assignment.managesAnyInSubject).toHaveBeenCalledWith(USER_ID_2, SUBJECT_ID);
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+      expect(Subject.setMemberEnabled).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid body (missing/non-boolean enabled)', async () => {
+      const { handlers, mockReply } = setup();
+      await handlers['/subjects/:id/users/:userId_put'](
+        { user: { id: ADMIN_ID, role: 'admin' }, params: { id: SUBJECT_ID, userId: USER_ID }, body: {} },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: expect.any(String) });
+
+      mockReply.code.mockClear();
+      await handlers['/subjects/:id/users/:userId_put'](
+        {
+          user: { id: ADMIN_ID, role: 'admin' },
+          params: { id: SUBJECT_ID, userId: USER_ID },
+          body: { enabled: 'nope' },
+        },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(Subject.setMemberEnabled).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when subject not found', async () => {
+      const { handlers, mockReply } = setup();
+      Subject.findById.mockResolvedValue(null);
+      await handlers['/subjects/:id/users/:userId_put'](
+        {
+          user: { id: ADMIN_ID, role: 'admin' },
+          params: { id: SUBJECT_ID, userId: USER_ID },
+          body: { enabled: false },
+        },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Subject not found' });
+      expect(Subject.setMemberEnabled).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the user is not a member of the subject', async () => {
+      const { handlers, mockReply } = setup();
+      Subject.findById.mockResolvedValue({ id: SUBJECT_ID });
+      Subject.setMemberEnabled.mockResolvedValue(false);
+      await handlers['/subjects/:id/users/:userId_put'](
+        {
+          user: { id: ADMIN_ID, role: 'admin' },
+          params: { id: SUBJECT_ID, userId: USER_ID },
+          body: { enabled: false },
+        },
+        mockReply
+      );
+      expect(mockReply.code).toHaveBeenCalledWith(404);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'User is not a member of this subject' });
+    });
+
+    it('managing assignment_manager can suspend a member', async () => {
+      const { handlers, mockReply } = setup();
+      Assignment.managesAnyInSubject.mockResolvedValue(true);
+      Subject.findById.mockResolvedValue({ id: SUBJECT_ID });
+      Subject.setMemberEnabled.mockResolvedValue(true);
+      await handlers['/subjects/:id/users/:userId_put'](
+        {
+          user: { id: USER_ID_2, role: 'assignment_manager' },
+          params: { id: SUBJECT_ID, userId: USER_ID },
+          body: { enabled: false },
+        },
+        mockReply
+      );
+      expect(Subject.setMemberEnabled).toHaveBeenCalledWith(SUBJECT_ID, USER_ID, false);
+      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Member suspended', membershipEnabled: false });
+    });
+
+    it('admin can re-enable a member', async () => {
+      const { handlers, mockReply } = setup();
+      Subject.findById.mockResolvedValue({ id: SUBJECT_ID });
+      Subject.setMemberEnabled.mockResolvedValue(true);
+      await handlers['/subjects/:id/users/:userId_put'](
+        {
+          user: { id: ADMIN_ID, role: 'admin' },
+          params: { id: SUBJECT_ID, userId: USER_ID },
+          body: { enabled: true },
+        },
+        mockReply
+      );
+      expect(Assignment.managesAnyInSubject).not.toHaveBeenCalled();
+      expect(Subject.setMemberEnabled).toHaveBeenCalledWith(SUBJECT_ID, USER_ID, true);
+      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Member enabled', membershipEnabled: true });
+    });
+
+    it('handles error when updating the membership', async () => {
+      const { handlers, mockReply } = setup();
+      Subject.findById.mockResolvedValue({ id: SUBJECT_ID });
+      Subject.setMemberEnabled.mockRejectedValue(new Error('Database error'));
+      const { logger: mockLogger } = require('../../src/utils/logger');
+      await handlers['/subjects/:id/users/:userId_put'](
+        {
+          user: { id: ADMIN_ID, role: 'admin' },
+          params: { id: SUBJECT_ID, userId: USER_ID },
+          body: { enabled: false },
+        },
         mockReply
       );
       expect(mockLogger.error).toHaveBeenCalled();

@@ -70,26 +70,36 @@ class Subject {
     return result.rows[0];
   }
 
-  /** Subjects the user is enrolled in. */
-  static async findForUser(userId) {
+  /**
+   * Subjects the user is enrolled in. By default only enabled (non-suspended)
+   * memberships are returned; includeDisabled returns every membership, each
+   * row tagged with membership_enabled.
+   */
+  static async findForUser(userId, { includeDisabled = false } = {}) {
     const result = await pool.query(
-      `SELECT s.*
-       FROM subjects s
-       JOIN user_subjects us ON us.subject_id = s.id
-       WHERE us.user_id = $1
-       ORDER BY s.name`,
+      includeDisabled
+        ? `SELECT s.*, us.enabled AS membership_enabled
+           FROM subjects s
+           JOIN user_subjects us ON us.subject_id = s.id
+           WHERE us.user_id = $1
+           ORDER BY s.name`
+        : `SELECT s.*
+           FROM subjects s
+           JOIN user_subjects us ON us.subject_id = s.id
+           WHERE us.user_id = $1 AND us.enabled = true
+           ORDER BY s.name`,
       [userId]
     );
     return result.rows;
   }
 
-  /** Subject rows for a batch of users, each row tagged with user_id. */
+  /** Subject rows (all memberships, tagged) for a batch of users, each row tagged with user_id. */
   static async findForUsers(userIds) {
     if (!userIds || userIds.length === 0) {
       return [];
     }
     const result = await pool.query(
-      `SELECT us.user_id, s.id, s.name
+      `SELECT us.user_id, s.id, s.name, us.enabled AS membership_enabled
        FROM subjects s
        JOIN user_subjects us ON us.subject_id = s.id
        WHERE us.user_id = ANY($1)
@@ -102,7 +112,7 @@ class Subject {
   static async getMembers(subjectId) {
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
-              u.enabled, u.status, r.name as role_name
+              u.enabled, u.status, r.name as role_name, us.enabled AS membership_enabled
        FROM users u
        JOIN user_subjects us ON us.user_id = u.id
        LEFT JOIN roles r ON u.role_id = r.id
@@ -167,11 +177,48 @@ class Subject {
     }
   }
 
+  /**
+   * Enable or suspend a user's membership in the subject. Suspension also
+   * removes the user's group memberships within the subject's assignments,
+   * in a single transaction (mirrors removeUser).
+   *
+   * @returns {Promise<boolean>} true if a membership row was updated.
+   */
+  static async setMemberEnabled(subjectId, userId, enabled) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (enabled === false) {
+        await client.query(
+          `DELETE FROM user_groups ug
+           USING assignments a
+           WHERE ug.assignment_id = a.id AND a.subject_id = $1 AND ug.user_id = $2`,
+          [subjectId, userId]
+        );
+      }
+
+      const result = await client.query(
+        'UPDATE user_subjects SET enabled = $3 WHERE subject_id = $1 AND user_id = $2',
+        [subjectId, userId, enabled]
+      );
+
+      await client.query('COMMIT');
+      return result.rowCount > 0;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Suspended memberships do not count — a suspended user is not a member. */
   static async isMember(subjectId, userId) {
-    const result = await pool.query('SELECT 1 FROM user_subjects WHERE subject_id = $1 AND user_id = $2', [
-      subjectId,
-      userId,
-    ]);
+    const result = await pool.query(
+      'SELECT 1 FROM user_subjects WHERE subject_id = $1 AND user_id = $2 AND enabled = true',
+      [subjectId, userId]
+    );
     return result.rows.length > 0;
   }
 }

@@ -107,14 +107,15 @@ async function createGroup({ assignmentId, name, enabled = true, maxMembers = nu
 }
 
 /**
- * Enrol a user in a subject directly in the DB.
+ * Enrol a user in a subject directly in the DB (enabled = false creates a
+ * suspended membership).
  */
-async function addUserToSubject(userId, subjectId) {
+async function addUserToSubject(userId, subjectId, enabled = true) {
   const db = getPool();
-  const { rows } = await db.query('INSERT INTO user_subjects (user_id, subject_id) VALUES ($1, $2) RETURNING *', [
-    userId,
-    subjectId,
-  ]);
+  const { rows } = await db.query(
+    'INSERT INTO user_subjects (user_id, subject_id, enabled) VALUES ($1, $2, $3) RETURNING *',
+    [userId, subjectId, enabled]
+  );
   return rows[0];
 }
 

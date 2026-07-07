@@ -198,6 +198,40 @@ describe('Users page', () => {
       expect(screen.getByText('—')).toBeInTheDocument();
     });
 
+    it('renders suspended subjects with a (suspended) suffix and line-through styling', async () => {
+      const users = [
+        {
+          ...initialUsers[0],
+          subjects: [SUBJECT_A, { ...SUBJECT_B, membership_enabled: false }],
+        },
+      ];
+      await renderPage({ users });
+
+      const suspended = screen.getByText('Subject B (suspended)');
+      expect(suspended.className).toContain('line-through');
+      // The enabled subject (membership_enabled undefined) renders normally
+      const cell = suspended.closest('td');
+      const enabled = within(cell).getByText('Subject A');
+      expect(enabled.className || '').not.toContain('line-through');
+      expect(screen.queryByText('Subject A (suspended)')).not.toBeInTheDocument();
+    });
+
+    it('renders plain joined names when memberships are explicitly enabled', async () => {
+      const users = [
+        {
+          ...initialUsers[0],
+          subjects: [
+            { ...SUBJECT_A, membership_enabled: true },
+            { ...SUBJECT_B, membership_enabled: true },
+          ],
+        },
+      ];
+      await renderPage({ users });
+
+      expect(screen.getByText('Subject A, Subject B')).toBeInTheDocument();
+      expect(screen.queryByText(/\(suspended\)/)).not.toBeInTheDocument();
+    });
+
     it('adds a title tooltip listing memberships as Subject › Assignment › Group lines', async () => {
       const secondMembership = {
         assignment_id: 'bbbbbbbb-0000-4000-8000-000000000002',

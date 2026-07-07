@@ -145,6 +145,56 @@ describe('App', () => {
     expect(screen.queryByText('Register Page')).not.toBeInTheDocument();
   });
 
+  describe('/users admin-only routes', () => {
+    it('renders users page for admins', () => {
+      useAuth.mockReturnValue(asAdmin());
+
+      window.history.pushState({}, '', '/users');
+      render(<App />);
+
+      expect(screen.getByText('Users Page')).toBeInTheDocument();
+    });
+
+    it('redirects assignment managers from /users to dashboard', () => {
+      useAuth.mockReturnValue(asAssignmentManager());
+
+      window.history.pushState({}, '', '/users');
+      render(<App />);
+
+      expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
+      expect(screen.queryByText('Users Page')).not.toBeInTheDocument();
+    });
+
+    it('redirects plain users from /users to dashboard', () => {
+      useAuth.mockReturnValue(asPlainUser());
+
+      window.history.pushState({}, '', '/users');
+      render(<App />);
+
+      expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
+      expect(screen.queryByText('Users Page')).not.toBeInTheDocument();
+    });
+
+    it('renders import users page for admins', () => {
+      useAuth.mockReturnValue(asAdmin());
+
+      window.history.pushState({}, '', '/users/import');
+      render(<App />);
+
+      expect(screen.getByText('Import Users Page')).toBeInTheDocument();
+    });
+
+    it('redirects assignment managers from /users/import to dashboard', () => {
+      useAuth.mockReturnValue(asAssignmentManager());
+
+      window.history.pushState({}, '', '/users/import');
+      render(<App />);
+
+      expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
+      expect(screen.queryByText('Import Users Page')).not.toBeInTheDocument();
+    });
+  });
+
   describe('/subjects routes', () => {
     it('renders subjects page for assignment managers', () => {
       useAuth.mockReturnValue(asAssignmentManager());

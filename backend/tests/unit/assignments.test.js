@@ -897,7 +897,9 @@ describe('Assignments Routes', () => {
       Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID });
       User.findByEmails.mockResolvedValue([{ id: USER_ID, email: 'a@test.com', role_name: 'user' }]);
       Group.findByNames.mockResolvedValue([{ id: GROUP_ID, name: 'G1' }]);
-      const err = new Error('User is not a member of this subject');
+      // The model now throws 'User is not an active member of this subject';
+      // the route maps any 403 to its own hardcoded skip reason.
+      const err = new Error('User is not an active member of this subject');
       err.statusCode = 403;
       UserGroup.assignUserToGroup.mockRejectedValue(err);
       await handlers['/assignments/:id/import-mappings_post'](

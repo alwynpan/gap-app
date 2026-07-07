@@ -80,7 +80,7 @@ describe('GET /api/users', () => {
     expect(admin.memberships).toEqual([]);
   });
 
-  it('AM sees only users in subjects containing their managed assignments', async () => {
+  it('assignment manager cannot list users — the route is admin-only', async () => {
     const s2only = await createUser({ username: 's2only', email: 's2only@test.com' });
     await addUserToSubject(s2only.id, subject2.id);
 
@@ -89,17 +89,15 @@ describe('GET /api/users', () => {
       url: '/api/users',
       headers: { authorization: `Bearer ${amToken}` },
     });
-    expect(res.statusCode).toBe(200);
-    const usernames = JSON.parse(res.body).users.map((u) => u.username);
-    expect(usernames).toContain('user1');
-    expect(usernames).not.toContain('s2only');
+    expect(res.statusCode).toBe(403);
 
-    // Admin sees both
+    // Admin still sees everyone
     const adminRes = await app.inject({
       method: 'GET',
       url: '/api/users',
       headers: { authorization: `Bearer ${adminToken}` },
     });
+    expect(adminRes.statusCode).toBe(200);
     const allUsernames = JSON.parse(adminRes.body).users.map((u) => u.username);
     expect(allUsernames).toContain('user1');
     expect(allUsernames).toContain('s2only');
@@ -721,8 +719,72 @@ describe('PUT /api/users/:id', () => {
     expect(JSON.parse(res.body).error).toMatch(/username/i);
   });
 
+  it('AM can edit a user enrolled in a managed subject; out-of-scope user returns 403', async () => {
+    const inScope = await createUser({ username: 'inscope', email: 'inscope@test.com' });
+    await addUserToSubject(inScope.id, subject1.id);
+    const outScope = await createUser({ username: 'outscope', email: 'outscope@test.com' });
+    await addUserToSubject(outScope.id, subject2.id);
+
+    const okRes = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${inScope.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { email: 'inscope-new@test.com', firstName: 'In', lastName: 'Scope' },
+    });
+    expect(okRes.statusCode).toBe(200);
+    expect(JSON.parse(okRes.body).user.email).toBe('inscope-new@test.com');
+
+    const forbidden = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${outScope.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { email: 'outscope-new@test.com', firstName: 'Out', lastName: 'Scope' },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(JSON.parse(forbidden.body).error).toBe('Forbidden: user is not in a subject you manage');
+  });
+
+  it('AM can still edit a user whose managed-subject membership is suspended (includeDisabled scope)', async () => {
+    const suspended = await createUser({ username: 'suspscope', email: 'suspscope@test.com' });
+    await addUserToSubject(suspended.id, subject1.id, false);
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${suspended.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { email: 'suspscope-new@test.com', firstName: 'Still', lastName: 'Editable' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).user.email).toBe('suspscope-new@test.com');
+  });
+
+  it('AM cannot enable or disable accounts; admin can', async () => {
+    const u = await createUser({ username: 'amdisable', email: 'amdisable@test.com' });
+    await addUserToSubject(u.id, subject1.id);
+
+    const amRes = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { email: u.email, firstName: 'A', lastName: 'M', enabled: false },
+    });
+    expect(amRes.statusCode).toBe(403);
+    expect(JSON.parse(amRes.body).error).toBe('Only admins can enable or disable accounts');
+
+    const adminRes = await app.inject({
+      method: 'PUT',
+      url: `/api/users/${u.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { email: u.email, firstName: 'A', lastName: 'M', enabled: false },
+    });
+    expect(adminRes.statusCode).toBe(200);
+    expect(JSON.parse(adminRes.body).user.enabled).toBe(false);
+  });
+
   it('AM cannot escalate a user role; admin can change roles', async () => {
     const u = await createUser({ username: 'rolechange', email: 'rolechange@test.com' });
+    // The target must be enrolled in a subject the AM manages, or the AM gets 403
+    await addUserToSubject(u.id, subject1.id);
 
     const amRes = await app.inject({
       method: 'PUT',
@@ -1311,7 +1373,7 @@ describe('POST /api/users/import', () => {
 // POST /api/users/send-setup-emails
 // ---------------------------------------------------------------------------
 describe('POST /api/users/send-setup-emails', () => {
-  async function createPendingUser(username, email) {
+  async function createPendingUser(username, email, subjectId = null) {
     const res = await app.inject({
       method: 'POST',
       url: '/api/users',
@@ -1321,7 +1383,7 @@ describe('POST /api/users/send-setup-emails', () => {
         email,
         firstName: 'P',
         lastName: 'User',
-        subjectIds: [subject1.id],
+        subjectIds: [subjectId || subject1.id],
         sendSetupEmail: false,
       },
     });
@@ -1376,6 +1438,43 @@ describe('POST /api/users/send-setup-emails', () => {
       payload: {},
     });
     expect(forbidden.statusCode).toBe(403);
+  });
+
+  it('AM can send to explicit targets in managed subjects; any out-of-scope target returns 403', async () => {
+    const inScope = await createPendingUser('ampendin', 'ampendin@test.com');
+    const outScope = await createPendingUser('ampendout', 'ampendout@test.com', subject2.id);
+
+    const forbidden = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { userIds: [inScope.id, outScope.id] },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(JSON.parse(forbidden.body).error).toBe('Forbidden: user is not in a subject you manage');
+
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: { userIds: [inScope.id] },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(JSON.parse(ok.body).sent).toBe(1);
+  });
+
+  it('AM all-pending mode only sends to pending users of managed subjects', async () => {
+    await createPendingUser('ampendall1', 'ampendall1@test.com');
+    await createPendingUser('ampendall2', 'ampendall2@test.com', subject2.id);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${amToken}` },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).sent).toBe(1);
   });
 
   it('validates userIds (max 500, valid UUIDs)', async () => {
