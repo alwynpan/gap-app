@@ -42,7 +42,7 @@ async function query(text, params = []) {
 }
 
 /**
- * Truncates test data in FK-safe order, preserving the seeded admin user.
+ * Deletes test data in FK-safe order, preserving the seeded admin user.
  * Call in beforeEach to guarantee a clean slate between tests.
  */
 async function cleanDatabase() {
@@ -77,13 +77,17 @@ async function createUser({
   const db = getPool();
   const hash = await bcrypt.hash(password, 4);
 
+  const roleRow = await db.query('SELECT id FROM roles WHERE name = $1', [role]);
+  if (!roleRow.rows[0]) {
+    throw new Error(`createUser: unknown role "${role}"`);
+  }
+
   const { rows } = await db.query(
     `INSERT INTO users (username, email, password_hash, first_name, last_name, student_id, role_id, enabled, status)
      VALUES ($1, $2, $3, $4, $5, $6,
-             (SELECT id FROM roles WHERE name = $7),
-             $8, 'active')
+             $7, $8, 'active')
      RETURNING id, username, email, first_name, last_name, student_id, enabled`,
-    [username, email, hash, firstName, lastName, studentId, role, enabled]
+    [username, email, hash, firstName, lastName, studentId, roleRow.rows[0].id, enabled]
   );
   return { ...rows[0], password };
 }
@@ -122,25 +126,6 @@ async function addUserToSubject(userId, subjectId, enabled = true) {
     [userId, subjectId, enabled]
   );
   return rows[0] || null;
-}
-
-/**
- * Set the enabled flag on an existing subject membership directly in the DB.
- * Unlike the API, this does NOT touch group memberships — use it to seed
- * suspended states without side effects.
- */
-async function setMembershipEnabled(userId, subjectId, enabled) {
-  const db = getPool();
-  const { rows } = await db.query(
-    `UPDATE user_subjects SET enabled = $3
-     WHERE user_id = $1 AND subject_id = $2
-     RETURNING *`,
-    [userId, subjectId, enabled]
-  );
-  if (!rows[0]) {
-    throw new Error(`setMembershipEnabled: no membership for user ${userId} in subject ${subjectId}`);
-  }
-  return rows[0];
 }
 
 /**
@@ -187,8 +172,10 @@ async function createHierarchy({ subjectName = 'Subject 1', assignmentName = 'As
 /**
  * Assign a user (by username, case-insensitive) to a group directly in the DB.
  * Replaces any existing membership for the group's assignment and enrols the
- * user in the parent subject so the fixture satisfies the universal
- * subject-membership rule enforced by the backend.
+ * user in the parent subject as ACTIVE, so the fixture satisfies the universal
+ * subject-membership rule enforced by the backend. An already-suspended
+ * membership is re-enabled — a suspended member holding a group is a state the
+ * backend forbids, so seeding one would test nothing real.
  */
 async function assignUserToGroup(username, groupId) {
   const db = getPool();
@@ -212,8 +199,8 @@ async function assignUserToGroup(username, groupId) {
   }
 
   await db.query(
-    `INSERT INTO user_subjects (user_id, subject_id) VALUES ($1, $2)
-     ON CONFLICT (user_id, subject_id) DO NOTHING`,
+    `INSERT INTO user_subjects (user_id, subject_id, enabled) VALUES ($1, $2, true)
+     ON CONFLICT (user_id, subject_id) DO UPDATE SET enabled = true`,
     [user.id, group.subject_id]
   );
   await db.query('DELETE FROM user_groups WHERE user_id = $1 AND assignment_id = $2', [user.id, group.assignment_id]);
@@ -262,7 +249,6 @@ module.exports = {
   createSubject,
   createAssignment,
   addUserToSubject,
-  setMembershipEnabled,
   assignManager,
   createGroup,
   createHierarchy,

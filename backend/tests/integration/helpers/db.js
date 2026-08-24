@@ -37,7 +37,7 @@ async function cleanDatabase() {
     DELETE FROM user_groups WHERE TRUE;
     DELETE FROM assignment_managers WHERE TRUE;
     DELETE FROM user_subjects WHERE TRUE;
-    DELETE FROM users WHERE username != 'admin';
+    DELETE FROM users WHERE LOWER(username) != 'admin';
     DELETE FROM groups WHERE TRUE;
     DELETE FROM assignments WHERE TRUE;
     DELETE FROM subjects WHERE TRUE;
