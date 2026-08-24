@@ -41,9 +41,13 @@ describe('Email Service', () => {
 
       const { sendEmail } = require('../../../src/services/email');
       const { logger: mockLogger } = require('../../../src/utils/logger');
-      await sendEmail('to@test.com', 'Subject', '<p>Body</p>');
+      const delivered = await sendEmail('to@test.com', 'Subject', '<p>Body</p>');
 
-      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('To: to@test.com'));
+      // Reported as NOT delivered, so callers cannot count it as sent.
+      expect(delivered).toBe(false);
+      expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('To: to@test.com'));
+      // The body carries a one-time token, so it is never logged unless opted in.
+      expect(mockLogger.warn).not.toHaveBeenCalledWith(expect.stringContaining('<p>Body</p>'));
     });
 
     it('warns and does not send when SMTP host is missing in production', async () => {
@@ -62,7 +66,7 @@ describe('Email Service', () => {
         const { logger: mockLogger } = require('../../../src/utils/logger');
         await sendEmail('to@test.com', 'Subject', '<p>Body</p>');
 
-        expect(mockLogger.warn).toHaveBeenCalledWith('[EMAIL] SMTP not configured; email not sent.');
+        expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('SMTP not configured; email NOT sent'));
         expect(mockLogger.info).not.toHaveBeenCalled();
         expect(nodemailer.createTransport).not.toHaveBeenCalled();
       } finally {

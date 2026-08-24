@@ -299,6 +299,21 @@ describe('SubjectMembersSection', () => {
       await waitFor(() => expect(screen.getByText('Setup email sent')).toBeInTheDocument());
     });
 
+    // The endpoint answers 200 with per-user delivery failures, so a component
+    // that only checks the status code would wrongly report success.
+    it('reports non-delivery when the request succeeds but nothing was sent', async () => {
+      const user = userEvent.setup();
+      api.post.mockResolvedValue({
+        data: { sent: 0, errors: [{ reason: 'Email not sent: SMTP is not configured' }] },
+      });
+      await renderSection({ members: [makeMember({ status: 'pending' })] });
+
+      await user.click(await screen.findByRole('button', { name: /send setup email/i }));
+
+      expect(await screen.findByText(/SMTP is not configured/i)).toBeInTheDocument();
+      expect(screen.queryByText('Setup email sent')).not.toBeInTheDocument();
+    });
+
     it('hides the setup email action for non-pending members', async () => {
       await renderSection();
 
@@ -385,9 +400,27 @@ describe('SubjectMembersSection', () => {
       expect(options.some((o) => o.startsWith('mgr '))).toBe(false);
     });
 
+    // Adding an enrolled-but-suspended member changes nothing, so the UI must say
+    // so rather than claiming success.
+    it('reports that the member is suspended instead of claiming success', async () => {
+      const user = userEvent.setup();
+      const message = '1 user already enrolled but suspended — enable them to restore access.';
+      api.post.mockResolvedValue({ data: { added: 0, alreadyEnrolled: 0, suspended: 1, message } });
+      await renderSection({ allUsers: [makeMember(), nonMember] });
+
+      await user.click(screen.getByRole('button', { name: /add existing user/i }));
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Select user' }), nonMember.id);
+      await user.click(screen.getByRole('button', { name: 'Add' }));
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.queryByText(/added to subject/i)).not.toBeInTheDocument();
+    });
+
     it('adds the chosen user to the subject, refetches and shows success', async () => {
       const user = userEvent.setup();
-      api.post.mockResolvedValue({ data: { message: 'ok' } });
+      api.post.mockResolvedValue({
+        data: { added: 1, alreadyEnrolled: 0, suspended: 0, message: '1 user added to subject.' },
+      });
       await renderSection({ allUsers: [makeMember(), nonMember] });
       const memberCallsBefore = api.get.mock.calls.filter((c) => /\/subjects\/[^/]+\/users$/.test(c[0])).length;
 
@@ -401,7 +434,7 @@ describe('SubjectMembersSection', () => {
         });
       });
       await waitFor(() => {
-        expect(screen.getByText('User added to subject')).toBeInTheDocument();
+        expect(screen.getByText('1 user added to subject.')).toBeInTheDocument();
         expect(api.get.mock.calls.filter((c) => /\/subjects\/[^/]+\/users$/.test(c[0])).length).toBeGreaterThan(
           memberCallsBefore
         );

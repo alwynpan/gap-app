@@ -46,12 +46,15 @@ const usernameSchema = sanitizedString.pipe(
     .regex(USERNAME_RE, 'Username may only contain letters, numbers, underscores, hyphens, and dots')
 );
 
+// Lowercased so one mailbox is one account: the DB enforces uniqueness on
+// LOWER(email) (migration 015) and every lookup compares the canonical form.
 const emailSchema = sanitizedString.pipe(
   z
     .string()
     .min(1, 'Email is required')
     .max(255, 'Email must be at most 255 characters')
     .regex(EMAIL_RE, 'Invalid email format')
+    .transform((value) => value.toLowerCase())
 );
 
 // Password is never sanitized (would corrupt special characters users intentionally type)
@@ -206,6 +209,13 @@ const setMemberEnabledSchema = z.object({
   enabled: z.boolean(),
 });
 
+const setJoinLockedSchema = z.object({
+  joinLocked: z.boolean({
+    required_error: 'joinLocked is required',
+    invalid_type_error: 'joinLocked must be a boolean',
+  }),
+});
+
 const setAssignmentManagersSchema = z.object({
   userIds: uuidArraySchema.max(2000, 'At most 2000 users per request'),
 });
@@ -237,12 +247,6 @@ const bulkCreateGroupsSchema = z.object({
     .max(BULK_CREATE_MAX, `At most ${BULK_CREATE_MAX} groups per request`),
 });
 
-const updateConfigSchema = z.object({
-  value: z
-    .string({ required_error: 'Value is required', invalid_type_error: 'Value must be a string' })
-    .min(1, 'Value is required'),
-});
-
 const forgotPasswordSchema = z.object({
   email: emailSchema,
 });
@@ -259,7 +263,6 @@ module.exports = {
   ROLE_VALUES,
   BULK_CREATE_MAX,
   bulkCreateGroupItemSchema,
-  updateConfigSchema,
   usernameSchema,
   emailSchema,
   passwordSchema,
@@ -285,6 +288,7 @@ module.exports = {
   addSubjectUsersSchema,
   setMemberEnabledSchema,
   setAssignmentManagersSchema,
+  setJoinLockedSchema,
   updateUserGroupSchema,
   bulkCreateGroupsSchema,
 };

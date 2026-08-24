@@ -131,3 +131,58 @@ describe('downloadCsv', () => {
     expect(removeChildSpy).toHaveBeenCalledWith(anchorElement);
   });
 });
+
+describe('csvEscape formula injection', () => {
+  it.each(['=', '+', '-', '@'])('neutralises a value starting with %s', (trigger) => {
+    expect(csvEscape(`${trigger}HYPERLINK("http://evil","x")`)).toContain("'");
+  });
+
+  it('neutralises a leading tab and carriage return', () => {
+    expect(csvEscape('\tcmd')).toContain("'");
+    expect(csvEscape('\rcmd')).toContain("'");
+  });
+
+  it('neutralises a formula hidden behind leading whitespace', () => {
+    expect(csvEscape('   =1+1')).toBe("'   =1+1");
+  });
+
+  it('leaves ordinary values untouched', () => {
+    expect(csvEscape('Team Alpha')).toBe('Team Alpha');
+    expect(csvEscape('alice@example.com')).toBe('alice@example.com');
+    expect(csvEscape('')).toBe('');
+    expect(csvEscape(null)).toBe('');
+  });
+
+  it('still quotes separators and quotes', () => {
+    expect(csvEscape('a,b')).toBe('"a,b"');
+    expect(csvEscape('say "hi"')).toBe('"say ""hi"""');
+  });
+});
+
+describe('parseCsv / csvEscape round trip', () => {
+  it('round trips a value containing a newline', () => {
+    const original = 'Team\nBlue';
+    const csv = `name\n${csvEscape(original)}`;
+    const parsed = parseCsv(csv);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[1][0]).toBe(original);
+  });
+
+  it('round trips embedded commas and quotes', () => {
+    const rows = [
+      ['email', 'group'],
+      ['a@b.com', 'Team "A", B'],
+    ];
+    const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n');
+    expect(parseCsv(csv)).toEqual(rows);
+  });
+
+  it('keeps quoted newlines from shifting columns', () => {
+    const csv = 'email,group\n"a@b.com","Team\nBlue"\n"c@d.com","Team Red"';
+    expect(parseCsv(csv)).toEqual([
+      ['email', 'group'],
+      ['a@b.com', 'Team\nBlue'],
+      ['c@d.com', 'Team Red'],
+    ]);
+  });
+});

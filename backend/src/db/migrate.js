@@ -172,7 +172,13 @@ async function migrateUp() {
     // Create base schema if tables don't exist (idempotent)
     await client.query(createSQL);
 
-    // Check if admin user needs to be seeded (first-time setup)
+    // Migrations run BEFORE seeding: migration 012 replaces the username unique
+    // constraint with a functional index, and the seed must match whichever
+    // shape is current.
+    await runMigrations(client);
+
+    // Seed the admin on first-time setup, or to recover a database whose admin
+    // accounts were all removed.
     const { rows } = await client.query(
       "SELECT u.id FROM users u JOIN roles r ON u.role_id = r.id WHERE r.name = 'admin' LIMIT 1"
     );
@@ -183,17 +189,24 @@ async function migrateUp() {
       if (adminPassword) {
         const saltRounds = 10;
         const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
+        // WHERE NOT EXISTS rather than ON CONFLICT (username): after migration 012
+        // uniqueness is a functional index on LOWER(username), which ON CONFLICT
+        // cannot infer — it raises 42P10 at plan time and aborts startup.
+        // $1 is cast explicitly: used bare in the SELECT list and inside LOWER()
+        // it deduces two types and Postgres rejects it (42P08).
         await client.query(
           `INSERT INTO users (username, email, password_hash, first_name, last_name, role_id, enabled)
-           VALUES ($1, $2, $3, 'Admin', 'User', (SELECT id FROM roles WHERE name = 'admin'), true)
-           ON CONFLICT (username) DO NOTHING`,
+           SELECT $1::varchar, $2::varchar, $3::varchar, 'Admin', 'User',
+                  (SELECT id FROM roles WHERE name = 'admin'), true
+           WHERE NOT EXISTS (SELECT 1 FROM users WHERE LOWER(username) = LOWER($1::varchar))`,
           [adminUsername, 'admin@gap.local', passwordHash]
         );
         console.log('Admin user created.');
+      } else {
+        console.warn('WARNING: no admin account exists and ADMIN_PASSWORD is not set; skipping admin seed.');
       }
     }
 
-    await runMigrations(client);
     await client.query('COMMIT');
     console.log('Incremental migrations completed successfully!');
   } catch (error) {

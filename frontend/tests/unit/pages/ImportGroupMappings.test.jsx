@@ -64,6 +64,20 @@ function mockApiRoutes({
       const list = groupsByAssignment ? groupsByAssignment[groupsMatch[1]] || [] : groups;
       return Promise.resolve({ data: { groups: list } });
     }
+    const previewMatch = url.match(/\/assignments\/([^/]+)\/import-preview$/);
+    if (previewMatch) {
+      const assignmentId = previewMatch[1];
+      const list = groupsByAssignment ? groupsByAssignment[assignmentId] || [] : groups;
+      // The endpoint reports each member's current group in THIS assignment only.
+      const previewUsers = users.map((u) => ({
+        id: u.id,
+        email: u.email,
+        role_name: u.role_name,
+        membership_enabled: u.membership_enabled ?? true,
+        current_group_id: (u.memberships || []).find((m) => m.assignment_id === assignmentId)?.group_id ?? null,
+      }));
+      return Promise.resolve({ data: { users: previewUsers, groups: list } });
+    }
     if (url.endsWith('/users')) {
       return Promise.resolve({ data: { users } });
     }
@@ -302,11 +316,13 @@ describe('ImportGroupMappings page', () => {
       await renderPage();
       uploadCsv('group name,email\nTeam Beta,alice@test.com');
       await waitFor(() => expect(screen.getByText(/Group not found/i)).toBeInTheDocument());
-      expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/assignments\/asg-1\/groups$/));
-      // Group lists are never fetched from the old global /groups endpoint
-      const groupCalls = api.get.mock.calls.filter(([url]) => /\/groups$/.test(url));
-      expect(groupCalls.length).toBeGreaterThan(0);
-      expect(groupCalls.every(([url]) => /\/assignments\/[^/]+\/groups$/.test(url))).toBe(true);
+      expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/assignments\/asg-1\/import-preview$/));
+      // Preview data must come from the assignment-scoped endpoint only. The
+      // admin-only user list would 403 for an assignment manager, which used to
+      // make this page unusable for them.
+      const urls = api.get.mock.calls.map(([url]) => url);
+      expect(urls.some((url) => /\/users$/.test(url))).toBe(false);
+      expect(urls.some((url) => /\/groups$/.test(url))).toBe(false);
     });
 
     it('refetches groups and rebuilds the preview when the assignment changes', async () => {
@@ -323,7 +339,9 @@ describe('ImportGroupMappings page', () => {
 
       await userEvent.selectOptions(screen.getByLabelText('Assignment'), 'asg-2');
 
-      await waitFor(() => expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/assignments\/asg-2\/groups$/)));
+      await waitFor(() =>
+        expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/assignments\/asg-2\/import-preview$/))
+      );
       // "Team Alpha" does not exist in asg-2 → row becomes a skip
       await waitFor(() => expect(screen.getByText(/Group not found/i)).toBeInTheDocument());
     });

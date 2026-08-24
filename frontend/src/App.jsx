@@ -22,9 +22,29 @@ function PublicRoute({ children }) {
   return user ? <Navigate to="/dashboard" replace /> : children;
 }
 
-function AppRoutes() {
-  const { registrationEnabled } = useAuth();
+/** Keeps /register mounted while the feature flag is still loading, so a deep
+ *  link is not swallowed by the catch-all before the flag arrives. */
+function RegisterRoute() {
+  const { registrationEnabled, registrationConfigLoading } = useAuth();
 
+  if (registrationConfigLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+  if (!registrationEnabled) {
+    return <Navigate to="/login" replace />;
+  }
+  return (
+    <PublicRoute>
+      <Register />
+    </PublicRoute>
+  );
+}
+
+function AppRoutes() {
   return (
     <Routes>
       {/* Public Routes */}
@@ -36,16 +56,7 @@ function AppRoutes() {
           </PublicRoute>
         }
       />
-      {registrationEnabled && (
-        <Route
-          path="/register"
-          element={
-            <PublicRoute>
-              <Register />
-            </PublicRoute>
-          }
-        />
-      )}
+      <Route path="/register" element={<RegisterRoute />} />
       <Route
         path="/forgot-password"
         element={

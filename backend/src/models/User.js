@@ -11,6 +11,9 @@ function normalizeBcryptRounds(value) {
 
 const BCRYPT_ROUNDS = normalizeBcryptRounds(process.env.BCRYPT_ROUNDS || '12');
 
+// Arbitrary fixed key so all admin-deletion transactions serialize on one lock.
+const ADMIN_INVARIANT_LOCK = 848223001;
+
 class User {
   static async findAll(filters = {}) {
     const conditions = [];
@@ -121,7 +124,7 @@ class User {
               u.role_id, r.name as role_name
        FROM users u
        LEFT JOIN roles r ON u.role_id = r.id
-       WHERE u.email = $1`,
+       WHERE LOWER(u.email) = LOWER($1)`,
       [email]
     );
     return result.rows[0] || null;
@@ -140,14 +143,17 @@ class User {
     if (!emails || emails.length === 0) {
       return [];
     }
+    // Canonicalise here too, so callers cannot silently miss rows by passing
+    // mixed case into the LOWER(email) comparison.
+    const lower = emails.map((e) => String(e).toLowerCase());
     const result = await pool.query(
       `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.student_id,
               u.enabled, u.status, u.created_at, u.updated_at,
               u.role_id, r.name as role_name
        FROM users u
        LEFT JOIN roles r ON u.role_id = r.id
-       WHERE u.email = ANY($1)`,
-      [emails]
+       WHERE LOWER(u.email) = ANY($1)`,
+      [lower]
     );
     return result.rows;
   }
@@ -242,6 +248,11 @@ class User {
     return result.rows[0] || null;
   }
 
+  /** Hash a password without writing it, for callers that own the transaction. */
+  static hashPassword(password) {
+    return bcrypt.hash(password, BCRYPT_ROUNDS);
+  }
+
   static async updatePassword(id, newPassword) {
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     const result = await pool.query(
@@ -258,20 +269,60 @@ class User {
     await pool.query(`UPDATE users SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [id]);
   }
 
+  /**
+   * Delete users, refusing to leave the system without an enabled admin.
+   * The survivor count and the delete share one transaction under an advisory
+   * lock, so two concurrent requests cannot each count the other's admin as a
+   * survivor and both succeed.
+   *
+   * @param {string[]} ids
+   * @returns {Promise<{deleted: number, rows: Array}>}
+   * @throws {Error} statusCode 400 when no enabled admin would remain.
+   */
+  static async deleteMany(ids) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Serialize every admin-affecting deletion against the others.
+      await client.query('SELECT pg_advisory_xact_lock($1)', [ADMIN_INVARIANT_LOCK]);
+
+      const { rows: survivors } = await client.query(
+        `SELECT COUNT(*)::int AS n
+         FROM users u JOIN roles r ON r.id = u.role_id
+         WHERE r.name = 'admin' AND u.enabled = true AND NOT (u.id = ANY($1))`,
+        [ids]
+      );
+      if (survivors[0].n === 0) {
+        const err = new Error('Cannot delete the last enabled admin account');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const result = await client.query('DELETE FROM users WHERE id = ANY($1) RETURNING *', [ids]);
+      await client.query('COMMIT');
+      return { deleted: result.rowCount, rows: result.rows };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   static async delete(id) {
-    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING *', [id]);
-    return result.rows[0];
+    const { rows } = await this.deleteMany([id]);
+    return rows[0];
   }
 
   /**
-   * Delete multiple users in a single query.
+   * Delete multiple users, preserving the enabled-admin invariant.
    *
    * @param {string[]} ids
    * @returns {Promise<number>} Number of rows deleted.
    */
   static async bulkDelete(ids) {
-    const result = await pool.query('DELETE FROM users WHERE id = ANY($1)', [ids]);
-    return result.rowCount;
+    const { deleted } = await this.deleteMany(ids);
+    return deleted;
   }
 
   static async verifyPassword(password, hash) {

@@ -64,16 +64,15 @@ function mockApi({
   failSubjects = [],
 } = {}) {
   api.get.mockImplementation((url) => {
-    if (url.includes('/config/group-join-locked')) {
-      return Promise.resolve({ data: { locked } });
-    }
     const subjectMatch = url.match(/\/subjects\/([^/?]+)$/);
     if (subjectMatch) {
       const id = subjectMatch[1];
       if (failSubjects.includes(id)) {
         return Promise.reject(new Error('subject fetch failed'));
       }
-      return Promise.resolve({ data: { subject: { id }, assignments: subjects[id] ?? [] } });
+      // `locked` stamps the per-assignment flag the component now reads.
+      const assignments = (subjects[id] ?? []).map((a) => ({ join_locked: locked, ...a }));
+      return Promise.resolve({ data: { subject: { id }, assignments } });
     }
     const assignmentMatch = url.match(/\/assignments\/([^/?]+)\/groups/);
     if (assignmentMatch) {
@@ -388,7 +387,7 @@ describe('Dashboard page', () => {
       expect(screen.queryByText('A. Smith')).not.toBeInTheDocument();
     });
 
-    it('hides the leave button and shows lock banner when the global lock is on', async () => {
+    it('hides the leave button and shows lock banner when the assignment is locked', async () => {
       mockAuth({ user: memberUser });
       mockApi({ locked: true, subjects: subjectFixture });
 
@@ -644,7 +643,7 @@ describe('Dashboard page', () => {
       expect(api.post).not.toHaveBeenCalled();
     });
 
-    it('shows the locked banner instead of join UI when the global lock is on', async () => {
+    it('shows the locked banner instead of join UI when the assignment is locked', async () => {
       mockAuth({ user: makeUser() });
       mockApi({
         locked: true,

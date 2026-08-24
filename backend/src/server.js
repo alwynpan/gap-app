@@ -4,6 +4,7 @@ const helmet = require('@fastify/helmet');
 const rateLimit = require('@fastify/rate-limit');
 const config = require('./config/index');
 const { logger } = require('./utils/logger');
+const User = require('./models/User');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -11,7 +12,6 @@ const usersRoutes = require('./routes/users');
 const groupsRoutes = require('./routes/groups');
 const subjectsRoutes = require('./routes/subjects');
 const assignmentsRoutes = require('./routes/assignments');
-const configRoutes = require('./routes/config');
 
 // Import plugins
 const authPlugin = require('./middleware/auth');
@@ -79,18 +79,41 @@ async function buildServer({ logger: disableLogger } = {}) {
     }
   });
 
-  // PreHandler to attach user to request
+  // PreHandler to attach user to request.
+  // The JWT carries identity only: role and account state are re-read from the
+  // database every request so disabling, demoting, or deleting an account takes
+  // effect immediately rather than at token expiry.
   fastify.addHook('preHandler', async (request, _reply) => {
-    if (request.headers.authorization) {
-      try {
-        const token = request.headers.authorization.replace('Bearer ', '');
-        const decoded = await fastify.verifyToken(token);
-        request.user = decoded;
-      } catch (_err) {
-        // Token invalid, but don't fail - let route-specific auth handle it
-        request.user = null;
-      }
+    if (!request.headers.authorization) {
+      return;
     }
+
+    let decoded;
+    try {
+      const token = request.headers.authorization.replace('Bearer ', '');
+      decoded = await fastify.verifyToken(token);
+    } catch (_err) {
+      // Token invalid, but don't fail - let route-specific auth handle it
+      request.user = null;
+      return;
+    }
+
+    // A pool timeout or other database fault is NOT an authentication failure:
+    // answering 401 would make the client discard a valid session over a
+    // transient blip. Answer 500 — but generically, since Fastify's default
+    // handler would otherwise echo the database error message to the caller.
+    let principal;
+    try {
+      principal = await User.findById(decoded.id);
+    } catch (err) {
+      logger.error('Principal lookup failed', { err: err.message, code: err.code });
+      return _reply.code(500).send({ error: 'Internal Server Error' });
+    }
+    if (!principal || !principal.enabled || principal.status === 'inactive') {
+      request.user = null;
+      return;
+    }
+    request.user = { ...decoded, role: principal.role_name };
   });
 
   // Health check endpoint
@@ -120,7 +143,7 @@ async function buildServer({ logger: disableLogger } = {}) {
             me: 'GET /api/auth/me',
           },
           users: {
-            list: 'GET /api/users (admin/assignment_manager)',
+            list: 'GET /api/users (admin)',
             get: 'GET /api/users/:id',
             create: 'POST /api/users (admin/assignment_manager)',
             update: 'PUT /api/users/:id (admin, or self)',
@@ -156,6 +179,7 @@ async function buildServer({ logger: disableLogger } = {}) {
             setManagers: 'PUT /api/assignments/:id/managers (admin)',
             exportMappings: 'GET /api/assignments/:id/export-mappings (admin/manager)',
             importMappings: 'POST /api/assignments/:id/import-mappings (admin/manager)',
+            setJoinLock: 'PUT /api/assignments/:id/join-lock (admin/manager)',
           },
         },
       };
@@ -168,7 +192,6 @@ async function buildServer({ logger: disableLogger } = {}) {
   await fastify.register(groupsRoutes, { prefix: '/api' });
   await fastify.register(subjectsRoutes, { prefix: '/api' });
   await fastify.register(assignmentsRoutes, { prefix: '/api' });
-  await fastify.register(configRoutes, { prefix: '/api' });
 
   return fastify;
 }

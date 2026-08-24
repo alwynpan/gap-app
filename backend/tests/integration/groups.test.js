@@ -576,7 +576,7 @@ describe('POST /api/groups/:id/join', () => {
     expect(JSON.parse(res.body).error).toMatch(/not an active member of this subject/i);
   });
 
-  it('a user disabled after login cannot join (stale JWT) — 403 Account is disabled', async () => {
+  it('a user disabled after login cannot join (stale JWT) — 401 Unauthorized', async () => {
     const g = await createGroup({ assignmentId: assignment.id, name: 'NoDisabledJoin' });
     // user1 logs in first, then is disabled; the JWT remains valid
     await getPool().query('UPDATE users SET enabled = false WHERE id = $1', [user1.id]);
@@ -585,8 +585,7 @@ describe('POST /api/groups/:id/join', () => {
       url: `/api/groups/${g.id}/join`,
       headers: { authorization: `Bearer ${userToken}` },
     });
-    expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).error).toBe('Account is disabled');
+    expect(res.statusCode).toBe(401);
     const { rows } = await getPool().query('SELECT 1 FROM user_groups WHERE user_id = $1', [user1.id]);
     expect(rows).toHaveLength(0);
   });
@@ -687,14 +686,38 @@ describe('POST /api/groups/:id/join', () => {
     expect(badId.statusCode).toBe(400);
   });
 
-  it('group_join_locked blocks regular users but not an AM who is a subject member', async () => {
+  // The bypass is assignment-scoped. am2 manages nothing, so inside this
+  // assignment they are an ordinary participant and the lock applies.
+  it('a locked assignment also blocks an AM who does not manage it', async () => {
+    const g = await createGroup({ assignmentId: assignment.id, name: 'LockedForOtherAM' });
+    await addUserToSubject(am2.id, subject.id);
+    await app.inject({
+      method: 'PUT',
+      url: `/api/assignments/${assignment.id}/join-lock`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { joinLocked: true },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/groups/${g.id}/join`,
+      headers: { authorization: `Bearer ${am2Token}` },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toMatch(/locked/i);
+    const { rows } = await getPool().query('SELECT 1 FROM user_groups WHERE user_id = $1', [am2.id]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('a locked assignment blocks regular users but not an AM who is a subject member', async () => {
     const g = await createGroup({ assignmentId: assignment.id, name: 'LockedGroup' });
     await addUserToSubject(am1.id, subject.id);
     await app.inject({
       method: 'PUT',
-      url: '/api/config/group_join_locked',
+      url: `/api/assignments/${assignment.id}/join-lock`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { value: 'true' },
+      payload: { joinLocked: true },
     });
 
     const userRes = await app.inject({
@@ -749,7 +772,7 @@ describe('POST /api/groups/:id/leave', () => {
     expect(JSON.parse(res.body).error).toMatch(/not a member/i);
   });
 
-  it('a user disabled after login cannot leave (stale JWT) — 403 Account is disabled', async () => {
+  it('a user disabled after login cannot leave (stale JWT) — 401 Unauthorized', async () => {
     const g = await createGroup({ assignmentId: assignment.id, name: 'NoDisabledLeave' });
     await addUserToGroup(user1.id, g.id, assignment.id);
     await getPool().query('UPDATE users SET enabled = false WHERE id = $1', [user1.id]);
@@ -758,8 +781,7 @@ describe('POST /api/groups/:id/leave', () => {
       url: `/api/groups/${g.id}/leave`,
       headers: { authorization: `Bearer ${userToken}` },
     });
-    expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).error).toBe('Account is disabled');
+    expect(res.statusCode).toBe(401);
     const { rows } = await getPool().query('SELECT 1 FROM user_groups WHERE user_id = $1', [user1.id]);
     expect(rows).toHaveLength(1);
   });
@@ -776,7 +798,7 @@ describe('POST /api/groups/:id/leave', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('user attempting to leave when group_join_locked=true returns 403', async () => {
+  it('user attempting to leave a locked assignment returns 403', async () => {
     const g = await createGroup({ assignmentId: assignment.id, name: 'LockedLeaveGroup' });
     await app.inject({
       method: 'POST',
@@ -785,9 +807,9 @@ describe('POST /api/groups/:id/leave', () => {
     });
     await app.inject({
       method: 'PUT',
-      url: '/api/config/group_join_locked',
+      url: `/api/assignments/${assignment.id}/join-lock`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { value: 'true' },
+      payload: { joinLocked: true },
     });
 
     const res = await app.inject({

@@ -1391,6 +1391,32 @@ describe('POST /api/users/send-setup-emails', () => {
     return JSON.parse(res.body).user;
   }
 
+  /**
+   * How many pending users the request selected. With SMTP unconfigured nothing
+   * is delivered, so a target shows up as an error rather than in `sent` — the
+   * scoping assertions below care about selection, not delivery.
+   */
+  function targetedCount(body) {
+    const parsed = JSON.parse(body);
+    return parsed.sent + parsed.errors.length;
+  }
+
+  it('reports zero delivered and one error per target when SMTP is not configured', async () => {
+    const u = await createPendingUser('nosmtp1', 'nosmtp1@test.com');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users/send-setup-emails',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { userIds: [u.id] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.sent).toBe(0);
+    expect(body.errors).toEqual([
+      { userId: u.id, username: 'nosmtp1', reason: 'Email not sent: SMTP is not configured' },
+    ]);
+  });
+
   it('admin can send setup emails to all pending users', async () => {
     await createPendingUser('pending1', 'pending1@test.com');
     await createPendingUser('pending2', 'pending2@test.com');
@@ -1402,7 +1428,7 @@ describe('POST /api/users/send-setup-emails', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).sent).toBeGreaterThanOrEqual(2);
+    expect(targetedCount(res.body)).toBeGreaterThanOrEqual(2);
   });
 
   it('admin can send to specific userIds list', async () => {
@@ -1414,7 +1440,7 @@ describe('POST /api/users/send-setup-emails', () => {
       payload: { userIds: [u.id] },
     });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).sent).toBe(1);
+    expect(targetedCount(res.body)).toBe(1);
   });
 
   it('silently skips non-pending users in userIds', async () => {
@@ -1425,7 +1451,7 @@ describe('POST /api/users/send-setup-emails', () => {
       payload: { userIds: [user1.id] },
     });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).sent).toBe(0);
+    expect(targetedCount(res.body)).toBe(0);
   });
 
   it('returns 401 without token and 403 for regular user', async () => {
@@ -1460,7 +1486,7 @@ describe('POST /api/users/send-setup-emails', () => {
       payload: { userIds: [inScope.id] },
     });
     expect(ok.statusCode).toBe(200);
-    expect(JSON.parse(ok.body).sent).toBe(1);
+    expect(targetedCount(ok.body)).toBe(1);
   });
 
   it('AM all-pending mode only sends to pending users of managed subjects', async () => {
@@ -1474,7 +1500,7 @@ describe('POST /api/users/send-setup-emails', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).sent).toBe(1);
+    expect(targetedCount(res.body)).toBe(1);
   });
 
   it('validates userIds (max 500, valid UUIDs)', async () => {

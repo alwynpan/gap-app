@@ -331,18 +331,47 @@ describe('Users Routes', () => {
   });
 
   describe('GET /users/:id', () => {
-    it('requires admin/assignment_manager role to view other users', () => {
-      const mockFastify = createMockFastify({ checkRoleResult: false });
+    const SELF_ID = '00000000-0000-4000-8000-000000000001';
+    const OTHER_ID = '00000000-0000-4000-8000-000000000002';
+
+    /** Run the GET /users/:id preHandler for one caller/target pair. */
+    const runGetPreHandler = async (user, targetId = OTHER_ID) => {
+      const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
-      const request = {
-        user: { id: '00000000-0000-4000-8000-000000000001', role: 'user' },
-        params: { id: '00000000-0000-4000-8000-000000000002' },
-      };
-      handlers['/users/:id_get_pre'](request, mockReply);
-      expect(mockFastify.checkRole).toHaveBeenCalledWith(request, mockReply, ['admin', 'assignment_manager']);
+      await handlers['/users/:id_get_pre']({ user, params: { id: targetId } }, mockReply);
+      return mockReply;
+    };
+
+    it('lets a user view their own profile', async () => {
+      const reply = await runGetPreHandler({ id: SELF_ID, role: 'user' }, SELF_ID);
+      expect(reply.code).not.toHaveBeenCalled();
+    });
+
+    it('forbids a regular user from viewing another user', async () => {
+      const reply = await runGetPreHandler({ id: SELF_ID, role: 'user' });
+      expect(reply.code).toHaveBeenCalledWith(403);
+    });
+
+    it('lets an admin view any user', async () => {
+      const reply = await runGetPreHandler({ id: SELF_ID, role: 'admin' });
+      expect(reply.code).not.toHaveBeenCalled();
+    });
+
+    it('lets an assignment_manager view a user inside a subject they manage', async () => {
+      Assignment.managesAnySubjectOfUser.mockResolvedValue(true);
+      const reply = await runGetPreHandler({ id: SELF_ID, role: 'assignment_manager' });
+      expect(Assignment.managesAnySubjectOfUser).toHaveBeenCalledWith(SELF_ID, OTHER_ID);
+      expect(reply.code).not.toHaveBeenCalled();
+    });
+
+    it('forbids an assignment_manager from viewing an out-of-scope user', async () => {
+      Assignment.managesAnySubjectOfUser.mockResolvedValue(false);
+      const reply = await runGetPreHandler({ id: SELF_ID, role: 'assignment_manager' });
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Forbidden: Insufficient permissions' });
     });
 
     it('returns user by id enriched with subjects and memberships', async () => {
@@ -1647,7 +1676,9 @@ describe('Users Routes', () => {
       };
       await handlers['/users/:id_put_pre'](request, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(403);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Assignment managers cannot edit admin users' });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Forbidden: Assignment managers can only edit regular users',
+      });
     });
 
     it('allows admin to edit another user', async () => {
@@ -1734,8 +1765,7 @@ describe('Users Routes', () => {
     it('assignment_manager can update basic fields of an in-scope user but not role/groupId', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      Subject.findForUser.mockResolvedValue([{ id: SUBJECT_ID, name: 'Subject A', membership_enabled: false }]);
-      Assignment.managesAnyInSubject.mockResolvedValue(true);
+      Assignment.managesAnySubjectOfUser.mockResolvedValue(true);
       User.update.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000002',
         username: 'oldname',
@@ -1768,11 +1798,11 @@ describe('Users Routes', () => {
         mockReply
       );
 
-      // Scope check uses all enrolments, suspended included
-      expect(Subject.findForUser).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002', {
-        includeDisabled: true,
-      });
-      expect(Assignment.managesAnyInSubject).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', SUBJECT_ID);
+      // Scope check is a single query and counts suspended enrolments too
+      expect(Assignment.managesAnySubjectOfUser).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000001',
+        '00000000-0000-4000-8000-000000000002'
+      );
       // role and groupId must be excluded
       expect(User.update).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002', {
         email: 'new@test.com',
@@ -1870,8 +1900,7 @@ describe('Users Routes', () => {
     it('assignment_manager cannot set enabled — explicit 403 (admins only)', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
-      Subject.findForUser.mockResolvedValue([{ id: SUBJECT_ID, name: 'Subject A', membership_enabled: true }]);
-      Assignment.managesAnyInSubject.mockResolvedValue(true);
+      Assignment.managesAnySubjectOfUser.mockResolvedValue(true);
 
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
@@ -2514,6 +2543,10 @@ describe('Users Routes', () => {
     it('deletes user successfully', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000002',
+        username: 'otheruser',
+      });
       User.delete.mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000002',
         username: 'otheruser',
@@ -2533,6 +2566,28 @@ describe('Users Routes', () => {
 
       expect(User.delete).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002');
       expect(mockReply.send).toHaveBeenCalledWith({ message: 'User deleted successfully' });
+    });
+
+    it('refuses to delete the built-in admin account', async () => {
+      const mockFastify = createMockFastify();
+      const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({ id: '00000000-0000-4000-8000-000000000002', username: 'admin' });
+
+      const usersRoutes = require('../../src/routes/users');
+      usersRoutes(mockFastify, {});
+
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      await handlers['/users/:id_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000001', role: 'admin' },
+          params: { id: '00000000-0000-4000-8000-000000000002' },
+        },
+        mockReply
+      );
+
+      expect(mockReply.code).toHaveBeenCalledWith(400);
+      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Cannot delete the built-in admin account' });
+      expect(User.delete).not.toHaveBeenCalled();
     });
 
     it('returns 404 when user not found for deletion', async () => {
@@ -2558,6 +2613,7 @@ describe('Users Routes', () => {
     it('handles error when deleting user', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({ id: '00000000-0000-4000-8000-000000000002', username: 'otheruser' });
       User.delete.mockRejectedValue(new Error('Database error'));
       const { logger: mockLogger } = require('../../src/utils/logger');
 
@@ -2836,6 +2892,7 @@ describe('Users Routes', () => {
     it('handles error when deleting user', async () => {
       const mockFastify = createMockFastify();
       const handlers = captureHandlers(mockFastify);
+      User.findById.mockResolvedValue({ id: '00000000-0000-4000-8000-000000000002', username: 'otheruser' });
       User.delete.mockRejectedValue(new Error('Database error'));
       const { logger: mockLogger } = require('../../src/utils/logger');
 
@@ -2927,7 +2984,9 @@ describe('Users Routes', () => {
       await handlers['/users/:id_put_pre'](request, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(403);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Forbidden: Assignment managers cannot edit admin users' });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        error: 'Forbidden: Assignment managers can only edit regular users',
+      });
     });
   });
 
@@ -3962,7 +4021,7 @@ describe('Users Routes', () => {
       User.findAll.mockResolvedValue(pendingUsers);
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
       PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
-      sendPasswordSetupEmail.mockResolvedValue();
+      sendPasswordSetupEmail.mockResolvedValue(true);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -3985,7 +4044,7 @@ describe('Users Routes', () => {
       ]);
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
       PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
-      sendPasswordSetupEmail.mockResolvedValue();
+      sendPasswordSetupEmail.mockResolvedValue(true);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -4046,7 +4105,7 @@ describe('Users Routes', () => {
       ]);
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
       PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
-      sendPasswordSetupEmail.mockResolvedValue();
+      sendPasswordSetupEmail.mockResolvedValue(true);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -4108,7 +4167,7 @@ describe('Users Routes', () => {
       ]);
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
       PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
-      sendPasswordSetupEmail.mockResolvedValue();
+      sendPasswordSetupEmail.mockResolvedValue(true);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -4134,7 +4193,7 @@ describe('Users Routes', () => {
       User.findAll.mockResolvedValue(pendingUsers);
       PasswordResetToken.deleteStaleForUser.mockResolvedValue();
       PasswordResetToken.create.mockResolvedValue({ token: 'tok123' });
-      sendPasswordSetupEmail.mockResolvedValue();
+      sendPasswordSetupEmail.mockResolvedValue(true);
       const usersRoutes = require('../../src/routes/users');
       usersRoutes(mockFastify, {});
       const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
@@ -4178,6 +4237,10 @@ describe('Users Routes', () => {
 
     it('deletes 2 users and returns { deleted: 2 }', async () => {
       const { handlers, reply } = setupUsersRoute();
+      User.findByIds.mockResolvedValue([
+        { id: 'a', username: 'u1' },
+        { id: 'b', username: 'u2' },
+      ]);
       User.bulkDelete.mockResolvedValue(2);
       await handlers['/users/bulk_delete'](
         {
@@ -4198,6 +4261,7 @@ describe('Users Routes', () => {
     it('deduplicates ids before deleting', async () => {
       const { handlers, reply } = setupUsersRoute();
       const uid = '11111111-0000-4000-8000-000000000001';
+      User.findByIds.mockResolvedValue([{ id: uid, username: 'u1' }]);
       User.bulkDelete.mockResolvedValue(1);
       await handlers['/users/bulk_delete'](
         {
@@ -4208,6 +4272,37 @@ describe('Users Routes', () => {
       );
       expect(User.bulkDelete).toHaveBeenCalledWith([uid]);
       expect(reply.send).toHaveBeenCalledWith({ message: 'Users deleted successfully', deleted: 1 });
+    });
+
+    it('refuses to bulk delete the built-in admin account', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      const adminId = '11111111-0000-4000-8000-0000000000aa';
+      User.findByIds.mockResolvedValue([{ id: adminId, username: 'admin' }]);
+      await handlers['/users/bulk_delete'](
+        {
+          user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' },
+          body: { ids: [adminId] },
+        },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Cannot delete the built-in admin account' });
+      expect(User.bulkDelete).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the last-admin invariant as its own status code', async () => {
+      const { handlers, reply } = setupUsersRoute();
+      const uid = '11111111-0000-4000-8000-000000000001';
+      User.findByIds.mockResolvedValue([{ id: uid, username: 'someadmin' }]);
+      const err = new Error('Cannot delete the last enabled admin account');
+      err.statusCode = 400;
+      User.bulkDelete.mockRejectedValue(err);
+      await handlers['/users/bulk_delete'](
+        { user: { id: '00000000-0000-4000-8000-000000000099', role: 'admin' }, body: { ids: [uid] } },
+        reply
+      );
+      expect(reply.code).toHaveBeenCalledWith(400);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Cannot delete the last enabled admin account' });
     });
 
     it('returns 400 when ids is an empty array', async () => {

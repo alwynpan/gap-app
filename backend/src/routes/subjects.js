@@ -12,6 +12,33 @@ const {
 } = require('../utils/schemas');
 const { logger } = require('../utils/logger');
 
+/**
+ * Plain-English summary of an enrolment attempt.
+ *
+ * Adding a suspended member is a no-op by design (re-enabling is a deliberate
+ * action), so the message must say so instead of reporting a bare success the
+ * operator would read as "done".
+ */
+function describeEnrolment({ added, alreadyEnrolled, suspended }) {
+  const plural = (n) => (n === 1 ? 'user' : 'users');
+  const parts = [];
+
+  if (added > 0) {
+    parts.push(`${added} ${plural(added)} added to subject`);
+  }
+  if (alreadyEnrolled > 0) {
+    parts.push(`${alreadyEnrolled} ${plural(alreadyEnrolled)} already enrolled`);
+  }
+  if (suspended > 0) {
+    parts.push(
+      `${suspended} ${plural(suspended)} already enrolled but suspended — ` +
+        `enable ${suspended === 1 ? 'them' : 'each of them'} to restore access`
+    );
+  }
+
+  return parts.length > 0 ? `${parts.join('; ')}.` : 'No users to add.';
+}
+
 async function subjectsRoutes(fastify, _options) {
   // Get all subjects, scoped to the caller's role (any authenticated user)
   fastify.get(
@@ -125,6 +152,11 @@ async function subjectsRoutes(fastify, _options) {
         const subject = await Subject.create(body.name);
         return reply.code(201).send({ message: 'Subject created successfully', subject });
       } catch (error) {
+        // Migration 016 enforces case-insensitive names, so a concurrent create
+        // loses the race here rather than at the application precheck.
+        if (error.code === '23505') {
+          return reply.code(409).send({ error: 'A subject with this name already exists' });
+        }
         logger.error('Create subject error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to create subject' });
       }
@@ -172,6 +204,11 @@ async function subjectsRoutes(fastify, _options) {
         const updated = await Subject.update(subjectId, { name: body.name });
         return reply.send({ message: 'Subject updated successfully', subject: updated });
       } catch (error) {
+        // Migration 016 enforces case-insensitive names, so a concurrent create
+        // loses the race here rather than at the application precheck.
+        if (error.code === '23505') {
+          return reply.code(409).send({ error: 'A subject with this name already exists' });
+        }
         logger.error('Update subject error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to update subject' });
       }
@@ -309,8 +346,8 @@ async function subjectsRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'One or more users do not exist' });
         }
 
-        const added = await Subject.addUsers(subjectId, body.userIds);
-        return reply.send({ message: 'Users added to subject', added });
+        const result = await Subject.addUsers(subjectId, body.userIds);
+        return reply.send({ message: describeEnrolment(result), ...result });
       } catch (error) {
         logger.error('Add subject users error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to add users to subject' });

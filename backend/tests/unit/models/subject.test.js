@@ -197,22 +197,78 @@ describe('Subject Model', () => {
   });
 
   describe('addUsers', () => {
-    it('bulk-inserts memberships idempotently and returns the inserted count', async () => {
-      pool.query.mockResolvedValue({ rowCount: 2 });
+    let mockClient;
 
-      const result = await Subject.addUsers(SUBJECT_ID, [USER_ID, 'u0000000-0000-0000-0000-000000000002']);
-
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('ON CONFLICT'), [
-        SUBJECT_ID,
-        [USER_ID, 'u0000000-0000-0000-0000-000000000002'],
-      ]);
-      expect(result).toBe(2);
+    beforeEach(() => {
+      mockClient = { query: jest.fn(), release: jest.fn() };
+      pool.connect.mockResolvedValue(mockClient);
     });
 
-    it('returns 0 for an empty user list without querying', async () => {
+    /** BEGIN, INSERT ... RETURNING, classify, COMMIT. */
+    const queue = ({ insertedIds = [], classified = [] }) => {
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: insertedIds.map((id) => ({ user_id: id })) })
+        .mockResolvedValueOnce({ rows: classified })
+        .mockResolvedValueOnce({}); // COMMIT
+    };
+
+    it('bulk-inserts memberships and reports what actually happened', async () => {
+      queue({
+        insertedIds: ['u1'],
+        classified: [
+          { user_id: 'u1', enabled: true }, // just inserted
+          { user_id: 'u2', enabled: true }, // already enrolled
+          { user_id: 'u3', enabled: false }, // enrolled but suspended
+          { user_id: 'u4', enabled: false },
+        ],
+      });
+
+      const result = await Subject.addUsers(SUBJECT_ID, ['u1', 'u2', 'u3', 'u4']);
+
+      expect(mockClient.query.mock.calls[1][0]).toContain('ON CONFLICT (user_id, subject_id) DO NOTHING');
+      expect(result).toEqual({ added: 1, alreadyEnrolled: 1, suspended: 2 });
+    });
+
+    // Classification must be a LATER statement so it sees rows another
+    // transaction committed after this one's snapshot was taken.
+    it('classifies in a separate statement from the insert', async () => {
+      queue({ insertedIds: [], classified: [{ user_id: 'u1', enabled: true }] });
+
+      await Subject.addUsers(SUBJECT_ID, ['u1']);
+
+      const insertSql = mockClient.query.mock.calls[1][0];
+      const classifySql = mockClient.query.mock.calls[2][0];
+      expect(insertSql).toContain('INSERT INTO user_subjects');
+      expect(classifySql).toContain('SELECT us.user_id, us.enabled');
+      expect(classifySql).not.toContain('INSERT');
+    });
+
+    // Re-enabling is a deliberate staff action, so this must never flip enabled.
+    it('does not re-enable a suspended membership', async () => {
+      queue({ insertedIds: [], classified: [{ user_id: 'u1', enabled: false }] });
+
+      const result = await Subject.addUsers(SUBJECT_ID, ['u1']);
+
+      const sql = mockClient.query.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(sql).not.toContain('DO UPDATE');
+      expect(sql).not.toContain('SET enabled');
+      expect(result).toEqual({ added: 0, alreadyEnrolled: 0, suspended: 1 });
+    });
+
+    it('rolls back and rethrows when the insert fails', async () => {
+      mockClient.query.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('boom'));
+
+      await expect(Subject.addUsers(SUBJECT_ID, ['u1'])).rejects.toThrow('boom');
+      expect(mockClient.query).toHaveBeenLastCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('returns a zeroed breakdown for an empty user list without querying', async () => {
       const result = await Subject.addUsers(SUBJECT_ID, []);
-      expect(result).toBe(0);
-      expect(pool.query).not.toHaveBeenCalled();
+
+      expect(pool.connect).not.toHaveBeenCalled();
+      expect(result).toEqual({ added: 0, alreadyEnrolled: 0, suspended: 0 });
     });
   });
 
@@ -227,6 +283,7 @@ describe('Subject Model', () => {
     it('removes the subject membership and the group memberships within the subject in one transaction', async () => {
       mockClient.query
         .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{}] }) // lock user_subjects row
         .mockResolvedValueOnce({ rowCount: 1 }) // DELETE user_groups within subject
         .mockResolvedValueOnce({ rowCount: 1 }) // DELETE user_subjects
         .mockResolvedValueOnce({}); // COMMIT
@@ -234,15 +291,22 @@ describe('Subject Model', () => {
       const result = await Subject.removeUser(SUBJECT_ID, USER_ID);
 
       expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
-      expect(mockClient.query).toHaveBeenNthCalledWith(2, expect.stringContaining('DELETE FROM user_groups'), [
+      // The membership row is locked first, matching UserGroup.assignUserToGroup's
+      // lock order, so a concurrent placement cannot outlive the removal.
+      expect(mockClient.query).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining('FROM user_subjects WHERE subject_id = $1 AND user_id = $2 FOR UPDATE'),
+        [SUBJECT_ID, USER_ID]
+      );
+      expect(mockClient.query).toHaveBeenNthCalledWith(3, expect.stringContaining('DELETE FROM user_groups'), [
         SUBJECT_ID,
         USER_ID,
       ]);
-      expect(mockClient.query).toHaveBeenNthCalledWith(3, expect.stringContaining('DELETE FROM user_subjects'), [
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, expect.stringContaining('DELETE FROM user_subjects'), [
         SUBJECT_ID,
         USER_ID,
       ]);
-      expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
+      expect(mockClient.query).toHaveBeenNthCalledWith(5, 'COMMIT');
       expect(mockClient.release).toHaveBeenCalled();
       expect(result).toBe(true);
     });
@@ -250,6 +314,7 @@ describe('Subject Model', () => {
     it('returns false when the user was not a member', async () => {
       mockClient.query
         .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [] }) // lock user_subjects row (absent)
         .mockResolvedValueOnce({ rowCount: 0 }) // DELETE user_groups
         .mockResolvedValueOnce({ rowCount: 0 }) // DELETE user_subjects
         .mockResolvedValueOnce({}); // COMMIT
@@ -280,6 +345,7 @@ describe('Subject Model', () => {
     it('suspending deletes the group memberships within the subject before updating, in one transaction', async () => {
       mockClient.query
         .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{}] }) // lock user_subjects row
         .mockResolvedValueOnce({ rowCount: 1 }) // DELETE user_groups within subject
         .mockResolvedValueOnce({ rowCount: 1 }) // UPDATE user_subjects
         .mockResolvedValueOnce({}); // COMMIT
@@ -287,16 +353,23 @@ describe('Subject Model', () => {
       const result = await Subject.setMemberEnabled(SUBJECT_ID, USER_ID, false);
 
       expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
-      expect(mockClient.query).toHaveBeenNthCalledWith(2, expect.stringContaining('DELETE FROM user_groups'), [
+      // Locked before the cleanup so a placement racing the suspension cannot
+      // leave the suspended member holding a group in this subject.
+      expect(mockClient.query).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining('FROM user_subjects WHERE subject_id = $1 AND user_id = $2 FOR UPDATE'),
+        [SUBJECT_ID, USER_ID]
+      );
+      expect(mockClient.query).toHaveBeenNthCalledWith(3, expect.stringContaining('DELETE FROM user_groups'), [
         SUBJECT_ID,
         USER_ID,
       ]);
-      expect(mockClient.query).toHaveBeenNthCalledWith(3, expect.stringContaining('UPDATE user_subjects'), [
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, expect.stringContaining('UPDATE user_subjects'), [
         SUBJECT_ID,
         USER_ID,
         false,
       ]);
-      expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
+      expect(mockClient.query).toHaveBeenNthCalledWith(5, 'COMMIT');
       expect(mockClient.release).toHaveBeenCalled();
       expect(result).toBe(true);
     });
@@ -304,6 +377,7 @@ describe('Subject Model', () => {
     it('enabling skips the group-membership delete and only updates the row', async () => {
       mockClient.query
         .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{}] }) // lock user_subjects row
         .mockResolvedValueOnce({ rowCount: 1 }) // UPDATE user_subjects
         .mockResolvedValueOnce({}); // COMMIT
 
@@ -313,7 +387,7 @@ describe('Subject Model', () => {
         String(sql).includes('DELETE FROM user_groups')
       );
       expect(deleteCalls).toHaveLength(0);
-      expect(mockClient.query).toHaveBeenNthCalledWith(2, expect.stringContaining('UPDATE user_subjects'), [
+      expect(mockClient.query).toHaveBeenNthCalledWith(3, expect.stringContaining('UPDATE user_subjects'), [
         SUBJECT_ID,
         USER_ID,
         true,

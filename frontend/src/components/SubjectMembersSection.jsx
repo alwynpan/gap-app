@@ -5,6 +5,7 @@ import IconBtn from './IconBtn.jsx';
 import AssignGroupModal from './AssignGroupModal.jsx';
 import { parseBody, createUserSchema } from '../utils/schemas.js';
 import { API_BASE } from '../config.js';
+import Modal from './Modal.jsx';
 
 const emptyNewUser = { username: '', email: '', firstName: '', lastName: '', studentId: '' };
 
@@ -111,8 +112,15 @@ function SubjectMembersSection({ subject, isAdmin, canManage }) {
 
   const handleSendSetupEmail = async (member) => {
     try {
-      await api.post(`${API_BASE}/users/send-setup-emails`, { userIds: [member.id] });
-      showSuccess('Setup email sent');
+      // The endpoint answers 200 with per-user delivery failures (e.g. no SMTP),
+      // so the body decides the message, not the status code.
+      const res = await api.post(`${API_BASE}/users/send-setup-emails`, { userIds: [member.id] });
+      const { sent = 0, errors: emailErrors = [] } = res.data || {};
+      if (sent > 0) {
+        showSuccess('Setup email sent');
+      } else {
+        showError(emailErrors[0]?.reason || 'No setup email was sent');
+      }
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to send setup email');
     }
@@ -174,10 +182,19 @@ function SubjectMembersSection({ subject, isAdmin, canManage }) {
     setAddError('');
     setAdding(true);
     try {
-      await api.post(`${API_BASE}/subjects/${subject.id}/users`, { userIds: [selectedUserId] });
-      showSuccess('User added to subject');
+      const res = await api.post(`${API_BASE}/subjects/${subject.id}/users`, { userIds: [selectedUserId] });
+      const { added = 0, suspended = 0, message } = res.data || {};
       setShowAddModal(false);
       fetchMembers();
+      // Adding someone who is enrolled-but-suspended changes nothing, so surface
+      // the server's summary rather than a blanket success.
+      if (added > 0) {
+        showSuccess(message || 'User added to subject');
+      } else if (suspended > 0) {
+        showError(message);
+      } else {
+        showError(message || 'No users were added');
+      }
     } catch (err) {
       setAddError(err.response?.data?.error || 'Failed to add user');
     } finally {
@@ -228,13 +245,17 @@ function SubjectMembersSection({ subject, isAdmin, canManage }) {
             <Ban className="h-4 w-4" />
           </IconBtn>
         )}
-        <IconBtn
-          label="Assign Group"
-          onClick={() => setAssignModalUser({ ...member, subjects: [subject], memberships: member.memberships || [] })}
-          className="text-gray-500 hover:text-primary-600 hover:bg-primary-50"
-        >
-          <UserPlus className="h-4 w-4" />
-        </IconBtn>
+        {member.membership_enabled !== false && (
+          <IconBtn
+            label="Assign Group"
+            onClick={() =>
+              setAssignModalUser({ ...member, subjects: [subject], memberships: member.memberships || [] })
+            }
+            className="text-gray-500 hover:text-primary-600 hover:bg-primary-50"
+          >
+            <UserPlus className="h-4 w-4" />
+          </IconBtn>
+        )}
         {member.status === 'pending' && (
           <IconBtn
             label="Send Setup Email"
@@ -370,31 +391,32 @@ function SubjectMembersSection({ subject, isAdmin, canManage }) {
 
       {/* Suspend Confirmation Modal */}
       {suspendModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Suspend {suspendModal.username}?</h3>
-            <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
-              {SUSPEND_WARNING}
-            </div>
-            <div className="flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => setSuspendModal(null)}
-                className="px-4 py-2 text-gray-700 hover:text-gray-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSuspendConfirmed}
-                disabled={suspending}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {suspending ? 'Suspending...' : 'Suspend'}
-              </button>
-            </div>
+        <Modal
+          title={`Suspend ${suspendModal.username}?`}
+          onClose={() => setSuspendModal(null)}
+          closeOnBackdrop={false}
+        >
+          <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
+            {SUSPEND_WARNING}
           </div>
-        </div>
+          <div className="flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={() => setSuspendModal(null)}
+              className="px-4 py-2 text-gray-700 hover:text-gray-900"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSuspendConfirmed}
+              disabled={suspending}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {suspending ? 'Suspending...' : 'Suspend'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* Assign Group Modal */}
@@ -412,150 +434,144 @@ function SubjectMembersSection({ subject, isAdmin, canManage }) {
 
       {/* Create User Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New User</h3>
-            <form onSubmit={handleCreateUser}>
-              {formError && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
-                  {formError}
-                </div>
-              )}
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Username <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newUser.username}
-                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter username"
-                />
+        <Modal title="Create New User" onClose={() => setShowCreateModal(false)}>
+          <form onSubmit={handleCreateUser}>
+            {formError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+                {formError}
               </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter email"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  First Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newUser.firstName}
-                  onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter first name"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Last Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newUser.lastName}
-                  onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter last name"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Student ID (Optional)</label>
-                <input
-                  type="text"
-                  value={newUser.studentId}
-                  onChange={(e) => setNewUser({ ...newUser, studentId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter student ID"
-                />
-              </div>
-              <div className="mb-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
-                The user will be enrolled in {subject.name}. Use Assign Group afterwards to place them in a group.
-              </div>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setNewUser({ ...emptyNewUser });
-                  }}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creating ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            )}
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Username <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={newUser.username}
+                onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter username"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                required
+                value={newUser.email}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter email"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                First Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={newUser.firstName}
+                onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter first name"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Last Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={newUser.lastName}
+                onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter last name"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Student ID (Optional)</label>
+              <input
+                type="text"
+                value={newUser.studentId}
+                onChange={(e) => setNewUser({ ...newUser, studentId: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter student ID"
+              />
+            </div>
+            <div className="mb-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+              The user will be enrolled in {subject.name}. Use Assign Group afterwards to place them in a group.
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewUser({ ...emptyNewUser });
+                }}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creating}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creating ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Add Existing User Modal (admin only) */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Existing User</h3>
-            <form onSubmit={handleAddExisting}>
-              {addError && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
-                  {addError}
-                </div>
-              )}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">User</label>
-                <select
-                  aria-label="Select user"
-                  value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">Select user</option>
-                  {addCandidates.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.username} ({u.email})
-                    </option>
-                  ))}
-                </select>
+        <Modal title="Add Existing User" onClose={() => setShowAddModal(false)}>
+          <form onSubmit={handleAddExisting}>
+            {addError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+                {addError}
               </div>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={adding || !selectedUserId}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {adding ? 'Adding...' : 'Add'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            )}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">User</label>
+              <select
+                aria-label="Select user"
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">Select user</option>
+                {addCandidates.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.username} ({u.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={adding || !selectedUserId}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {adding ? 'Adding...' : 'Add'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

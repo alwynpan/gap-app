@@ -44,6 +44,58 @@ class PasswordResetToken {
     await pool.query('UPDATE password_reset_tokens SET used = true WHERE id = $1', [id]);
   }
 
+  /**
+   * Redeem a token: consume it and set the owner's password in one transaction.
+   *
+   * The consuming UPDATE carries the validity predicate, so of two concurrent
+   * requests presenting the same token exactly one updates a row — a read-then-
+   * mark sequence lets both through and the later password silently wins.
+   * Sharing the transaction also means a failed password write does not burn
+   * the token.
+   *
+   * @param {string} token Raw token from the email link.
+   * @param {string} passwordHash Pre-computed hash (hashing must not hold the transaction open).
+   * @returns {Promise<{userId: string, tokenType: string}|null>} null when the
+   *   token is unknown, already used, or expired.
+   */
+  static async redeem(token, passwordHash) {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const consumed = await client.query(
+        `UPDATE password_reset_tokens
+         SET used = true
+         WHERE token = $1 AND used = false AND expires_at > NOW()
+         RETURNING id, user_id, token_type`,
+        [tokenHash]
+      );
+      const record = consumed.rows[0];
+      if (!record) {
+        await client.query('COMMIT');
+        return null;
+      }
+
+      // A setup token doubles as email verification, so it activates the account.
+      const activate = record.token_type === 'setup';
+      await client.query(
+        activate
+          ? `UPDATE users SET password_hash = $1, status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+          : `UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [passwordHash, record.user_id]
+      );
+
+      await client.query('COMMIT');
+      return { userId: record.user_id, tokenType: record.token_type };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   /** Remove all existing tokens for a user before creating a new one (ensures only one active token at a time). */
   static async deleteStaleForUser(userId) {
     await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId]);

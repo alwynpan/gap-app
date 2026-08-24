@@ -9,6 +9,10 @@ const config = require('../config/index');
 const { parseBody, registerSchema, loginSchema, forgotPasswordSchema, setPasswordSchema } = require('../utils/schemas');
 const { logger } = require('../utils/logger');
 
+// A real bcrypt hash (of a value no one can log in with) so failed logins can
+// spend the same time as successful ones. Cost 12 matches the default rounds.
+const DUMMY_PASSWORD_HASH = '$2b$12$C6UzMDM.H6dfI/f/IKcEe.9zTGDe8bkQ9Ug7EMmPuTPh5CUuLzGE.';
+
 async function authRoutes(fastify, _options) {
   const isDev = config.app.nodeEnv === 'development';
   // Register route (stricter limit by default; relaxed only in dev for e2e tests)
@@ -120,16 +124,21 @@ async function authRoutes(fastify, _options) {
         // Find user by username
         const user = await User.findByUsername(username);
         if (!user) {
+          // Spend the same bcrypt time as a real comparison so response latency
+          // does not reveal whether the account exists.
+          await User.verifyPassword(password, DUMMY_PASSWORD_HASH);
           return reply.code(401).send({ error: 'Invalid credentials' });
         }
 
         // Check if user is enabled
         if (!user.enabled) {
+          await User.verifyPassword(password, DUMMY_PASSWORD_HASH);
           return reply.code(401).send({ error: 'Account is disabled' });
         }
 
         // Check if user account is pending (password not yet set)
         if (user.status === 'pending') {
+          await User.verifyPassword(password, DUMMY_PASSWORD_HASH);
           return reply
             .code(401)
             .send({ error: 'Account setup pending. Please check your email to set your password.' });
@@ -296,21 +305,14 @@ async function authRoutes(fastify, _options) {
         // Housekeeping: purge expired / used tokens before lookup
         await PasswordResetToken.deleteExpired();
 
-        const tokenRecord = await PasswordResetToken.findByToken(token);
+        // Hash outside the transaction — bcrypt is deliberately slow.
+        const passwordHash = await User.hashPassword(password);
 
-        if (!tokenRecord || tokenRecord.used || new Date(tokenRecord.expires_at) < new Date()) {
+        // Consumes the token and writes the password atomically, so two requests
+        // racing the same link cannot both succeed.
+        const redeemed = await PasswordResetToken.redeem(token, passwordHash);
+        if (!redeemed) {
           return reply.code(400).send({ error: 'Invalid or expired token' });
-        }
-
-        // Consume the token first — if the password update fails the user requests a new link;
-        // this prevents a valid token from persisting after a successful password change.
-        await PasswordResetToken.markUsed(tokenRecord.id);
-
-        await User.updatePassword(tokenRecord.user_id, password);
-
-        // Activate the account if this was a first-time setup token
-        if (tokenRecord.token_type === 'setup') {
-          await User.activate(tokenRecord.user_id);
         }
 
         return reply.send({ message: 'Password set successfully. You can now log in.' });

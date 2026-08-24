@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import api from '@/utils/api';
 import { API_BASE } from '../config.js';
+import Modal from './Modal.jsx';
 
 /**
  * Modal for managing which subjects a user belongs to.
@@ -56,52 +57,49 @@ function SubjectMembershipModal({ user, subjects, onClose, onChanged }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Manage Subjects — {user.username}</h3>
-        {error && (
-          <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">{error}</div>
-        )}
-        <div className="mb-3 space-y-2">
-          {(subjects || []).map((subject) => (
-            <label key={subject.id} className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={selectedIds.has(subject.id)}
-                onChange={() => toggle(subject.id)}
-                disabled={saving}
-                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              />
-              <span className="text-sm text-gray-700">{subject.name}</span>
-            </label>
-          ))}
-          {(subjects || []).length === 0 && <p className="text-sm text-gray-500">No subjects available.</p>}
-        </div>
-        {removalAffectsMemberships && (
-          <div className="mb-3 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-md text-sm">
-            {"Removing a subject also removes the user's group memberships in it."}
-          </div>
-        )}
-        <div className="flex justify-end space-x-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="px-4 py-2 text-gray-700 hover:text-gray-900"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
+    <Modal title={`Manage Subjects — ${user.username}`} onClose={onClose}>
+      {error && (
+        <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">{error}</div>
+      )}
+      <div className="mb-3 space-y-2">
+        {(subjects || []).map((subject) => (
+          <label key={subject.id} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={selectedIds.has(subject.id)}
+              onChange={() => toggle(subject.id)}
+              disabled={saving}
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <span className="text-sm text-gray-700">{subject.name}</span>
+          </label>
+        ))}
+        {(subjects || []).length === 0 && <p className="text-sm text-gray-500">No subjects available.</p>}
       </div>
-    </div>
+      {removalAffectsMemberships && (
+        <div className="mb-3 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-md text-sm">
+          {"Removing a subject also removes the user's group memberships in it."}
+        </div>
+      )}
+      <div className="flex justify-end space-x-3">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={saving}
+          className="px-4 py-2 text-gray-700 hover:text-gray-900"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+    </Modal>
   );
 }
 

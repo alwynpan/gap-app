@@ -9,6 +9,7 @@ import SubjectMembersSection from '../components/SubjectMembersSection.jsx';
 import { Trash2 } from 'lucide-react';
 import { parseBody, createAssignmentSchema } from '../utils/schemas.js';
 import { API_BASE } from '../config.js';
+import Modal from '../components/Modal.jsx';
 
 function SubjectDetail() {
   const { subjectId } = useParams();
@@ -268,45 +269,42 @@ function SubjectDetail() {
 
       {/* Create Assignment Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New Assignment</h3>
-            <form onSubmit={handleCreateAssignment}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Assignment Name</label>
-                <input
-                  type="text"
-                  value={newAssignmentName}
-                  onChange={(e) => setNewAssignmentName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter assignment name"
-                  autoFocus
-                />
-              </div>
-              {createFormError && <p className="mb-3 text-sm text-red-600">{createFormError}</p>}
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setNewAssignmentName('');
-                    setCreateFormError('');
-                  }}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creating ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <Modal title="Create New Assignment" onClose={() => setShowCreateModal(false)}>
+          <form onSubmit={handleCreateAssignment}>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Assignment Name</label>
+              <input
+                type="text"
+                value={newAssignmentName}
+                onChange={(e) => setNewAssignmentName(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter assignment name"
+                autoFocus
+              />
+            </div>
+            {createFormError && <p className="mb-3 text-sm text-red-600">{createFormError}</p>}
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewAssignmentName('');
+                  setCreateFormError('');
+                }}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creating}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creating ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Delete Assignment Modal (two-step typed confirmation) */}

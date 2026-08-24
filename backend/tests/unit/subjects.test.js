@@ -612,13 +612,56 @@ describe('Subjects Routes', () => {
       const { handlers, mockReply } = setup();
       Subject.findById.mockResolvedValue({ id: SUBJECT_ID });
       User.findByIds.mockResolvedValue([{ id: USER_ID }, { id: USER_ID_2 }]);
-      Subject.addUsers.mockResolvedValue(2);
+      Subject.addUsers.mockResolvedValue({ added: 2, alreadyEnrolled: 0, suspended: 0 });
       await handlers['/subjects/:id/users_post'](
         { params: { id: SUBJECT_ID }, body: { userIds: [USER_ID, USER_ID_2] } },
         mockReply
       );
       expect(Subject.addUsers).toHaveBeenCalledWith(SUBJECT_ID, [USER_ID, USER_ID_2]);
-      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Users added to subject', added: 2 });
+      expect(mockReply.send).toHaveBeenCalledWith({
+        message: '2 users added to subject.',
+        added: 2,
+        alreadyEnrolled: 0,
+        suspended: 0,
+      });
+    });
+
+    // Adding a suspended member is a deliberate no-op; the response must say so
+    // rather than reporting a success the operator would read as "done".
+    it('names the suspended members instead of reporting a bare success', async () => {
+      const { handlers, mockReply } = setup();
+      Subject.findById.mockResolvedValue({ id: SUBJECT_ID });
+      User.findByIds.mockResolvedValue([{ id: USER_ID }]);
+      Subject.addUsers.mockResolvedValue({ added: 0, alreadyEnrolled: 0, suspended: 1 });
+
+      await handlers['/subjects/:id/users_post'](
+        { params: { id: SUBJECT_ID }, body: { userIds: [USER_ID] } },
+        mockReply
+      );
+
+      const [payload] = mockReply.send.mock.calls[0];
+      expect(payload.suspended).toBe(1);
+      expect(payload.added).toBe(0);
+      expect(payload.message).toMatch(/1 user already enrolled but suspended/i);
+      expect(payload.message).toMatch(/enable them to restore access/i);
+      expect(payload.message).not.toMatch(/^Users added/);
+    });
+
+    it('summarises a mixed batch', async () => {
+      const { handlers, mockReply } = setup();
+      Subject.findById.mockResolvedValue({ id: SUBJECT_ID });
+      User.findByIds.mockResolvedValue([{ id: USER_ID }, { id: USER_ID_2 }]);
+      Subject.addUsers.mockResolvedValue({ added: 1, alreadyEnrolled: 1, suspended: 2 });
+
+      await handlers['/subjects/:id/users_post'](
+        { params: { id: SUBJECT_ID }, body: { userIds: [USER_ID, USER_ID_2] } },
+        mockReply
+      );
+
+      const [payload] = mockReply.send.mock.calls[0];
+      expect(payload.message).toBe(
+        '1 user added to subject; 1 user already enrolled; 2 users already enrolled but suspended — enable each of them to restore access.'
+      );
     });
 
     it('handles error when adding users', async () => {

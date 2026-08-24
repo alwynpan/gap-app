@@ -787,3 +787,76 @@ describe('POST /api/assignments/:id/import-mappings', () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PUT /api/assignments/:id/join-lock  (replaces the former global config flag)
+// ---------------------------------------------------------------------------
+describe('PUT /api/assignments/:id/join-lock', () => {
+  let assignment;
+  let am2Token;
+
+  beforeEach(async () => {
+    assignment = await createAssignment({ subjectId: subject.id, name: 'LockA' });
+    await assignManager(am1.id, assignment.id);
+    amToken = await loginAs(app, 'am1', 'TestPass123!');
+
+    await createUser({ username: 'am2', email: 'am2@test.com', role: 'assignment_manager' });
+    am2Token = await loginAs(app, 'am2', 'TestPass123!');
+  });
+
+  const setLock = (token, joinLocked, id = assignment.id) =>
+    app.inject({
+      method: 'PUT',
+      url: `/api/assignments/${id}/join-lock`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { joinLocked },
+    });
+
+  it('admin locks and unlocks one assignment', async () => {
+    const lock = await setLock(adminToken, true);
+    expect(lock.statusCode).toBe(200);
+    expect(JSON.parse(lock.body).assignment.join_locked).toBe(true);
+
+    const unlock = await setLock(adminToken, false);
+    expect(JSON.parse(unlock.body).assignment.join_locked).toBe(false);
+  });
+
+  it('the managing AM can lock their own assignment', async () => {
+    expect((await setLock(amToken, true)).statusCode).toBe(200);
+  });
+
+  // The whole point of moving the lock off the global config row.
+  it('an AM who manages nothing cannot lock an assignment', async () => {
+    const res = await setLock(am2Token, true);
+    expect(res.statusCode).toBe(403);
+    const { rows } = await getPool().query('SELECT join_locked FROM assignments WHERE id = $1', [assignment.id]);
+    expect(rows[0].join_locked).toBe(false);
+  });
+
+  it('a regular user cannot lock an assignment', async () => {
+    expect((await setLock(userToken, true)).statusCode).toBe(403);
+  });
+
+  it('locking one assignment leaves its siblings open', async () => {
+    const sibling = await createAssignment({ subjectId: subject.id, name: 'SiblingA' });
+    await setLock(adminToken, true);
+    const { rows } = await getPool().query('SELECT join_locked FROM assignments WHERE id = $1', [sibling.id]);
+    expect(rows[0].join_locked).toBe(false);
+  });
+
+  it('rejects a non-boolean joinLocked and a bad UUID', async () => {
+    expect((await setLock(adminToken, 'yes')).statusCode).toBe(400);
+    expect((await setLock(adminToken, true, 'not-a-uuid')).statusCode).toBe(400);
+  });
+
+  it('returns 404 for an unknown assignment', async () => {
+    const res = await setLock(adminToken, true, '00000000-0000-0000-0000-000000000000');
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('defaults to unlocked on a newly created assignment', async () => {
+    const fresh = await createAssignment({ subjectId: subject.id, name: 'FreshA' });
+    const { rows } = await getPool().query('SELECT join_locked FROM assignments WHERE id = $1', [fresh.id]);
+    expect(rows[0].join_locked).toBe(false);
+  });
+});

@@ -37,12 +37,15 @@ export const usernameSchema = sanitizedString.pipe(
     .regex(USERNAME_RE, 'Username may only contain letters, numbers, underscores, hyphens, and dots')
 );
 
-export const emailSchema = sanitizedString.pipe(
+export // Lowercased so one mailbox is one account: the DB enforces uniqueness on
+// LOWER(email) (migration 015) and every lookup compares the canonical form.
+const emailSchema = sanitizedString.pipe(
   z
     .string()
     .min(1, 'Email is required')
     .max(255, 'Email must be at most 255 characters')
     .regex(EMAIL_RE, 'Invalid email format')
+    .transform((value) => value.toLowerCase())
 );
 
 // Password is never sanitized (would corrupt special characters users intentionally type)

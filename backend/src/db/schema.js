@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
   name VARCHAR(100) NOT NULL,
+  join_locked BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (subject_id, name)
@@ -122,6 +123,9 @@ CREATE TABLE IF NOT EXISTS assignment_managers (
 );
 
 -- Create indexes for performance
+-- Case-insensitive uniqueness (users 012/015, hierarchy names 016) is created by
+-- those migrations, not here: this DDL runs before migration 013 replaces the
+-- legacy flat groups table, so referencing assignment_id here breaks upgrades.
 CREATE INDEX IF NOT EXISTS idx_users_role_id ON users(role_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);

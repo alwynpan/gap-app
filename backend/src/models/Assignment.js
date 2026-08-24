@@ -91,6 +91,21 @@ class Assignment {
     return result.rows[0];
   }
 
+  /**
+   * Freeze or unfreeze self-service joining/leaving for one assignment.
+   * Replaces the former global config flag, so a manager can only affect the
+   * assignments they manage.
+   *
+   * @returns {Promise<object|null>} The updated row, or null when not found.
+   */
+  static async setJoinLocked(id, locked) {
+    const result = await pool.query(
+      'UPDATE assignments SET join_locked = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
+      [id, locked]
+    );
+    return result.rows[0] || null;
+  }
+
   /** Assignments in the user's subjects (derived participation, enabled memberships only). */
   static async findForUser(userId) {
     const result = await pool.query(
@@ -188,6 +203,47 @@ class Assignment {
       [userId, assignmentIds]
     );
     return result.rowCount;
+  }
+
+  /**
+   * Whether an assignment manager's scope covers a target user: the target is
+   * enrolled (enabled or suspended) in a subject containing an assignment the
+   * manager manages. Suspended memberships still count so staff can administer
+   * members they have suspended.
+   */
+  static async managesAnySubjectOfUser(managerId, targetUserId) {
+    const result = await pool.query(
+      `SELECT 1
+       FROM assignment_managers am
+       JOIN assignments a ON a.id = am.assignment_id
+       JOIN user_subjects us ON us.subject_id = a.subject_id
+       WHERE am.user_id = $1 AND us.user_id = $2
+       LIMIT 1`,
+      [managerId, targetUserId]
+    );
+    return result.rows.length > 0;
+  }
+
+  /**
+   * Batch form of managesAnySubjectOfUser: the subset of userIds that fall
+   * inside the manager's scope. Used to pre-authorize bulk operations before any
+   * row is mutated.
+   *
+   * @returns {Promise<Set<string>>}
+   */
+  static async filterUsersInManagedSubjects(managerId, userIds) {
+    if (!userIds || userIds.length === 0) {
+      return new Set();
+    }
+    const result = await pool.query(
+      `SELECT DISTINCT us.user_id
+       FROM assignment_managers am
+       JOIN assignments a ON a.id = am.assignment_id
+       JOIN user_subjects us ON us.subject_id = a.subject_id
+       WHERE am.user_id = $1 AND us.user_id = ANY($2)`,
+      [managerId, userIds]
+    );
+    return new Set(result.rows.map((r) => r.user_id));
   }
 
   /** Whether the user manages at least one assignment within the subject. */

@@ -3,8 +3,6 @@ jest.mock('../../src/models/Group');
 jest.mock('../../src/models/UserGroup');
 jest.mock('../../src/models/Assignment');
 jest.mock('../../src/models/Subject');
-jest.mock('../../src/models/Config');
-jest.mock('../../src/models/User');
 
 jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), trace: jest.fn(), fatal: jest.fn() },
@@ -19,8 +17,6 @@ const Group = require('../../src/models/Group');
 const UserGroup = require('../../src/models/UserGroup');
 const Assignment = require('../../src/models/Assignment');
 const Subject = require('../../src/models/Subject');
-const Config = require('../../src/models/Config');
-const User = require('../../src/models/User');
 
 const GROUP_ID = '10000000-0000-4000-8000-000000000001';
 const OTHER_GROUP_ID = '10000000-0000-4000-8000-000000000002';
@@ -606,40 +602,48 @@ describe('Groups Routes', () => {
     it('allows rename when the matching name belongs to the same group', async () => {
       const { handlers } = setupRoute();
       Group.findByName.mockResolvedValue({ id: GROUP_ID, name: 'team a' });
-      Group.update.mockResolvedValue({ id: GROUP_ID, name: 'Team A', enabled: true });
+      Group.updateWithCapacityCheck.mockResolvedValue({ id: GROUP_ID, name: 'Team A', enabled: true });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         { user: adminUser(), params: { id: GROUP_ID }, body: { name: 'Team A' } },
         reply
       );
       expect(reply.code).not.toHaveBeenCalledWith(409);
-      expect(Group.update).toHaveBeenCalledWith(GROUP_ID, { name: 'Team A', enabled: undefined });
+      expect(Group.updateWithCapacityCheck).toHaveBeenCalledWith(GROUP_ID, { name: 'Team A', enabled: undefined });
     });
 
-    it('rejects maxMembers below current member count with old message', async () => {
+    it('surfaces the model capacity refusal when maxMembers is below the member count', async () => {
       const { handlers } = setupRoute();
-      Group.getMemberCount.mockResolvedValue(5);
+      const err = new Error('Group already has 5 members, cannot set limit to 3');
+      err.statusCode = 400;
+      Group.updateWithCapacityCheck.mockRejectedValue(err);
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         { user: adminUser(), params: { id: GROUP_ID }, body: { maxMembers: 3 } },
         reply
       );
-      expect(Group.getMemberCount).toHaveBeenCalledWith(GROUP_ID);
       expect(reply.code).toHaveBeenCalledWith(400);
       expect(reply.send).toHaveBeenCalledWith({ error: 'Group already has 5 members, cannot set limit to 3' });
-      expect(Group.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the group disappeared before the update committed', async () => {
+      const { handlers } = setupRoute();
+      Group.updateWithCapacityCheck.mockResolvedValue(null);
+      const reply = mockReply();
+      await handlers['/groups/:id_put']({ user: adminUser(), params: { id: GROUP_ID }, body: { name: 'Gone' } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(404);
+      expect(reply.send).toHaveBeenCalledWith({ error: 'Group not found' });
     });
 
     it('updates group with valid maxMembers', async () => {
       const { handlers } = setupRoute();
-      Group.getMemberCount.mockResolvedValue(2);
-      Group.update.mockResolvedValue({ id: GROUP_ID, name: 'Team A', max_members: 5 });
+      Group.updateWithCapacityCheck.mockResolvedValue({ id: GROUP_ID, name: 'Team A', max_members: 5 });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         { user: adminUser(), params: { id: GROUP_ID }, body: { maxMembers: 5 } },
         reply
       );
-      expect(Group.update).toHaveBeenCalledWith(GROUP_ID, {
+      expect(Group.updateWithCapacityCheck).toHaveBeenCalledWith(GROUP_ID, {
         name: undefined,
         enabled: undefined,
         maxMembers: 5,
@@ -652,14 +656,13 @@ describe('Groups Routes', () => {
 
     it('sets maxMembers to null (unlimited) without member count check', async () => {
       const { handlers } = setupRoute();
-      Group.update.mockResolvedValue({ id: GROUP_ID, name: 'Team A', max_members: null });
+      Group.updateWithCapacityCheck.mockResolvedValue({ id: GROUP_ID, name: 'Team A', max_members: null });
       const reply = mockReply();
       await handlers['/groups/:id_put'](
         { user: adminUser(), params: { id: GROUP_ID }, body: { maxMembers: null } },
         reply
       );
-      expect(Group.getMemberCount).not.toHaveBeenCalled();
-      expect(Group.update).toHaveBeenCalledWith(GROUP_ID, {
+      expect(Group.updateWithCapacityCheck).toHaveBeenCalledWith(GROUP_ID, {
         name: undefined,
         enabled: undefined,
         maxMembers: null,
@@ -668,15 +671,15 @@ describe('Groups Routes', () => {
 
     it('updates enabled flag only', async () => {
       const { handlers } = setupRoute();
-      Group.update.mockResolvedValue({ id: GROUP_ID, name: 'Team A', enabled: false });
+      Group.updateWithCapacityCheck.mockResolvedValue({ id: GROUP_ID, name: 'Team A', enabled: false });
       const reply = mockReply();
       await handlers['/groups/:id_put']({ user: amUser(), params: { id: GROUP_ID }, body: { enabled: false } }, reply);
-      expect(Group.update).toHaveBeenCalledWith(GROUP_ID, { name: undefined, enabled: false });
+      expect(Group.updateWithCapacityCheck).toHaveBeenCalledWith(GROUP_ID, { name: undefined, enabled: false });
     });
 
     it('handles error when updating group', async () => {
       const { handlers } = setupRoute();
-      Group.update.mockRejectedValue(new Error('Database error'));
+      Group.updateWithCapacityCheck.mockRejectedValue(new Error('Database error'));
       const { logger: mockLogger } = require('../../src/utils/logger');
       const reply = mockReply();
       await handlers['/groups/:id_put'](
@@ -863,30 +866,8 @@ describe('Groups Routes', () => {
 
   describe('POST /groups/:id/join', () => {
     beforeEach(() => {
-      Config.get.mockResolvedValue('false');
       Group.findById.mockResolvedValue(mockGroupRow());
       UserGroup.assignUserToGroup.mockResolvedValue();
-      User.findById.mockResolvedValue({ id: 'caller', enabled: true });
-    });
-
-    it('returns 403 when the account is disabled', async () => {
-      const { handlers } = setupRoute();
-      User.findById.mockResolvedValue({ id: 'caller', enabled: false });
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
-      expect(reply.code).toHaveBeenCalledWith(403);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
-      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
-    });
-
-    it('returns 404 when the calling user no longer exists', async () => {
-      const { handlers } = setupRoute();
-      User.findById.mockResolvedValue(null);
-      const reply = mockReply();
-      await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
-      expect(reply.code).toHaveBeenCalledWith(404);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
-      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
     });
 
     it('rejects unauthenticated request', () => {
@@ -906,32 +887,45 @@ describe('Groups Routes', () => {
 
     it('rejects normal user when join lock is enabled', async () => {
       const { handlers } = setupRoute();
-      Config.get.mockResolvedValue('true');
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, join_locked: true });
       const reply = mockReply();
       await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
       expect(reply.code).toHaveBeenCalledWith(403);
       expect(reply.send).toHaveBeenCalledWith({
-        error: 'Group joining is currently locked. Please contact the teaching staff.',
+        error: 'Group joining is currently locked for this assignment. Please contact the teaching staff.',
       });
       expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
     });
 
     it('allows admin to join when lock is enabled', async () => {
       const { handlers } = setupRoute();
-      Config.get.mockResolvedValue('true');
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, join_locked: true });
       const reply = mockReply();
       await handlers['/groups/:id/join_post']({ user: adminUser(), params: { id: GROUP_ID } }, reply);
       expect(UserGroup.assignUserToGroup).toHaveBeenCalled();
       expect(reply.code).not.toHaveBeenCalledWith(403);
     });
 
-    it('allows assignment_manager to join when lock is enabled', async () => {
+    it('allows the MANAGING assignment_manager to join when lock is enabled', async () => {
       const { handlers } = setupRoute();
-      Config.get.mockResolvedValue('true');
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, join_locked: true });
+      Assignment.isManager.mockResolvedValue(true);
       const reply = mockReply();
       await handlers['/groups/:id/join_post']({ user: amUser(), params: { id: GROUP_ID } }, reply);
       expect(UserGroup.assignUserToGroup).toHaveBeenCalled();
       expect(reply.code).not.toHaveBeenCalledWith(403);
+    });
+
+    // The bypass is assignment-scoped: an AM who does not manage THIS assignment
+    // is an ordinary participant and must obey its lock.
+    it('blocks a NON-managing assignment_manager when the lock is enabled', async () => {
+      const { handlers } = setupRoute();
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, join_locked: true });
+      Assignment.isManager.mockResolvedValue(false);
+      const reply = mockReply();
+      await handlers['/groups/:id/join_post']({ user: amUser(), params: { id: GROUP_ID } }, reply);
+      expect(reply.code).toHaveBeenCalledWith(403);
+      expect(UserGroup.assignUserToGroup).not.toHaveBeenCalled();
     });
 
     it('returns 404 when group not found', async () => {
@@ -958,7 +952,10 @@ describe('Groups Routes', () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
       await handlers['/groups/:id/join_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
-      expect(UserGroup.assignUserToGroup).toHaveBeenCalledWith(USER_ID, GROUP_ID, { replace: false });
+      expect(UserGroup.assignUserToGroup).toHaveBeenCalledWith(USER_ID, GROUP_ID, {
+        replace: false,
+        enforcePolicy: true,
+      });
       expect(reply.send).toHaveBeenCalledWith({
         message: 'Successfully joined group',
         groupId: GROUP_ID,
@@ -1013,15 +1010,12 @@ describe('Groups Routes', () => {
 
   describe('POST /groups/:id/leave', () => {
     beforeEach(() => {
-      Config.get.mockResolvedValue('false');
       Group.findById.mockResolvedValue(mockGroupRow());
-      UserGroup.findMembership.mockResolvedValue({
+      UserGroup.leaveGroup.mockResolvedValue({
         user_id: USER_ID,
         group_id: GROUP_ID,
         assignment_id: ASSIGNMENT_ID,
       });
-      UserGroup.remove.mockResolvedValue({ user_id: USER_ID, group_id: GROUP_ID, assignment_id: ASSIGNMENT_ID });
-      User.findById.mockResolvedValue({ id: 'caller', enabled: true });
     });
 
     it('rejects unauthenticated request', () => {
@@ -1029,26 +1023,6 @@ describe('Groups Routes', () => {
       const reply = mockReply();
       handlers['/groups/:id/leave_post_pre']({ user: null }, reply);
       expect(reply.code).toHaveBeenCalledWith(401);
-    });
-
-    it('returns 403 when the account is disabled', async () => {
-      const { handlers } = setupRoute();
-      User.findById.mockResolvedValue({ id: 'caller', enabled: false });
-      const reply = mockReply();
-      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
-      expect(reply.code).toHaveBeenCalledWith(403);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'Account is disabled' });
-      expect(UserGroup.remove).not.toHaveBeenCalled();
-    });
-
-    it('returns 404 when the calling user no longer exists', async () => {
-      const { handlers } = setupRoute();
-      User.findById.mockResolvedValue(null);
-      const reply = mockReply();
-      await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
-      expect(reply.code).toHaveBeenCalledWith(404);
-      expect(reply.send).toHaveBeenCalledWith({ error: 'User not found' });
-      expect(UserGroup.remove).not.toHaveBeenCalled();
     });
 
     it('returns 400 for invalid UUID', async () => {
@@ -1061,27 +1035,27 @@ describe('Groups Routes', () => {
 
     it('rejects normal user when join lock is enabled', async () => {
       const { handlers } = setupRoute();
-      Config.get.mockResolvedValue('true');
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, join_locked: true });
       const reply = mockReply();
       await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
       expect(reply.code).toHaveBeenCalledWith(403);
       expect(reply.send).toHaveBeenCalledWith({
-        error: 'Group joining is currently locked. Please contact the teaching staff.',
+        error: 'Group joining is currently locked for this assignment. Please contact the teaching staff.',
       });
-      expect(UserGroup.remove).not.toHaveBeenCalled();
+      expect(UserGroup.leaveGroup).not.toHaveBeenCalled();
     });
 
     it('allows admin to leave when lock is enabled', async () => {
       const { handlers } = setupRoute();
-      Config.get.mockResolvedValue('true');
-      UserGroup.findMembership.mockResolvedValue({
+      Assignment.findById.mockResolvedValue({ id: ASSIGNMENT_ID, join_locked: true });
+      UserGroup.leaveGroup.mockResolvedValue({
         user_id: ADMIN_ID,
         group_id: GROUP_ID,
         assignment_id: ASSIGNMENT_ID,
       });
       const reply = mockReply();
       await handlers['/groups/:id/leave_post']({ user: adminUser(), params: { id: GROUP_ID } }, reply);
-      expect(UserGroup.remove).toHaveBeenCalledWith(ADMIN_ID, ASSIGNMENT_ID);
+      expect(UserGroup.leaveGroup).toHaveBeenCalledWith(ADMIN_ID, ASSIGNMENT_ID, GROUP_ID, { enforcePolicy: false });
       expect(reply.code).not.toHaveBeenCalledWith(403);
     });
 
@@ -1096,34 +1070,31 @@ describe('Groups Routes', () => {
 
     it('rejects when user has no membership for the assignment', async () => {
       const { handlers } = setupRoute();
-      UserGroup.findMembership.mockResolvedValue(null);
+      UserGroup.leaveGroup.mockResolvedValue(null);
       const reply = mockReply();
       await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
-      expect(UserGroup.findMembership).toHaveBeenCalledWith(USER_ID, ASSIGNMENT_ID);
+      expect(UserGroup.leaveGroup).toHaveBeenCalledWith(USER_ID, ASSIGNMENT_ID, GROUP_ID, { enforcePolicy: true });
       expect(reply.code).toHaveBeenCalledWith(400);
       expect(reply.send).toHaveBeenCalledWith({ error: 'You are not a member of this group' });
-      expect(UserGroup.remove).not.toHaveBeenCalled();
     });
 
     it('rejects when user is in a different group of the assignment', async () => {
       const { handlers } = setupRoute();
-      UserGroup.findMembership.mockResolvedValue({
-        user_id: USER_ID,
-        group_id: OTHER_GROUP_ID,
-        assignment_id: ASSIGNMENT_ID,
-      });
+      // The DELETE is scoped to (user, assignment, group), so a member who has
+      // since been moved elsewhere matches no row and their group is preserved.
+      UserGroup.leaveGroup.mockResolvedValue(null);
       const reply = mockReply();
       await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
       expect(reply.code).toHaveBeenCalledWith(400);
       expect(reply.send).toHaveBeenCalledWith({ error: 'You are not a member of this group' });
-      expect(UserGroup.remove).not.toHaveBeenCalled();
+      expect(UserGroup.leaveGroup).toHaveBeenCalledWith(USER_ID, ASSIGNMENT_ID, GROUP_ID, { enforcePolicy: true });
     });
 
     it('leaves group successfully', async () => {
       const { handlers } = setupRoute();
       const reply = mockReply();
       await handlers['/groups/:id/leave_post']({ user: plainUser(), params: { id: GROUP_ID } }, reply);
-      expect(UserGroup.remove).toHaveBeenCalledWith(USER_ID, ASSIGNMENT_ID);
+      expect(UserGroup.leaveGroup).toHaveBeenCalledWith(USER_ID, ASSIGNMENT_ID, GROUP_ID, { enforcePolicy: true });
       expect(reply.send).toHaveBeenCalledWith({ message: 'Successfully left group' });
     });
 

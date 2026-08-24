@@ -30,20 +30,29 @@ function getTransporter() {
   return _transporter;
 }
 
+/**
+ * Send one email.
+ *
+ * Returns whether it was actually delivered so callers never report a skipped
+ * send as success. Throws if the transport itself fails.
+ *
+ * @returns {Promise<boolean>} false when SMTP is not configured.
+ */
 async function sendEmail(to, subject, html) {
   const transporter = getTransporter();
   if (!transporter) {
-    // SMTP not configured — log so dev flows (password setup/reset) remain usable
-    if (process.env.NODE_ENV !== 'production') {
-      logger.info(`[EMAIL DEV] To: ${maskEmail(to)}`);
-      logger.info('[EMAIL DEV] Body omitted — set SMTP_HOST to send real emails');
-    } else {
-      logger.warn('[EMAIL] SMTP not configured; email not sent.');
+    logger.error(`[EMAIL] SMTP not configured; email NOT sent. To: ${maskEmail(to)}`);
+    // The body carries a one-time setup/reset token, so logging it is opt-in and
+    // never inferred from "not production" — staging and preview deployments
+    // routinely leave NODE_ENV unset and ship their logs somewhere shared.
+    if (process.env.LOG_EMAIL_BODIES === 'true' && process.env.NODE_ENV !== 'production') {
+      logger.warn(`[EMAIL DEV] Body (contains a one-time token):\n${html}`);
     }
-    return;
+    return false;
   }
   await transporter.sendMail({ from: config.smtp.from, to, subject, html });
   logger.info(`Email sent to: ${maskEmail(to)}`);
+  return true;
 }
 
 function emailLayout(content) {
@@ -87,7 +96,8 @@ function emailLayout(content) {
 </html>`;
 }
 
-async function sendPasswordSetupEmail(user, token) {
+/** @returns {Promise<boolean>} Whether the email was actually delivered. */
+function sendPasswordSetupEmail(user, token) {
   const url = escapeHtml(`${config.appUrl}/set-password?token=${token}`);
   const name = escapeHtml(user.first_name || user.username);
   const username = escapeHtml(user.username);
@@ -125,10 +135,11 @@ async function sendPasswordSetupEmail(user, token) {
       If you did not expect this email, you can safely ignore it.
     </p>`;
 
-  await sendEmail(user.email, 'Set your password — Group Assignment Portal', emailLayout(content));
+  return sendEmail(user.email, 'Set your password — Group Assignment Portal', emailLayout(content));
 }
 
-async function sendPasswordResetEmail(user, token) {
+/** @returns {Promise<boolean>} Whether the email was actually delivered. */
+function sendPasswordResetEmail(user, token) {
   const url = escapeHtml(`${config.appUrl}/set-password?token=${token}`);
   const name = escapeHtml(user.first_name || user.username);
 
@@ -156,7 +167,7 @@ async function sendPasswordResetEmail(user, token) {
       If you did not request a password reset, you can safely ignore this email — your account remains unchanged.
     </p>`;
 
-  await sendEmail(user.email, 'Reset your password — Group Assignment Portal', emailLayout(content));
+  return sendEmail(user.email, 'Reset your password — Group Assignment Portal', emailLayout(content));
 }
 
 module.exports = { sendEmail, sendPasswordSetupEmail, sendPasswordResetEmail };

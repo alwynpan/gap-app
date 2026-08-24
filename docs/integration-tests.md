@@ -29,7 +29,6 @@ backend/
     ├── auth.test.js
     ├── users.test.js
     ├── groups.test.js
-    └── config.test.js
 ```
 
 ### Key design decisions
@@ -189,38 +188,17 @@ backend/
 
 ---
 
-### `config.test.js` — 18 tests
+### Per-assignment join lock — covered in `assignments.test.js`
 
-| Endpoint                            | Scenario                                               |
-| ----------------------------------- | ------------------------------------------------------ |
-| `GET /api/config/group-join-locked` | ✅ Authenticated user reads lock status                |
-|                                     | ✅ Defaults to `false` when no config row exists       |
-|                                     | ✅ No token → 401                                      |
-| `GET /api/config`                   | ✅ Admin can read all config                           |
-|                                     | ✅ Assignment manager can read all config              |
-|                                     | ✅ Regular user → 403                                  |
-|                                     | ✅ No token → 401                                      |
-| `PUT /api/config/:key`              | ✅ Admin sets group_join_locked=true                   |
-|                                     | ✅ Admin sets group_join_locked=false                  |
-|                                     | ✅ Config change reflected in GET immediately          |
-|                                     | ✅ Unknown key → 400                                   |
-|                                     | ✅ Missing value → 400                                 |
-|                                     | ✅ Assignment manager can update config                |
-|                                     | ✅ Regular user → 403                                  |
-|                                     | ✅ No token → 401                                      |
-| `group_join_locked` enforcement     | ✅ Regular user blocked from joining when locked → 403 |
-|                                     | ✅ Assignment manager bypasses lock when joining → 200 |
-|                                     | ✅ Admin bypasses lock when joining → 200              |
+`config.test.js` was removed with the global `/api/config` endpoints; the lock is now a per-assignment flag.
 
----
-
-## Updating This Document
-
-**Whenever integration tests are added, removed, or modified**, update this document in the same PR/commit:
-
-1. Add/remove rows from the relevant table.
-2. Update the test count in the section heading.
-3. Update the total in the [Running](#running) section if the overall count changes.
-
-The per-section test counts (22 / 53 / 46 / 18 = **139 total**) must always match
-`jest --config jest.integration.config.js` output.
+| Endpoint                             | Coverage                                       |
+| ------------------------------------ | ---------------------------------------------- |
+| `PUT /api/assignments/:id/join-lock` | ✅ Admin locks and unlocks one assignment      |
+|                                      | ✅ Managing AM can lock their own assignment   |
+|                                      | ✅ AM managing nothing is refused → 403        |
+|                                      | ✅ Regular user is refused → 403               |
+|                                      | ✅ Locking one assignment leaves siblings open |
+|                                      | ✅ Rejects non-boolean joinLocked and bad UUID |
+|                                      | ✅ 404 for unknown assignment                  |
+|                                      | ✅ New assignments default to unlocked         |

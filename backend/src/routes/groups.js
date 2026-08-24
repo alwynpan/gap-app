@@ -2,8 +2,6 @@ const Group = require('../models/Group');
 const UserGroup = require('../models/UserGroup');
 const Assignment = require('../models/Assignment');
 const Subject = require('../models/Subject');
-const Config = require('../models/Config');
-const User = require('../models/User');
 const {
   parseBody,
   createGroupSchema,
@@ -14,6 +12,42 @@ const {
 const { logger } = require('../utils/logger');
 
 const MAX_BULK_DELETE = 2000;
+
+/**
+ * Whether the caller is exempt from an assignment's join lock.
+ *
+ * Scoped, not role-wide: an AM who does not manage THIS assignment is an
+ * ordinary participant here and must obey its lock, exactly like a student.
+ */
+async function isLockExempt(request, assignmentId) {
+  const { role, id: userId } = request.user;
+  if (role === 'admin') {
+    return true;
+  }
+  return role === 'assignment_manager' && Assignment.isManager(userId, assignmentId);
+}
+
+/**
+ * Reject a non-exempt caller when the assignment is locked.
+ *
+ * This is a fast path for a clear error message; the model re-checks the lock
+ * inside the write transaction, which is what actually closes the race.
+ *
+ * @returns {Promise<boolean>} false when the caller has been rejected.
+ */
+async function assertJoinUnlocked(request, reply, assignmentId, exempt) {
+  if (exempt) {
+    return true;
+  }
+  const assignment = await Assignment.findById(assignmentId);
+  if (assignment?.join_locked) {
+    reply
+      .code(403)
+      .send({ error: 'Group joining is currently locked for this assignment. Please contact the teaching staff.' });
+    return false;
+  }
+  return true;
+}
 
 async function groupsRoutes(fastify, _options) {
   // Get group by ID (admin, subject members, or managing assignment managers)
@@ -125,6 +159,11 @@ async function groupsRoutes(fastify, _options) {
           },
         });
       } catch (error) {
+        // Migration 016 enforces case-insensitive names, so a concurrent create
+        // loses the race here rather than at the application precheck.
+        if (error.code === '23505') {
+          return reply.code(409).send({ error: 'Group name already exists' });
+        }
         logger.error('Create group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to create group' });
       }
@@ -241,29 +280,31 @@ async function groupsRoutes(fastify, _options) {
           }
         }
 
-        // Validate maxMembers if provided
-        if (maxMembers !== undefined && maxMembers !== null) {
-          // Check current member count doesn't exceed new limit
-          const memberCount = await Group.getMemberCount(groupId);
-          if (memberCount > maxMembers) {
-            return reply
-              .code(400)
-              .send({ error: `Group already has ${memberCount} members, cannot set limit to ${maxMembers}` });
-          }
-        }
-
         const updates = { name, enabled };
         if (maxMembers !== undefined) {
           updates.maxMembers = maxMembers;
         }
 
-        const updatedGroup = await Group.update(groupId, updates);
+        // Validates a lowered maxMembers against the live count under the group
+        // lock, so a concurrent join cannot land between check and write.
+        const updatedGroup = await Group.updateWithCapacityCheck(groupId, updates);
+        if (!updatedGroup) {
+          return reply.code(404).send({ error: 'Group not found' });
+        }
 
         return reply.send({
           message: 'Group updated successfully',
           group: updatedGroup,
         });
       } catch (error) {
+        if (error.statusCode && error.statusCode < 500) {
+          return reply.code(error.statusCode).send({ error: error.message });
+        }
+        // Migration 016 enforces case-insensitive names, so a concurrent create
+        // loses the race here rather than at the application precheck.
+        if (error.code === '23505') {
+          return reply.code(409).send({ error: 'Group name already exists' });
+        }
         logger.error('Update group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to update group' });
       }
@@ -374,27 +415,6 @@ async function groupsRoutes(fastify, _options) {
         }
         const userId = request.user.id;
 
-        // Check system-level group join lock for normal users
-        const locked = await Config.get('group_join_locked');
-        if (locked === 'true') {
-          const userRole = request.user.role;
-          if (userRole !== 'admin' && userRole !== 'assignment_manager') {
-            return reply
-              .code(403)
-              .send({ error: 'Group joining is currently locked. Please contact the teaching staff.' });
-          }
-        }
-
-        // Re-check account state against the database — a disabled user may
-        // still hold a valid JWT.
-        const caller = await User.findById(userId);
-        if (!caller) {
-          return reply.code(404).send({ error: 'User not found' });
-        }
-        if (!caller.enabled) {
-          return reply.code(403).send({ error: 'Account is disabled' });
-        }
-
         const group = await Group.findById(groupId);
         if (!group) {
           return reply.code(404).send({ error: 'Group not found' });
@@ -404,10 +424,19 @@ async function groupsRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'Cannot join a disabled group' });
         }
 
+        // Join lock is per assignment; staff may still place members while locked.
+        const exempt = await isLockExempt(request, group.assignment_id);
+        const unlocked = await assertJoinUnlocked(request, reply, group.assignment_id, exempt);
+        if (!unlocked) {
+          return reply;
+        }
+
         // Assign user to group inside a transaction with row-level lock; the model
         // enforces subject membership (403), one-group-per-assignment (409), and
         // capacity (409) via errors carrying a statusCode.
-        await UserGroup.assignUserToGroup(userId, groupId, { replace: false });
+        // enforcePolicy: the lock/enabled checks above are a fast path for a clear
+        // error message; the transaction re-checks them from the locked rows.
+        await UserGroup.assignUserToGroup(userId, groupId, { replace: false, enforcePolicy: !exempt });
 
         return reply.send({ message: 'Successfully joined group', groupId, groupName: group.name });
       } catch (error) {
@@ -438,42 +467,31 @@ async function groupsRoutes(fastify, _options) {
         }
         const userId = request.user.id;
 
-        // Check system-level group join lock for normal users
-        const locked = await Config.get('group_join_locked');
-        if (locked === 'true') {
-          const userRole = request.user.role;
-          if (userRole !== 'admin' && userRole !== 'assignment_manager') {
-            return reply
-              .code(403)
-              .send({ error: 'Group joining is currently locked. Please contact the teaching staff.' });
-          }
-        }
-
-        // Re-check account state against the database — a disabled user may
-        // still hold a valid JWT.
-        const caller = await User.findById(userId);
-        if (!caller) {
-          return reply.code(404).send({ error: 'User not found' });
-        }
-        if (!caller.enabled) {
-          return reply.code(403).send({ error: 'Account is disabled' });
-        }
-
         const group = await Group.findById(groupId);
         if (!group) {
           return reply.code(404).send({ error: 'Group not found' });
         }
 
-        // Check user is actually in this group for the assignment
-        const membership = await UserGroup.findMembership(userId, group.assignment_id);
-        if (!membership || membership.group_id !== groupId) {
+        const exempt = await isLockExempt(request, group.assignment_id);
+        const unlocked = await assertJoinUnlocked(request, reply, group.assignment_id, exempt);
+        if (!unlocked) {
+          return reply;
+        }
+
+        // Delete only if the membership still points at this group, so a
+        // reassignment made after the caller loaded the page is not silently
+        // removed by their stale leave request.
+        const removed = await UserGroup.leaveGroup(userId, group.assignment_id, groupId, { enforcePolicy: !exempt });
+        if (!removed) {
           return reply.code(400).send({ error: 'You are not a member of this group' });
         }
 
-        await UserGroup.remove(userId, group.assignment_id);
-
         return reply.send({ message: 'Successfully left group' });
       } catch (error) {
+        // leaveGroup raises a 403 when the assignment was locked mid-request.
+        if (error.statusCode && error.statusCode < 500) {
+          return reply.code(error.statusCode).send({ error: error.message });
+        }
         logger.error('Leave group error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to leave group' });
       }

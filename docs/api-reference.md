@@ -1255,55 +1255,68 @@ Leave a group as the currently authenticated user.
 
 ---
 
-## Config
+## Assignment join lock
 
-### `GET /api/config/group-join-locked`
+Self-service group joining is controlled per assignment. The former global `/api/config` endpoints and the
+`group_join_locked` setting were removed in favour of this, so a manager can only freeze the assignments they manage.
 
-Check whether the group-join lock is active.
+The current state is returned as `join_locked` on every assignment object from `GET /api/assignments` and
+`GET /api/assignments/:id`.
 
-| Access | Auth |
-| ------ | ---- |
+### `PUT /api/assignments/:id/join-lock`
 
-**Response `200`**
+Freeze or unfreeze self-service joining and leaving for one assignment. Staff can still place members while it is
+locked.
 
-```json
-{ "locked": false }
-```
-
----
-
-### `GET /api/config`
-
-Get all system config values.
-
-| Access | AM+ |
-| ------ | --- |
-
-**Response `200`**
-
-```json
-{ "config": [{ "key": "group_join_locked", "value": "false" }] }
-```
-
----
-
-### `PUT /api/config/:key`
-
-Update a system config value. Currently the only supported key is `group_join_locked`.
-
-| Access | AM+ |
-| ------ | --- |
+| Access | Admin, or the assignment's manager |
+| ------ | ---------------------------------- |
 
 **Request body**
 
 ```json
-{ "value": "true" }
+{ "joinLocked": true }
 ```
 
 **Response `200`**
 
 ```json
-{ "message": "Config updated successfully", "config": { "key": "group_join_locked", "value": "true" } }
+{
+  "message": "Group joining locked",
+  "assignment": { "id": "uuid", "name": "Assignment 1", "join_locked": true }
+}
+```
+
+| Code | Meaning                                    |
+| ---- | ------------------------------------------ |
+| 400  | `joinLocked` is not a boolean, or bad UUID |
+| 403  | Caller does not manage this assignment     |
+| 404  | Assignment not found                       |
+
+---
+
+### `GET /api/assignments/:id/import-preview`
+
+Assignment-scoped data for the group-mapping import preview: the parent subject's members and the assignment's groups.
+Exists so an assignment manager never needs the admin-only `GET /api/users`.
+
+| Access | Admin, or the assignment's manager |
+| ------ | ---------------------------------- |
+
+**Response `200`**
+
+```json
+{
+  "users": [
+    {
+      "id": "uuid",
+      "email": "student@example.com",
+      "role_name": "user",
+      "membership_enabled": true,
+      "current_group_id": null
+    }
+  ],
+  "groups": [{ "id": "uuid", "name": "Team Alpha", "max_members": 5, "member_count": 2 }]
+}
 ```
 
 ---

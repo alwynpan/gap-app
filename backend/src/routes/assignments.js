@@ -9,6 +9,7 @@ const {
   createAssignmentSchema,
   updateAssignmentSchema,
   setAssignmentManagersSchema,
+  setJoinLockedSchema,
   importGroupMappingRowSchema,
   validateUUID,
 } = require('../utils/schemas');
@@ -132,6 +133,11 @@ async function assignmentsRoutes(fastify, _options) {
         const assignment = await Assignment.create(body.subjectId, body.name);
         return reply.code(201).send({ message: 'Assignment created successfully', assignment });
       } catch (error) {
+        // Migration 016 enforces case-insensitive names, so a concurrent create
+        // loses the race here rather than at the application precheck.
+        if (error.code === '23505') {
+          return reply.code(409).send({ error: 'An assignment with this name already exists in this subject' });
+        }
         logger.error('Create assignment error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to create assignment' });
       }
@@ -179,6 +185,11 @@ async function assignmentsRoutes(fastify, _options) {
         const updated = await Assignment.update(assignmentId, { name: body.name });
         return reply.send({ message: 'Assignment updated successfully', assignment: updated });
       } catch (error) {
+        // Migration 016 enforces case-insensitive names, so a concurrent create
+        // loses the race here rather than at the application precheck.
+        if (error.code === '23505') {
+          return reply.code(409).send({ error: 'An assignment with this name already exists in this subject' });
+        }
         logger.error('Update assignment error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to update assignment' });
       }
@@ -253,6 +264,120 @@ async function assignmentsRoutes(fastify, _options) {
       } catch (error) {
         logger.error('Get assignment groups error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve groups' });
+      }
+    }
+  );
+
+  // Freeze/unfreeze self-service group joining for one assignment
+  // (admin, or the assignment's manager)
+  fastify.put(
+    '/assignments/:id/join-lock',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const assignmentId = request.params.id;
+        if (!validateUUID(assignmentId)) {
+          return reply.code(400).send({ error: 'Invalid assignment ID' });
+        }
+
+        const { data: body, error: validationError } = parseBody(setJoinLockedSchema, request.body || {});
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
+        }
+
+        const assignment = await Assignment.findById(assignmentId);
+        if (!assignment) {
+          return reply.code(404).send({ error: 'Assignment not found' });
+        }
+
+        const allowed = await fastify.assertManagesAssignment(request, reply, assignmentId);
+        if (!allowed) {
+          return reply;
+        }
+
+        const updated = await Assignment.setJoinLocked(assignmentId, body.joinLocked);
+        if (!updated) {
+          return reply.code(404).send({ error: 'Assignment not found' });
+        }
+
+        return reply.send({
+          message: body.joinLocked ? 'Group joining locked' : 'Group joining unlocked',
+          assignment: updated,
+        });
+      } catch (error) {
+        logger.error('Set assignment join lock error', { err: error.message, code: error.code });
+        return reply.code(500).send({ error: 'Failed to update join lock' });
+      }
+    }
+  );
+
+  // Preview data for the mapping import: the members of the assignment's subject
+  // plus its groups. Scoped to the assignment so an assignment manager does not
+  // need the admin-only GET /users.
+  fastify.get(
+    '/assignments/:id/import-preview',
+    {
+      preHandler: async (request, reply) => {
+        if (!request.user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
+        }
+      },
+    },
+    async (request, reply) => {
+      try {
+        const assignmentId = request.params.id;
+        if (!validateUUID(assignmentId)) {
+          return reply.code(400).send({ error: 'Invalid assignment ID' });
+        }
+
+        const assignment = await Assignment.findById(assignmentId);
+        if (!assignment) {
+          return reply.code(404).send({ error: 'Assignment not found' });
+        }
+
+        const allowed = await fastify.assertManagesAssignment(request, reply, assignmentId);
+        if (!allowed) {
+          return reply;
+        }
+
+        const [members, groups] = await Promise.all([
+          Subject.getMembers(assignment.subject_id),
+          Group.findAllByAssignment(assignmentId),
+        ]);
+
+        // Each member's existing group in THIS assignment, so the preview can
+        // flag reassignments as conflicts.
+        const membershipRows =
+          members.length > 0 ? await UserGroup.findMembershipsForUsers(members.map((m) => m.id)) : [];
+        const currentGroupByUser = new Map(
+          membershipRows.filter((r) => r.assignment_id === assignmentId).map((r) => [r.user_id, r.group_id])
+        );
+
+        // Only the fields the preview needs — no student IDs, names, or status.
+        return reply.send({
+          users: members.map((m) => ({
+            id: m.id,
+            email: m.email,
+            role_name: m.role_name,
+            membership_enabled: m.membership_enabled,
+            current_group_id: currentGroupByUser.get(m.id) ?? null,
+          })),
+          groups: groups.map((g) => ({
+            id: g.id,
+            name: g.name,
+            max_members: g.max_members,
+            member_count: g.member_count,
+          })),
+        });
+      } catch (error) {
+        logger.error('Get assignment import preview error', { err: error.message, code: error.code });
+        return reply.code(500).send({ error: 'Failed to load preview data' });
       }
     }
   );
@@ -424,7 +549,9 @@ async function assignmentsRoutes(fastify, _options) {
 
         // First pass: parse all rows while preserving input order for deterministic output
         const parsedRows = [];
-        for (const rawRow of rows) {
+        for (const raw of rows) {
+          // A row may be null or a scalar; never dereference it directly.
+          const rawRow = typeof raw === 'object' && raw !== null ? raw : {};
           if (rawRow.action === 'skip') {
             const email = typeof rawRow.email === 'string' ? sanitize(rawRow.email).slice(0, 255) : '?';
             const groupName = typeof rawRow.groupName === 'string' ? sanitize(rawRow.groupName).slice(0, 100) : '?';

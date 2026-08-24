@@ -11,6 +11,8 @@ import SubjectMembershipModal from '../components/SubjectMembershipModal.jsx';
 import CascadingAssignmentSelect from '../components/CascadingAssignmentSelect.jsx';
 import { parseBody, createUserSchema, updateUserSchema } from '../utils/schemas.js';
 import { API_BASE } from '../config.js';
+import { csvEscape } from '../utils/csv.js';
+import Modal from '../components/Modal.jsx';
 
 const emptyNewUser = {
   username: '',
@@ -398,10 +400,8 @@ function Users() {
   };
 
   const exportToCsv = (exportUsers, filename) => {
-    const csvEscape = (val) => {
-      const str = val === null || val === undefined ? '' : String(val);
-      return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str.replace(/"/g, '""')}"` : str;
-    };
+    // Uses the shared escaper: the local copy this replaced did not neutralise
+    // spreadsheet formulas, so a user-controlled name could execute on open.
     const headers = ['Username', 'First Name', 'Last Name', 'Email', 'Role', 'Subjects', 'Groups', 'Student ID'];
     const rows = exportUsers.map((u) => [
       csvEscape(u.username),
@@ -865,380 +865,373 @@ function Users() {
 
       {/* Create User Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New User</h3>
-            <form onSubmit={handleCreateUser}>
-              {formError && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
-                  {formError}
-                </div>
-              )}
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Username <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newUser.username}
-                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter username"
-                />
+        <Modal title="Create New User" onClose={() => setShowCreateModal(false)}>
+          <form onSubmit={handleCreateUser}>
+            {formError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+                {formError}
               </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter email"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  First Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newUser.firstName}
-                  onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter first name"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Last Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newUser.lastName}
-                  onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter last name"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Role <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={newUser.role}
-                  onChange={(e) => {
-                    setNewUser({ ...newUser, role: e.target.value });
-                    setCreateSelection({ ...emptySelection });
-                  }}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="user">User</option>
-                  <option value="assignment_manager">Assignment Manager</option>
-                  {isAdmin && <option value="admin">Admin</option>}
-                </select>
-              </div>
-              {newUser.role === 'user' && (
-                <>
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Student ID (Optional)</label>
-                    <input
-                      type="text"
-                      value={newUser.studentId}
-                      onChange={(e) => setNewUser({ ...newUser, studentId: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      placeholder="Enter student ID"
-                    />
-                  </div>
-                  <p className="mb-2 text-xs text-gray-500">
-                    Subject is required. Assignment and group allow immediate placement (optional).
-                  </p>
-                  <CascadingAssignmentSelect
-                    subjects={subjects}
-                    value={createSelection}
-                    onChange={setCreateSelection}
-                    showGroup
-                    disabled={creating}
-                  />
-                </>
-              )}
-              {newUser.role === 'assignment_manager' && (
-                <>
-                  <p className="mb-2 text-xs text-gray-500">
-                    Optionally scope the manager to an assignment (pick a subject to narrow the list).
-                  </p>
-                  <CascadingAssignmentSelect
-                    subjects={subjects}
-                    value={createSelection}
-                    onChange={setCreateSelection}
-                    showGroup={false}
-                    disabled={creating}
-                  />
-                </>
-              )}
-              <div className="mb-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
-                The user will need to set a password via email before they can log in.
-              </div>
-              <div className="mb-3 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="sendSetupEmail"
-                  checked={newUser.sendSetupEmail}
-                  onChange={(e) => setNewUser({ ...newUser, sendSetupEmail: e.target.checked })}
-                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <label htmlFor="sendSetupEmail" className="text-sm text-gray-700">
-                  Send &lsquo;Set Password&rsquo; email now
-                </label>
-              </div>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setNewUser({ ...emptyNewUser });
-                    setCreateSelection({ ...emptySelection });
-                  }}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creating ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      {/* Edit User Modal */}
-      {editingUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit User</h3>
-            <form onSubmit={handleEditUser}>
-              {formError && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
-                  {formError}
-                </div>
-              )}
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Username <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingUser.username}
-                  disabled
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 text-gray-500 cursor-not-allowed"
-                  placeholder="Enter username"
-                />
-                <p className="mt-1 text-xs text-gray-500">Username cannot be changed</p>
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={editingUser.email}
-                  onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter email"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  First Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingUser.firstName}
-                  onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter first name"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Last Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingUser.lastName}
-                  onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter last name"
-                />
-              </div>
-              {editingUser.roleName === 'user' && (
+            )}
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Username <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={newUser.username}
+                onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter username"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                required
+                value={newUser.email}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter email"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                First Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={newUser.firstName}
+                onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter first name"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Last Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={newUser.lastName}
+                onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter last name"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Role <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={newUser.role}
+                onChange={(e) => {
+                  setNewUser({ ...newUser, role: e.target.value });
+                  setCreateSelection({ ...emptySelection });
+                }}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="user">User</option>
+                <option value="assignment_manager">Assignment Manager</option>
+                {isAdmin && <option value="admin">Admin</option>}
+              </select>
+            </div>
+            {newUser.role === 'user' && (
+              <>
                 <div className="mb-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Student ID (Optional)</label>
                   <input
                     type="text"
-                    value={editingUser.studentId}
-                    onChange={(e) => setEditingUser({ ...editingUser, studentId: e.target.value })}
+                    value={newUser.studentId}
+                    onChange={(e) => setNewUser({ ...newUser, studentId: e.target.value })}
                     className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
                     placeholder="Enter student ID"
                   />
                 </div>
-              )}
-              {editingUser.roleName === 'user' && (
-                <div className="mb-3">
-                  <span className="block text-sm font-medium text-gray-700 mb-1">Memberships</span>
-                  {editingUser.memberships.length > 0 ? (
-                    <ul className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 space-y-0.5">
-                      {membershipLines({ memberships: editingUser.memberships }).map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-gray-500">None</p>
-                  )}
-                </div>
-              )}
-              {isAdmin && editingUser.username !== 'admin' && (
-                <div className="mb-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                  <select
-                    value={editingUser.roleName}
-                    onChange={(e) => setEditingUser({ ...editingUser, roleName: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  >
-                    <option value="user">User</option>
-                    <option value="assignment_manager">Assignment Manager</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-              )}
-              {/* Show Enabled checkbox for admins and assignment managers editing non-built-in-admin users */}
-              {((isAdmin && editingUser.username !== 'admin') ||
-                (isAssignmentManager && editingUser.roleName !== 'admin')) && (
-                <div className="mb-4">
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={editingUser.enabled}
-                      onChange={(e) => setEditingUser({ ...editingUser, enabled: e.target.checked })}
-                      aria-label="Enabled"
-                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                    />
-                    <span className="text-sm font-medium text-gray-700">Enabled</span>
-                  </label>
-                </div>
-              )}
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      {/* Send Setup Emails Confirmation Modal */}
-      {sendEmailsModal !== null && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Send setup email{sendEmailsModal !== 1 ? 's' : ''}?
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              This will send a &lsquo;Set Password&rsquo; email to {sendEmailsModal} pending user
-              {sendEmailsModal !== 1 ? 's' : ''}. Each user will receive a link to activate their account.
-            </p>
+                <p className="mb-2 text-xs text-gray-500">
+                  Subject is required. Assignment and group allow immediate placement (optional).
+                </p>
+                <CascadingAssignmentSelect
+                  subjects={subjects}
+                  value={createSelection}
+                  onChange={setCreateSelection}
+                  showGroup
+                  disabled={creating}
+                />
+              </>
+            )}
+            {newUser.role === 'assignment_manager' && (
+              <>
+                <p className="mb-2 text-xs text-gray-500">
+                  Optionally scope the manager to an assignment (pick a subject to narrow the list).
+                </p>
+                <CascadingAssignmentSelect
+                  subjects={subjects}
+                  value={createSelection}
+                  onChange={setCreateSelection}
+                  showGroup={false}
+                  disabled={creating}
+                />
+              </>
+            )}
+            <div className="mb-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+              The user will need to set a password via email before they can log in.
+            </div>
+            <div className="mb-3 flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="sendSetupEmail"
+                checked={newUser.sendSetupEmail}
+                onChange={(e) => setNewUser({ ...newUser, sendSetupEmail: e.target.checked })}
+                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <label htmlFor="sendSetupEmail" className="text-sm text-gray-700">
+                Send &lsquo;Set Password&rsquo; email now
+              </label>
+            </div>
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => setSendEmailsModal(null)}
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewUser({ ...emptyNewUser });
+                  setCreateSelection({ ...emptySelection });
+                }}
                 className="px-4 py-2 text-gray-700 hover:text-gray-900"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                onClick={() => {
-                  setSendEmailsModal(null);
-                  handleSendSetupEmails();
-                }}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                type="submit"
+                disabled={creating}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Send
+                {creating ? 'Creating...' : 'Create'}
               </button>
             </div>
+          </form>
+        </Modal>
+      )}
+      {/* Edit User Modal */}
+      {editingUser && (
+        <Modal title="Edit User" onClose={() => setEditingUser(null)}>
+          <form onSubmit={handleEditUser}>
+            {formError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+                {formError}
+              </div>
+            )}
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Username <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={editingUser.username}
+                disabled
+                className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 text-gray-500 cursor-not-allowed"
+                placeholder="Enter username"
+              />
+              <p className="mt-1 text-xs text-gray-500">Username cannot be changed</p>
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                required
+                value={editingUser.email}
+                onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter email"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                First Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={editingUser.firstName}
+                onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter first name"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Last Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={editingUser.lastName}
+                onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter last name"
+              />
+            </div>
+            {editingUser.roleName === 'user' && (
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
+                <input
+                  type="text"
+                  value={editingUser.studentId}
+                  onChange={(e) => setEditingUser({ ...editingUser, studentId: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter student ID"
+                />
+              </div>
+            )}
+            {editingUser.roleName === 'user' && (
+              <div className="mb-3">
+                <span className="block text-sm font-medium text-gray-700 mb-1">Memberships</span>
+                {editingUser.memberships.length > 0 ? (
+                  <ul className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 space-y-0.5">
+                    {membershipLines({ memberships: editingUser.memberships }).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-500">None</p>
+                )}
+              </div>
+            )}
+            {isAdmin && editingUser.username !== 'admin' && (
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  value={editingUser.roleName}
+                  onChange={(e) => setEditingUser({ ...editingUser, roleName: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="user">User</option>
+                  <option value="assignment_manager">Assignment Manager</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            )}
+            {/* Show Enabled checkbox for admins and assignment managers editing non-built-in-admin users */}
+            {((isAdmin && editingUser.username !== 'admin') ||
+              (isAssignmentManager && editingUser.roleName !== 'admin')) && (
+              <div className="mb-4">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={editingUser.enabled}
+                    onChange={(e) => setEditingUser({ ...editingUser, enabled: e.target.checked })}
+                    aria-label="Enabled"
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Enabled</span>
+                </label>
+              </div>
+            )}
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+      {/* Send Setup Emails Confirmation Modal */}
+      {sendEmailsModal !== null && (
+        <Modal title={`Send setup email${sendEmailsModal !== 1 ? 's' : ''}?`} onClose={() => setSendEmailsModal(null)}>
+          <p className="text-sm text-gray-600 mb-4">
+            This will send a &lsquo;Set Password&rsquo; email to {sendEmailsModal} pending user
+            {sendEmailsModal !== 1 ? 's' : ''}. Each user will receive a link to activate their account.
+          </p>
+          <div className="flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={() => setSendEmailsModal(null)}
+              className="px-4 py-2 text-gray-700 hover:text-gray-900"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSendEmailsModal(null);
+                handleSendSetupEmails();
+              }}
+              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+            >
+              Send
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
       {/* Delete Confirmation Modal (single or bulk) */}
       {deleteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] flex flex-col">
-            <div className="p-6 pb-0 flex-shrink-0">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                Delete {deleteModal.length} user{deleteModal.length > 1 ? 's' : ''}?
-              </h3>
-            </div>
-            <div className="flex-1 overflow-y-auto px-6 py-3">
-              {deleteModalWithMemberships.length > 0 && (
-                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
-                  <p className="font-medium mb-1">
-                    {deleteModalWithMemberships.length} user{deleteModalWithMemberships.length > 1 ? 's have' : ' has'}{' '}
-                    group memberships that will be removed:
-                  </p>
-                  <ul className="list-disc list-inside space-y-0.5">
-                    {deleteModalWithMemberships.map((u) => (
-                      <li key={u.id}>
-                        {u.username} <span className="text-yellow-600">({membershipLines(u).join('; ')})</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <p className="text-sm text-gray-600">This action cannot be undone.</p>
-            </div>
-            <div className="p-6 pt-4 flex-shrink-0 flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => setDeleteModal(null)}
-                className="px-4 py-2 text-gray-700 hover:text-gray-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteConfirmed}
-                disabled={deleting}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {deleting ? 'Deleting...' : `Delete ${deleteModal.length} user${deleteModal.length > 1 ? 's' : ''}`}
-              </button>
-            </div>
+        <Modal
+          title="Confirm deletion"
+          onClose={() => setDeleteModal(null)}
+          closeOnBackdrop={false}
+          panelClassName="max-h-[90vh] flex flex-col"
+          header={null}
+        >
+          <div className="p-6 pb-0 flex-shrink-0">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">
+              Delete {deleteModal.length} user{deleteModal.length > 1 ? 's' : ''}?
+            </h3>
           </div>
-        </div>
+          <div className="flex-1 overflow-y-auto px-6 py-3">
+            {deleteModalWithMemberships.length > 0 && (
+              <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
+                <p className="font-medium mb-1">
+                  {deleteModalWithMemberships.length} user{deleteModalWithMemberships.length > 1 ? 's have' : ' has'}{' '}
+                  group memberships that will be removed:
+                </p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  {deleteModalWithMemberships.map((u) => (
+                    <li key={u.id}>
+                      {u.username} <span className="text-yellow-600">({membershipLines(u).join('; ')})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className="text-sm text-gray-600">This action cannot be undone.</p>
+          </div>
+          <div className="p-6 pt-4 flex-shrink-0 flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={() => setDeleteModal(null)}
+              className="px-4 py-2 text-gray-700 hover:text-gray-900"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteConfirmed}
+              disabled={deleting}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {deleting ? 'Deleting...' : `Delete ${deleteModal.length} user${deleteModal.length > 1 ? 's' : ''}`}
+            </button>
+          </div>
+        </Modal>
       )}
       {/* Assign Group Modal */}
       {assignModalUser && (

@@ -17,9 +17,11 @@ Group Assignment Portal — a role-based access control system for managing stud
 - **Group Join/Leave** — Users can self-join/leave one group per assignment when the join lock is off
 - **Safe destructive deletes** — Two-step typed confirmation when deleting subjects or assignments (cascades to groups
   and memberships, never user accounts)
-- **Email Notifications** — Account setup and password-reset emails (optional SMTP; links logged to console when
-  disabled)
-- **System Config** — Admins/AMs can lock/unlock group joining system-wide
+- **Email Notifications** — Account setup and password-reset emails (optional SMTP; when disabled only the masked
+  recipient is logged, since the body carries a one-time token — set `LOG_EMAIL_BODIES=true` outside production to log
+  bodies too)
+- **Per-assignment join lock** — Admins, and each assignment's own manager, can freeze self-service group joining for
+  that assignment; staff can still place members while it is locked
 - **Docker Support** — Dev environment with Docker Compose; production deployment with Traefik + Let's Encrypt
 
 ## Architecture
@@ -80,13 +82,17 @@ Copy the example env file and edit it. The Docker dev stack requires this file t
 cp .env.example .env
 ```
 
-At minimum, you may want to set:
+`docker-compose.dev.yaml` has no fallback values for the three secrets below — a known default would let anyone forge an
+admin token — so set them or Compose refuses to start:
 
 ```bash
-ADMIN_PASSWORD=my-secure-password
+DB_PASSWORD=a-local-db-password
 JWT_SECRET=my-jwt-secret
+ADMIN_PASSWORD=my-secure-password
 
-# Optional SMTP — leave SMTP_HOST blank to disable email (links logged to console instead)
+# Optional SMTP — leave SMTP_HOST blank to disable email. Bodies carry a one-time
+# token, so logging them is opt-in and ignored when NODE_ENV=production.
+LOG_EMAIL_BODIES=false
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=user@example.com
@@ -95,7 +101,11 @@ SMTP_FROM=no-reply@example.com
 APP_URL=http://localhost:3000
 ```
 
-If you skip this step, `docker compose up` will fail because `docker-compose.dev.yaml` references `.env` via `env_file`.
+If you skip this step, `docker compose up` will fail — both because `docker-compose.dev.yaml` references `.env` via
+`env_file` and because the three secrets above are required with no default.
+
+The dev stack publishes Postgres and both servers on `127.0.0.1` only, so a shared or remotely reachable machine does
+not expose them to the network.
 
 ### 3. Start all services
 
@@ -299,11 +309,11 @@ Pre-commit hooks (Husky + lint-staged) automatically apply Prettier and ESLint o
 
 ## Role System
 
-| Role                   | Capabilities                                                                                                                                                                                                                |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Admin**              | Full access: manage subjects, assignments, groups, users, and config; enrol users in subjects; suspend/re-enable subject memberships; assign users to groups; bulk operations; the global Users page is Admin-only          |
-| **Assignment Manager** | Scoped to managed assignments: create/edit/delete groups and assign subject members to groups; manages members (create, suspend/enable, setup emails) inside subjects where they manage an assignment, via the subject page |
-| **User**               | View own profile and enrolled subjects; self-join/leave one group per assignment (when join lock is off)                                                                                                                    |
+| Role                   | Capabilities                                                                                                                                                                                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Admin**              | Full access: manage subjects, assignments, groups, and users; lock group joining per assignment; enrol users in subjects; suspend/re-enable subject memberships; assign users to groups; bulk operations; the global Users page is Admin-only |
+| **Assignment Manager** | Scoped to managed assignments: create/edit/delete groups and assign subject members to groups; manages members (create, suspend/enable, setup emails) inside subjects where they manage an assignment, via the subject page                   |
+| **User**               | View own profile and enrolled subjects; self-join/leave one group per assignment (when join lock is off)                                                                                                                                      |
 
 ## Environment Variables Reference
 
@@ -350,8 +360,8 @@ gap-app/
 │   │   ├── middleware/
 │   │   │   ├── auth.js      # JWT plugin + verifyToken decorator
 │   │   │   └── rbac.js      # checkRole, requireAdmin, requireAssignmentManager
-│   │   ├── models/          # User, Subject, Assignment, Group, UserGroup, Role, Config, PasswordResetToken
-│   │   ├── routes/          # auth, users, subjects, assignments, groups, config
+│   │   ├── models/          # User, Subject, Assignment, Group, UserGroup, Role, PasswordResetToken
+│   │   ├── routes/          # auth, users, subjects, assignments, groups
 │   │   ├── services/
 │   │   │   └── email.js     # Nodemailer email service
 │   │   └── server.js        # App entry point
@@ -412,7 +422,9 @@ cd frontend && rm -rf node_modules dist && npm install && npm run build
 > **Note:** In production, SMTP must be configured — without it, account setup and password reset emails will not be
 > sent.
 
-If `SMTP_HOST` is not configured (development only), email links are printed to the backend logs:
+If `SMTP_HOST` is not configured, nothing is sent and the request reports the non-delivery — it is never counted as
+success. The email body carries a one-time token, so it is only logged when you explicitly opt in with
+`LOG_EMAIL_BODIES=true` (ignored in production):
 
 ```bash
 docker compose logs backend | grep "http"

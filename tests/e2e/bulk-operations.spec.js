@@ -38,7 +38,11 @@ test.describe('Bulk Operations — Users', () => {
     await expect(page.getByRole('button', { name: 'Delete (1)' })).toBeVisible();
   });
 
-  test('admin can send setup emails to pending users', async ({ page }) => {
+  // The e2e stack runs without SMTP, so this drives the whole flow (create a
+  // pending user -> toolbar -> confirm -> server round trip) and asserts the
+  // honest outcome: nothing was delivered, and the UI says so rather than
+  // claiming success.
+  test('admin sends setup emails and sees the real delivery outcome', async ({ page }) => {
     await createHierarchy({ subjectName: 'BulkSubject', assignmentName: 'BA1' });
     await loginAsAdmin(page);
     await page.goto('/users');
@@ -69,7 +73,9 @@ test.describe('Bulk Operations — Users', () => {
     await expect(page.getByRole('heading', { name: /Send setup emails?/i })).toBeVisible();
     await page.getByRole('button', { name: 'Send', exact: true }).click();
 
-    await expect(page.getByText(/Setup email sent to 1 user/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Failed to send setup emails for 1 user/i)).toBeVisible({ timeout: 10000 });
+    // Never reports a skipped send as success
+    await expect(page.getByText(/Setup email sent to/i)).not.toBeVisible();
   });
 });
 

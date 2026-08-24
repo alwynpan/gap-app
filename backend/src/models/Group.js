@@ -2,6 +2,29 @@ const pool = require('../db/pool');
 
 const MEMBER_COUNT_SUBQUERY = '(SELECT COUNT(*) FROM user_groups WHERE group_id = g.id)::int';
 
+const UPDATABLE_FIELDS = {
+  name: 'name',
+  enabled: 'enabled',
+  maxMembers: 'max_members',
+};
+
+/** Build SET clauses and values from the allowlisted updatable fields. */
+function buildUpdate(updates) {
+  const setClauses = [];
+  const values = [];
+
+  for (const [jsKey, dbCol] of Object.entries(UPDATABLE_FIELDS)) {
+    // eslint-disable-next-line security/detect-object-injection
+    if (updates[jsKey] !== undefined) {
+      setClauses.push(`${dbCol} = $${values.length + 1}`);
+      // eslint-disable-next-line security/detect-object-injection
+      values.push(updates[jsKey]);
+    }
+  }
+
+  return { setClauses, values };
+}
+
 class Group {
   static async findAllByAssignment(assignmentId, { enabledOnly = false } = {}) {
     const enabledClause = enabledOnly ? 'AND g.enabled = true' : '';
@@ -45,25 +68,7 @@ class Group {
   }
 
   static async update(id, updates) {
-    const fieldMap = {
-      name: 'name',
-      enabled: 'enabled',
-      maxMembers: 'max_members',
-    };
-
-    const setClauses = [];
-    const values = [];
-    let paramIndex = 1;
-
-    for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
-      // eslint-disable-next-line security/detect-object-injection
-      if (updates[jsKey] !== undefined) {
-        setClauses.push(`${dbCol} = $${paramIndex}`);
-        // eslint-disable-next-line security/detect-object-injection
-        values.push(updates[jsKey]);
-        paramIndex++;
-      }
-    }
+    const { setClauses, values } = buildUpdate(updates);
 
     if (setClauses.length === 0) {
       return this.findById(id);
@@ -73,10 +78,69 @@ class Group {
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE groups SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      `UPDATE groups SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`,
       values
     );
     return result.rows[0];
+  }
+
+  /**
+   * Update a group, validating a lowered max_members against the live member
+   * count inside the same transaction that writes it.
+   *
+   * The count comes from a statement issued after the group lock is taken, for
+   * the same reason as UserGroup.assignUserToGroup: a subquery in the locking
+   * SELECT would not see a join that committed while we waited for the lock.
+   *
+   * @param {string} id
+   * @param {{name?: string, enabled?: boolean, maxMembers?: number|null}} updates
+   * @returns {Promise<object|null>} The updated row, or null when the group is gone.
+   * @throws {Error} statusCode 400 when the new limit is below the current count.
+   */
+  static async updateWithCapacityCheck(id, updates) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const locked = await client.query('SELECT id FROM groups WHERE id = $1 FOR UPDATE', [id]);
+      if (locked.rows.length === 0) {
+        await client.query('COMMIT');
+        return null;
+      }
+
+      if (updates.maxMembers !== undefined && updates.maxMembers !== null) {
+        const { rows } = await client.query('SELECT COUNT(*)::int AS count FROM user_groups WHERE group_id = $1', [id]);
+        if (rows[0].count > updates.maxMembers) {
+          const err = new Error(
+            `Group already has ${rows[0].count} members, cannot set limit to ${updates.maxMembers}`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+
+      const { setClauses, values } = buildUpdate(updates);
+      if (setClauses.length === 0) {
+        const { rows } = await client.query('SELECT * FROM groups WHERE id = $1', [id]);
+        await client.query('COMMIT');
+        return rows[0];
+      }
+
+      setClauses.push('updated_at = CURRENT_TIMESTAMP');
+      values.push(id);
+      const result = await client.query(
+        `UPDATE groups SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`,
+        values
+      );
+
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   static async delete(id) {

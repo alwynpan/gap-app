@@ -135,8 +135,65 @@ describe('App', () => {
     expect(screen.queryByText('Login Page')).not.toBeInTheDocument();
   });
 
+  // A shared /register link used to hit the catch-all before /auth/config
+  // resolved, and the later flag update never restored the route.
+  it('holds /register while the registration flag is still loading', () => {
+    useAuth.mockReturnValue({
+      isAuthenticated: false,
+      loading: false,
+      isAdmin: false,
+      isAssignmentManager: false,
+      user: null,
+      registrationEnabled: false,
+      registrationConfigLoading: true,
+    });
+
+    window.history.pushState({}, '', '/register');
+    render(<App />);
+
+    // Neither the form nor a redirect yet — the route stays mounted
+    expect(screen.queryByText('Register Page')).not.toBeInTheDocument();
+    expect(screen.queryByText('Login Page')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dashboard Page')).not.toBeInTheDocument();
+  });
+
+  it('renders /register once the flag resolves to enabled', () => {
+    useAuth.mockReturnValue({
+      isAuthenticated: false,
+      loading: false,
+      isAdmin: false,
+      isAssignmentManager: false,
+      user: null,
+      registrationEnabled: true,
+      registrationConfigLoading: false,
+    });
+
+    window.history.pushState({}, '', '/register');
+    render(<App />);
+
+    expect(screen.getByText('Register Page')).toBeInTheDocument();
+  });
+
+  it('redirects /register to login when registration is disabled', () => {
+    useAuth.mockReturnValue({
+      isAuthenticated: false,
+      loading: false,
+      isAdmin: false,
+      isAssignmentManager: false,
+      user: null,
+      registrationEnabled: false,
+      registrationConfigLoading: false,
+    });
+
+    window.history.pushState({}, '', '/register');
+    render(<App />);
+
+    expect(screen.getByText('Login Page')).toBeInTheDocument();
+    expect(screen.queryByText('Register Page')).not.toBeInTheDocument();
+  });
+
   it('redirects authenticated user from /register to /dashboard when registration enabled', () => {
-    useAuth.mockReturnValue({ ...asPlainUser(), registrationEnabled: true });
+    useAuth.mockReturnValue({ ...asPlainUser(), registrationEnabled: true, registrationConfigLoading: false });
 
     window.history.pushState({}, '', '/register');
     render(<App />);

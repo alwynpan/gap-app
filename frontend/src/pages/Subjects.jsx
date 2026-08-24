@@ -8,6 +8,7 @@ import TypedDeleteConfirmModal from '../components/TypedDeleteConfirmModal.jsx';
 import { Trash2 } from 'lucide-react';
 import { parseBody, createSubjectSchema } from '../utils/schemas.js';
 import { API_BASE } from '../config.js';
+import Modal from '../components/Modal.jsx';
 
 function Subjects() {
   const { isAdmin } = useAuth();
@@ -246,45 +247,42 @@ function Subjects() {
 
       {/* Create Subject Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New Subject</h3>
-            <form onSubmit={handleCreateSubject}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Subject Name</label>
-                <input
-                  type="text"
-                  value={newSubjectName}
-                  onChange={(e) => setNewSubjectName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter subject name"
-                  autoFocus
-                />
-              </div>
-              {createFormError && <p className="mb-3 text-sm text-red-600">{createFormError}</p>}
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setNewSubjectName('');
-                    setCreateFormError('');
-                  }}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creating ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <Modal title="Create New Subject" onClose={() => setShowCreateModal(false)}>
+          <form onSubmit={handleCreateSubject}>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Subject Name</label>
+              <input
+                type="text"
+                value={newSubjectName}
+                onChange={(e) => setNewSubjectName(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter subject name"
+                autoFocus
+              />
+            </div>
+            {createFormError && <p className="mb-3 text-sm text-red-600">{createFormError}</p>}
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewSubjectName('');
+                  setCreateFormError('');
+                }}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creating}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creating ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Delete Subject Modal (two-step typed confirmation) */}

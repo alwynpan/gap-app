@@ -6,7 +6,8 @@ import { Link } from 'react-router-dom';
 import { formatRoleName } from '../utils/formatting.js';
 import { API_BASE } from '../config.js';
 
-const LOCKED_MESSAGE = 'Group joining is locked. Please contact the teaching staff to join or leave a group.';
+const LOCKED_MESSAGE =
+  'Group joining is locked for this assignment. Please contact the teaching staff to join or leave a group.';
 
 function Spinner() {
   return (
@@ -59,7 +60,6 @@ function Dashboard() {
   const [groupSuccess, setGroupSuccess] = useState('');
   const [joiningGroup, setJoiningGroup] = useState(false);
   const [leavingGroup, setLeavingGroup] = useState(false);
-  const [groupJoinLocked, setGroupJoinLocked] = useState(false);
   const isNormalUser = !isAdmin && !isAssignmentManager;
   const subjects = useMemo(() => user?.subjects ?? [], [user]);
   // The one subject whose card is shown; single-subject users land straight on theirs.
@@ -70,19 +70,6 @@ function Dashboard() {
     }
     return subjects.length === 1 ? subjects[0] : null;
   }, [subjects, currentSubjectId]);
-
-  useEffect(() => {
-    if (isNormalUser) {
-      (async () => {
-        try {
-          const res = await api.get(`${API_BASE}/config/group-join-locked`);
-          setGroupJoinLocked(res.data.locked === true);
-        } catch (_err) {
-          // silently ignore — lock defaults to off
-        }
-      })();
-    }
-  }, [isNormalUser]);
 
   const fetchSubject = useCallback(async (subjectId) => {
     setSubjectData((prev) => new Map(prev).set(subjectId, { loading: true, error: '', assignments: [] }));
@@ -222,6 +209,7 @@ function Dashboard() {
   };
 
   const renderMembershipAssignment = (assignment, membership) => {
+    const groupJoinLocked = assignment.join_locked === true;
     const expanded = expandedAssignments.get(assignment.id) === true;
     const membersState = groupMembers.get(membership.group_id);
     return (
@@ -265,7 +253,7 @@ function Dashboard() {
   };
 
   const renderJoinableAssignment = (assignment) => {
-    if (groupJoinLocked) {
+    if (assignment.join_locked === true) {
       return (
         <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-3 py-2 rounded-md text-sm">
           {LOCKED_MESSAGE}

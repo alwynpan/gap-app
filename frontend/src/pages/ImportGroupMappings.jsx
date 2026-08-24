@@ -7,6 +7,7 @@ import CsvDropzone from '../components/CsvDropzone.jsx';
 import CascadingAssignmentSelect from '../components/CascadingAssignmentSelect.jsx';
 import { parseCsv, downloadCsv } from '../utils/csv.js';
 import { API_BASE } from '../config.js';
+import Modal from '../components/Modal.jsx';
 
 const GROUP_NAME_SYNONYMS = ['group name', 'group', 'group_name', 'team name', 'team'];
 const EMAIL_SYNONYMS = ['email', 'e-mail', 'user email', 'user_email', 'mail', 'email address'];
@@ -50,6 +51,9 @@ function ImportGroupMappings() {
 
   // Step 2 state
   const [previewRows, setPreviewRows] = useState([]);
+  // The assignment the current preview was validated against; import refuses to
+  // post rows built for a different one.
+  const [previewAssignmentId, setPreviewAssignmentId] = useState(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
   // Step 3 state
@@ -60,6 +64,8 @@ function ImportGroupMappings() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const countdownRef = useRef(null);
+  // Monotonic id so only the newest preview response is applied.
+  const previewRequestRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,14 +134,19 @@ function ImportGroupMappings() {
   const canProceedStep1 = csvRows.length > 0 && emailCol !== -1 && groupCol !== -1;
 
   const buildPreview = async () => {
+    // Stamp the request so a slow preview for a previously selected assignment
+    // cannot overwrite a newer one and be imported against the wrong target.
+    const requestId = ++previewRequestRef.current;
+    const requestAssignmentId = selection.assignmentId;
     setLoadingPreview(true);
     try {
-      const [usersRes, groupsRes] = await Promise.all([
-        api.get(`${API_BASE}/users`),
-        api.get(`${API_BASE}/assignments/${selection.assignmentId}/groups`),
-      ]);
-      const userEmailSet = new Map((usersRes.data.users || []).map((u) => [u.email.toLowerCase(), u]));
-      const groupNameSet = new Map((groupsRes.data.groups || []).map((g) => [g.name.toLowerCase(), g]));
+      // Assignment-scoped: an assignment manager cannot call admin-only /users.
+      const previewRes = await api.get(`${API_BASE}/assignments/${requestAssignmentId}/import-preview`);
+      if (requestId !== previewRequestRef.current) {
+        return;
+      }
+      const userEmailSet = new Map((previewRes.data.users || []).map((u) => [u.email.toLowerCase(), u]));
+      const groupNameSet = new Map((previewRes.data.groups || []).map((g) => [g.name.toLowerCase(), g]));
 
       const rows = csvRows.map((row) => {
         const email = (row[emailCol] || '').trim(); // eslint-disable-line security/detect-object-injection
@@ -144,7 +155,7 @@ function ImportGroupMappings() {
         const userExists = user !== undefined;
         const groupExists = groupNameSet.has(groupName.toLowerCase());
         const isPrivilegedUser = user && (user.role_name === 'admin' || user.role_name === 'assignment_manager');
-        const alreadyInGroup = user && (user.memberships || []).some((m) => m.assignment_id === selection.assignmentId);
+        const alreadyInGroup = Boolean(user && user.current_group_id);
 
         let status = 'import';
         let statusLabel = 'Import';
@@ -153,6 +164,12 @@ function ImportGroupMappings() {
           status = 'skip';
           statusLabel = 'Skip';
           skipReason = 'User not found';
+        } else if (user.membership_enabled === false) {
+          // The server rejects placement for suspended members, so previewing
+          // them as importable would promise something the import cannot do.
+          status = 'skip';
+          statusLabel = 'Skip';
+          skipReason = 'User is suspended in this subject';
         } else if (isPrivilegedUser) {
           status = 'skip';
           statusLabel = 'Skip';
@@ -168,11 +185,19 @@ function ImportGroupMappings() {
         }
         return { email, groupName, status, statusLabel, skipReason, action: status === 'conflict' ? 'skip' : status };
       });
+      if (requestId !== previewRequestRef.current) {
+        return;
+      }
       setPreviewRows(rows);
+      setPreviewAssignmentId(requestAssignmentId);
     } catch (_err) {
-      setFileError('Failed to load user/group data for preview');
+      if (requestId === previewRequestRef.current) {
+        setFileError('Failed to load user/group data for preview');
+      }
     } finally {
-      setLoadingPreview(false);
+      if (requestId === previewRequestRef.current) {
+        setLoadingPreview(false);
+      }
     }
   };
 
@@ -208,20 +233,13 @@ function ImportGroupMappings() {
     return () => clearInterval(countdownRef.current);
   }, [showConfirmModal]);
 
-  useEffect(() => {
-    if (!showConfirmModal) {
+  const handleImport = async () => {
+    // The preview validated group names against one assignment; refuse to post
+    // those rows anywhere else.
+    if (previewAssignmentId !== selection.assignmentId) {
+      setFileError('The selected assignment changed. Please review the preview again before importing.');
       return;
     }
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        closeConfirmModal();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showConfirmModal, closeConfirmModal]);
-
-  const handleImport = async () => {
     setImporting(true);
     try {
       const rows = previewRows.map((r) => ({
@@ -229,7 +247,7 @@ function ImportGroupMappings() {
         groupName: r.groupName,
         action: r.action,
       }));
-      const res = await api.post(`${API_BASE}/assignments/${selection.assignmentId}/import-mappings`, { rows });
+      const res = await api.post(`${API_BASE}/assignments/${previewAssignmentId}/import-mappings`, { rows });
       setImportResult(res.data);
 
       // Auto-download skipped rows CSV
@@ -570,54 +588,43 @@ function ImportGroupMappings() {
 
       {/* Import confirmation modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="import-confirm-title"
-            className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl"
-          >
-            <h3 id="import-confirm-title" className="text-lg font-semibold text-gray-900 mb-4">
-              Before You Continue
-            </h3>
-
-            <div className="mb-5 space-y-3 text-sm text-gray-700">
-              <p>
-                This tool is designed for <strong>migrating user–group assignments from another system</strong> onto a
-                fresh instance where no group memberships exist yet.
+        <Modal title="Before You Continue" onClose={closeConfirmModal} closeOnBackdrop={false} maxWidthClass="max-w-lg">
+          <div className="mb-5 space-y-3 text-sm text-gray-700">
+            <p>
+              This tool is designed for <strong>migrating user–group assignments from another system</strong> onto a
+              fresh instance where no group memberships exist yet.
+            </p>
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-amber-800">
+                <strong>Existing group memberships will not be cleared before importing.</strong> Any users who are
+                already in a group and are not explicitly marked as &ldquo;Overwrite&rdquo; in the preview will be
+                skipped. If your instance already has group assignments, this import may produce unexpected membership
+                outcomes. Please review the preview table carefully before proceeding.
               </p>
-              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-4 py-3">
-                <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                <p className="text-amber-800">
-                  <strong>Existing group memberships will not be cleared before importing.</strong> Any users who are
-                  already in a group and are not explicitly marked as &ldquo;Overwrite&rdquo; in the preview will be
-                  skipped. If your instance already has group assignments, this import may produce unexpected membership
-                  outcomes. Please review the preview table carefully before proceeding.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={closeConfirmModal}
-                autoFocus
-                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  closeConfirmModal();
-                  handleImport();
-                }}
-                disabled={countdown > 0}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {countdown > 0 ? `Confirm (${countdown})` : 'Confirm'}
-              </button>
             </div>
           </div>
-        </div>
+
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={closeConfirmModal}
+              autoFocus
+              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                closeConfirmModal();
+                handleImport();
+              }}
+              disabled={countdown > 0}
+              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {countdown > 0 ? `Confirm (${countdown})` : 'Confirm'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

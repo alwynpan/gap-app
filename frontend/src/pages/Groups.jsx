@@ -10,6 +10,7 @@ import IconBtn from '../components/IconBtn.jsx';
 import { parseBody, createGroupSchema, updateGroupSchema } from '../utils/schemas.js';
 import { downloadCsv } from '../utils/csv.js';
 import { API_BASE } from '../config.js';
+import Modal from '../components/Modal.jsx';
 
 function Groups() {
   const { subjectId, assignmentId } = useParams();
@@ -857,277 +858,269 @@ function Groups() {
 
       {/* Create Group Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New Group</h3>
-            <form onSubmit={handleCreateGroup}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
-                <input
-                  type="text"
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter group name"
-                  autoFocus
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Max Members (optional)</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={newGroupMaxMembers}
-                  onChange={(e) => setNewGroupMaxMembers(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Leave blank for unlimited"
-                />
-              </div>
-              {createFormError && <p className="mb-3 text-sm text-red-600">{createFormError}</p>}
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setNewGroupName('');
-                    setNewGroupMaxMembers('');
-                    setCreateFormError('');
-                  }}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creating ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <Modal title="Create New Group" onClose={() => setShowCreateModal(false)}>
+          <form onSubmit={handleCreateGroup}>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
+              <input
+                type="text"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter group name"
+                autoFocus
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Max Members (optional)</label>
+              <input
+                type="number"
+                min="1"
+                value={newGroupMaxMembers}
+                onChange={(e) => setNewGroupMaxMembers(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Leave blank for unlimited"
+              />
+            </div>
+            {createFormError && <p className="mb-3 text-sm text-red-600">{createFormError}</p>}
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewGroupName('');
+                  setNewGroupMaxMembers('');
+                  setCreateFormError('');
+                }}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creating}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creating ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Edit Group Modal */}
       {editingGroup && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Group</h3>
-            <form onSubmit={handleEditGroup}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
-                <input
-                  type="text"
-                  required
-                  value={editingGroup.name}
-                  onChange={(e) => setEditingGroup({ ...editingGroup, name: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter group name"
-                  autoFocus
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Max Members (optional)</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={editingGroup.maxMembers}
-                  onChange={(e) => setEditingGroup({ ...editingGroup, maxMembers: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Leave blank for unlimited"
-                />
-              </div>
-              {editFormError && <p className="mb-3 text-sm text-red-600">{editFormError}</p>}
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingGroup(null);
-                    setEditFormError('');
-                  }}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <Modal title="Edit Group" onClose={() => setEditingGroup(null)}>
+          <form onSubmit={handleEditGroup}>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
+              <input
+                type="text"
+                required
+                value={editingGroup.name}
+                onChange={(e) => setEditingGroup({ ...editingGroup, name: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter group name"
+                autoFocus
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Max Members (optional)</label>
+              <input
+                type="number"
+                min="1"
+                value={editingGroup.maxMembers}
+                onChange={(e) => setEditingGroup({ ...editingGroup, maxMembers: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Leave blank for unlimited"
+              />
+            </div>
+            {editFormError && <p className="mb-3 text-sm text-red-600">{editFormError}</p>}
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingGroup(null);
+                  setEditFormError('');
+                }}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Bulk Create Modal */}
       {bulkCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Bulk Create Groups</h3>
-            <form onSubmit={handleBulkCreate}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Prefix</label>
-                <input
-                  type="text"
-                  value={bulkCreateModal.prefix}
-                  onChange={(e) => setBulkCreateModal({ ...bulkCreateModal, prefix: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="e.g. Team"
-                  autoFocus
-                />
+        <Modal title="Bulk Create Groups" onClose={() => setBulkCreateModal(null)}>
+          <form onSubmit={handleBulkCreate}>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Prefix</label>
+              <input
+                type="text"
+                value={bulkCreateModal.prefix}
+                onChange={(e) => setBulkCreateModal({ ...bulkCreateModal, prefix: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="e.g. Team"
+                autoFocus
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Number of groups</label>
+              <input
+                type="number"
+                min="1"
+                value={bulkCreateModal.count}
+                onChange={(e) => setBulkCreateModal({ ...bulkCreateModal, count: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="e.g. 10"
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Member limit <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={bulkCreateModal.maxMembers}
+                onChange={(e) => setBulkCreateModal({ ...bulkCreateModal, maxMembers: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Unlimited"
+              />
+            </div>
+            {preview.length > 0 && (
+              <div className="mb-4 rounded-md bg-gray-50 border border-gray-200 px-3 py-2 text-sm text-gray-600">
+                <p className="font-medium text-gray-700 mb-1">Preview:</p>
+                {preview.length <= 5 ? (
+                  <p>{preview.join(', ')}</p>
+                ) : (
+                  <p>
+                    {preview.slice(0, 3).join(', ')}, &hellip;, {preview[preview.length - 1]}
+                    <span className="ml-1 text-gray-400">({preview.length} groups)</span>
+                  </p>
+                )}
               </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Number of groups</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={bulkCreateModal.count}
-                  onChange={(e) => setBulkCreateModal({ ...bulkCreateModal, count: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="e.g. 10"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Member limit <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={bulkCreateModal.maxMembers}
-                  onChange={(e) => setBulkCreateModal({ ...bulkCreateModal, maxMembers: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Unlimited"
-                />
-              </div>
-              {preview.length > 0 && (
-                <div className="mb-4 rounded-md bg-gray-50 border border-gray-200 px-3 py-2 text-sm text-gray-600">
-                  <p className="font-medium text-gray-700 mb-1">Preview:</p>
-                  {preview.length <= 5 ? (
-                    <p>{preview.join(', ')}</p>
-                  ) : (
-                    <p>
-                      {preview.slice(0, 3).join(', ')}, &hellip;, {preview[preview.length - 1]}
-                      <span className="ml-1 text-gray-400">({preview.length} groups)</span>
-                    </p>
-                  )}
-                </div>
-              )}
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setBulkCreateModal(null)}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={preview.length === 0}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Create {preview.length > 0 ? preview.length : ''} Groups
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            )}
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setBulkCreateModal(null)}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={preview.length === 0}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Create {preview.length > 0 ? preview.length : ''} Groups
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Set Limit Modal (single or bulk) */}
       {limitModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Set Member Limit</h3>
-            {limitModal.groupIds.length > 1 && (
-              <p className="text-sm text-gray-500 mb-3">
-                Applies to <span className="font-medium">{limitModal.groupIds.length}</span> selected groups.
-              </p>
-            )}
-            <p className="text-sm text-gray-500 mb-3">Leave blank to set unlimited members.</p>
-            <input
-              type="number"
-              min="1"
-              value={limitModal.value}
-              onChange={(e) => setLimitModal({ ...limitModal, value: e.target.value })}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 mb-4"
-              placeholder="Unlimited"
-              autoFocus
-            />
-            <div className="flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => setLimitModal(null)}
-                className="px-4 py-2 text-gray-700 hover:text-gray-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveLimit}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-              >
-                Save
-              </button>
-            </div>
+        <Modal title="Set Member Limit" onClose={() => setLimitModal(null)} maxWidthClass="max-w-sm">
+          {limitModal.groupIds.length > 1 && (
+            <p className="text-sm text-gray-500 mb-3">
+              Applies to <span className="font-medium">{limitModal.groupIds.length}</span> selected groups.
+            </p>
+          )}
+          <p className="text-sm text-gray-500 mb-3">Leave blank to set unlimited members.</p>
+          <input
+            type="number"
+            min="1"
+            value={limitModal.value}
+            onChange={(e) => setLimitModal({ ...limitModal, value: e.target.value })}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 mb-4"
+            placeholder="Unlimited"
+            autoFocus
+          />
+          <div className="flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={() => setLimitModal(null)}
+              className="px-4 py-2 text-gray-700 hover:text-gray-900"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveLimit}
+              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+            >
+              Save
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Delete Confirmation Modal (single or bulk) */}
       {deleteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] flex flex-col">
-            <div className="p-6 pb-0 flex-shrink-0">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                Delete {deleteModal.length} group{deleteModal.length > 1 ? 's' : ''}?
-              </h3>
-            </div>
-            <div className="flex-1 overflow-y-auto px-6 py-3">
-              {deleteModalWithMembers.length > 0 && (
-                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
-                  <p className="font-medium mb-1">
-                    {deleteModalWithMembers.length} group{deleteModalWithMembers.length > 1 ? 's have' : ' has'} members
-                    that will be unassigned:
-                  </p>
-                  <ul className="list-disc list-inside space-y-0.5">
-                    {deleteModalWithMembers.map((g) => (
-                      <li key={g.id}>
-                        {g.name}{' '}
-                        <span className="text-yellow-600">
-                          ({g.member_count} member{g.member_count > 1 ? 's' : ''})
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <p className="text-sm text-gray-600">This action cannot be undone.</p>
-            </div>
-            <div className="p-6 pt-4 flex-shrink-0 flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => setDeleteModal(null)}
-                className="px-4 py-2 text-gray-700 hover:text-gray-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteConfirmed}
-                disabled={deleting}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {deleting ? 'Deleting...' : `Delete ${deleteModal.length} group${deleteModal.length > 1 ? 's' : ''}`}
-              </button>
-            </div>
+        <Modal
+          title="Confirm deletion"
+          onClose={() => setDeleteModal(null)}
+          closeOnBackdrop={false}
+          panelClassName="max-h-[90vh] flex flex-col"
+          header={null}
+        >
+          <div className="p-6 pb-0 flex-shrink-0">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">
+              Delete {deleteModal.length} group{deleteModal.length > 1 ? 's' : ''}?
+            </h3>
           </div>
-        </div>
+          <div className="flex-1 overflow-y-auto px-6 py-3">
+            {deleteModalWithMembers.length > 0 && (
+              <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md px-3 py-2 text-sm text-yellow-800">
+                <p className="font-medium mb-1">
+                  {deleteModalWithMembers.length} group{deleteModalWithMembers.length > 1 ? 's have' : ' has'} members
+                  that will be unassigned:
+                </p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  {deleteModalWithMembers.map((g) => (
+                    <li key={g.id}>
+                      {g.name}{' '}
+                      <span className="text-yellow-600">
+                        ({g.member_count} member{g.member_count > 1 ? 's' : ''})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className="text-sm text-gray-600">This action cannot be undone.</p>
+          </div>
+          <div className="p-6 pt-4 flex-shrink-0 flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={() => setDeleteModal(null)}
+              className="px-4 py-2 text-gray-700 hover:text-gray-900"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteConfirmed}
+              disabled={deleting}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {deleting ? 'Deleting...' : `Delete ${deleteModal.length} group${deleteModal.length > 1 ? 's' : ''}`}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

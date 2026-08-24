@@ -3,6 +3,7 @@ const User = require('../../../src/models/User');
 // Mock the database pool
 jest.mock('../../../src/db/pool', () => ({
   query: jest.fn(),
+  connect: jest.fn(),
 }));
 
 // Mock bcrypt
@@ -291,7 +292,7 @@ describe('User Model', () => {
 
       const result = await User.findByEmails(['a@test.com', 'b@test.com']);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.email = ANY($1)'), [
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE LOWER(u.email) = ANY($1)'), [
         ['a@test.com', 'b@test.com'],
       ]);
       expect(result).toEqual(mockUsers);
@@ -474,7 +475,9 @@ describe('User Model', () => {
 
       const result = await User.findByEmail('test@test.com');
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.email = $1'), ['test@test.com']);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE LOWER(u.email) = LOWER($1)'), [
+        'test@test.com',
+      ]);
       expect(result).toEqual(mockUser);
     });
 
@@ -794,28 +797,72 @@ describe('User Model', () => {
   });
 
   describe('delete', () => {
+    let mockClient;
+
+    beforeEach(() => {
+      mockClient = { query: jest.fn(), release: jest.fn() };
+      pool.connect.mockResolvedValue(mockClient);
+    });
+
+    /** Queue the transaction steps: BEGIN, advisory lock, survivor count, DELETE, COMMIT. */
+    const mockTransaction = ({ survivors, rows = [], rowCount = rows.length }) => {
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // pg_advisory_xact_lock
+        .mockResolvedValueOnce({ rows: [{ n: survivors }] }) // remaining enabled admins
+        .mockResolvedValueOnce({ rows, rowCount }) // DELETE ... RETURNING
+        .mockResolvedValueOnce({}); // COMMIT
+    };
+
     it('deletes user and returns deleted user', async () => {
       const mockDeletedUser = {
         id: 'u0000000-0000-0000-0000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
       };
-      pool.query.mockResolvedValue({ rows: [mockDeletedUser] });
+      mockTransaction({ survivors: 1, rows: [mockDeletedUser] });
 
       const result = await User.delete('u0000000-0000-0000-0000-000000000001');
 
-      expect(pool.query).toHaveBeenCalledWith('DELETE FROM users WHERE id = $1 RETURNING *', [
-        'u0000000-0000-0000-0000-000000000001',
+      expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, 'DELETE FROM users WHERE id = ANY($1) RETURNING *', [
+        ['u0000000-0000-0000-0000-000000000001'],
       ]);
+      expect(mockClient.query).toHaveBeenLastCalledWith('COMMIT');
+      expect(mockClient.release).toHaveBeenCalled();
       expect(result).toEqual(mockDeletedUser);
     });
 
     it('returns undefined when user not found', async () => {
-      pool.query.mockResolvedValue({ rows: [] });
+      mockTransaction({ survivors: 1, rows: [] });
 
       const result = await User.delete('u0000000-0000-0000-0000-000000000999');
 
       expect(result).toBeUndefined();
+    });
+
+    it('refuses to delete the last enabled admin and rolls back', async () => {
+      mockTransaction({ survivors: 0 });
+
+      await expect(User.delete('u0000000-0000-0000-0000-000000000001')).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Cannot delete the last enabled admin account',
+      });
+      expect(mockClient.query).toHaveBeenLastCalledWith('ROLLBACK');
+      // The DELETE must never be issued
+      expect(mockClient.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM users'),
+        expect.anything()
+      );
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('serializes concurrent deletions on an advisory lock', async () => {
+      mockTransaction({ survivors: 2, rows: [{ id: 'x' }] });
+
+      await User.delete('x');
+
+      expect(mockClient.query).toHaveBeenNthCalledWith(2, 'SELECT pg_advisory_xact_lock($1)', [expect.any(Number)]);
     });
   });
 
@@ -929,27 +976,53 @@ describe('User Model', () => {
   });
 
   describe('bulkDelete', () => {
+    let mockClient;
+
+    beforeEach(() => {
+      mockClient = { query: jest.fn(), release: jest.fn() };
+      pool.connect.mockResolvedValue(mockClient);
+    });
+
+    const mockTransaction = ({ survivors, rowCount }) => {
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // advisory lock
+        .mockResolvedValueOnce({ rows: [{ n: survivors }] }) // remaining enabled admins
+        .mockResolvedValueOnce({ rows: [], rowCount }) // DELETE ... RETURNING
+        .mockResolvedValueOnce({}); // COMMIT
+    };
+
     it('executes DELETE … WHERE id = ANY and returns row count', async () => {
-      pool.query.mockResolvedValue({ rowCount: 2 });
+      mockTransaction({ survivors: 1, rowCount: 2 });
 
       const result = await User.bulkDelete(['id1', 'id2']);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM users'), [['id1', 'id2']]);
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, expect.stringContaining('DELETE FROM users'), [
+        ['id1', 'id2'],
+      ]);
       expect(result).toBe(2);
     });
 
     it('returns 0 when no rows matched', async () => {
-      pool.query.mockResolvedValue({ rowCount: 0 });
+      mockTransaction({ survivors: 1, rowCount: 0 });
 
       const result = await User.bulkDelete(['nonexistent-id']);
 
       expect(result).toBe(0);
     });
 
+    it('refuses a batch that would remove every enabled admin', async () => {
+      mockTransaction({ survivors: 0, rowCount: 0 });
+
+      await expect(User.bulkDelete(['admin-id'])).rejects.toMatchObject({ statusCode: 400 });
+      expect(mockClient.query).toHaveBeenLastCalledWith('ROLLBACK');
+    });
+
     it('propagates DB error', async () => {
-      pool.query.mockRejectedValue(new Error('connection refused'));
+      mockClient.query.mockRejectedValue(new Error('connection refused'));
 
       await expect(User.bulkDelete(['id1'])).rejects.toThrow('connection refused');
+      expect(mockClient.release).toHaveBeenCalled();
     });
   });
 });

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { formatRoleName } from '../utils/formatting.js';
 import { parseBody, updateUserSchema, newPasswordSchema } from '../utils/schemas.js';
 import { API_BASE } from '../config.js';
+import Modal from './Modal.jsx';
 
 function UserMenu() {
   const { user, logout, refreshUser } = useAuth();
@@ -181,165 +182,159 @@ function UserMenu() {
 
       {/* Edit Profile Modal */}
       {modal === 'editProfile' && profileForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Profile</h3>
-            {profileSuccess && (
-              <div className="mb-3 bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-md text-sm">
-                {profileSuccess}
+        <Modal title="Edit Profile" onClose={closeModal}>
+          {profileSuccess && (
+            <div className="mb-3 bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-md text-sm">
+              {profileSuccess}
+            </div>
+          )}
+          {profileError && (
+            <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-md text-sm">
+              {profileError}
+            </div>
+          )}
+          <form onSubmit={handleSaveProfile}>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <input
+                type="text"
+                value={user.username}
+                disabled
+                className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 text-gray-500 cursor-not-allowed"
+              />
+              <p className="mt-1 text-xs text-gray-500">Username cannot be changed</p>
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={profileForm.email}
+                onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter email"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                First Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={profileForm.firstName}
+                onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter first name"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Last Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={profileForm.lastName}
+                onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter last name"
+              />
+            </div>
+            {user.role === 'user' && (
+              <div className="mb-4">
+                <label htmlFor="profileStudentId" className="block text-sm font-medium text-gray-700 mb-1">
+                  Student ID
+                </label>
+                <input
+                  id="profileStudentId"
+                  type="text"
+                  value={profileForm.studentId}
+                  onChange={(e) => setProfileForm({ ...profileForm, studentId: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Enter student ID"
+                />
               </div>
             )}
-            {profileError && (
-              <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-md text-sm">
-                {profileError}
-              </div>
-            )}
-            <form onSubmit={handleSaveProfile}>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                <input
-                  type="text"
-                  value={user.username}
-                  disabled
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 text-gray-500 cursor-not-allowed"
-                />
-                <p className="mt-1 text-xs text-gray-500">Username cannot be changed</p>
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={profileForm.email}
-                  onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter email"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  First Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={profileForm.firstName}
-                  onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter first name"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Last Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={profileForm.lastName}
-                  onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter last name"
-                />
-              </div>
-              {user.role === 'user' && (
-                <div className="mb-4">
-                  <label htmlFor="profileStudentId" className="block text-sm font-medium text-gray-700 mb-1">
-                    Student ID
-                  </label>
-                  <input
-                    id="profileStudentId"
-                    type="text"
-                    value={profileForm.studentId}
-                    onChange={(e) => setProfileForm({ ...profileForm, studentId: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Enter student ID"
-                  />
-                </div>
-              )}
-              <div className="flex justify-end space-x-3">
-                <button type="button" onClick={closeModal} className="px-4 py-2 text-gray-700 hover:text-gray-900">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={profileSaving}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {profileSaving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex justify-end space-x-3">
+              <button type="button" onClick={closeModal} className="px-4 py-2 text-gray-700 hover:text-gray-900">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={profileSaving}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {profileSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Change Password Modal */}
       {modal === 'changePassword' && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h3>
-            {passwordSuccess && (
-              <div className="mb-3 bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-md text-sm">
-                {passwordSuccess}
-              </div>
-            )}
-            {passwordError && (
-              <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-md text-sm">
-                {passwordError}
-              </div>
-            )}
-            <form onSubmit={handleChangePassword}>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.currentPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter current password"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.newPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Enter new password"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Confirm new password"
-                />
-              </div>
-              <div className="flex justify-end space-x-3">
-                <button type="button" onClick={closeModal} className="px-4 py-2 text-gray-700 hover:text-gray-900">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={passwordSaving}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {passwordSaving ? 'Changing...' : 'Change Password'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <Modal title="Change Password" onClose={closeModal}>
+          {passwordSuccess && (
+            <div className="mb-3 bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-md text-sm">
+              {passwordSuccess}
+            </div>
+          )}
+          {passwordError && (
+            <div className="mb-3 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-md text-sm">
+              {passwordError}
+            </div>
+          )}
+          <form onSubmit={handleChangePassword}>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+              <input
+                type="password"
+                required
+                value={passwordForm.currentPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter current password"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+              <input
+                type="password"
+                required
+                value={passwordForm.newPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Enter new password"
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+              <input
+                type="password"
+                required
+                value={passwordForm.confirmPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Confirm new password"
+              />
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button type="button" onClick={closeModal} className="px-4 py-2 text-gray-700 hover:text-gray-900">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={passwordSaving}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {passwordSaving ? 'Changing...' : 'Change Password'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </>
   );

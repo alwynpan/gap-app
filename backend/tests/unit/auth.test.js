@@ -8,6 +8,7 @@ jest.mock('../../src/models/User', () => ({
   update: jest.fn(),
   updateGroup: jest.fn(),
   updatePassword: jest.fn(),
+  hashPassword: jest.fn(),
   activate: jest.fn(),
   delete: jest.fn(),
   verifyPassword: jest.fn(),
@@ -23,6 +24,7 @@ jest.mock('../../src/models/Role', () => ({
 jest.mock('../../src/models/PasswordResetToken', () => ({
   create: jest.fn(),
   findByToken: jest.fn(),
+  redeem: jest.fn(),
   markUsed: jest.fn(),
   deleteStaleForUser: jest.fn(),
   deleteExpired: jest.fn().mockResolvedValue(0),
@@ -941,46 +943,12 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Password must be at least 6 characters' });
     });
 
-    it('calls deleteExpired before looking up token', async () => {
+    it('rejects a token that redeem reports as invalid, used, or expired', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockResolvedValue(null);
-
-      await capturedHandlers['/auth/set-password']({ body: { token: 'sometoken', password: 'newpass1' } }, mockReply);
-
-      expect(PasswordResetToken.deleteExpired).toHaveBeenCalled();
-      const deleteExpiredOrder = PasswordResetToken.deleteExpired.mock.invocationCallOrder[0];
-      const findByTokenOrder = PasswordResetToken.findByToken.mock.invocationCallOrder[0];
-      expect(deleteExpiredOrder).toBeLessThan(findByTokenOrder);
-    });
-
-    it('returns 400 for expired token', async () => {
-      const authRoutes = require('../../src/routes/auth');
-      authRoutes(mockFastify, {});
-
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't1',
-        user_id: 'u1',
-        token_type: 'reset',
-        used: false,
-        expires_at: new Date(Date.now() - 3600000), // 1 hour in the past
-      });
-
-      await capturedHandlers['/auth/set-password'](
-        { body: { token: 'expiredtoken', password: 'newpass1' } },
-        mockReply
-      );
-
-      expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
-    });
-
-    it('returns 400 when token is invalid or expired', async () => {
-      const authRoutes = require('../../src/routes/auth');
-      authRoutes(mockFastify, {});
-
-      PasswordResetToken.findByToken.mockResolvedValue(null);
+      User.hashPassword.mockResolvedValue('hashed');
+      PasswordResetToken.redeem.mockResolvedValue(null);
 
       await capturedHandlers['/auth/set-password']({ body: { token: 'badtoken', password: 'newpass1' } }, mockReply);
 
@@ -988,95 +956,60 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
     });
 
-    it('returns 400 when token is already used', async () => {
+    it('hashes the password before opening the transaction, then redeems', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't1',
-        user_id: 'u1',
-        token_type: 'reset',
-        used: true,
-        expires_at: new Date(Date.now() + 3600000),
-      });
+      User.hashPassword.mockResolvedValue('hashed-newpass1');
+      PasswordResetToken.redeem.mockResolvedValue({ userId: 'u1', tokenType: 'reset' });
 
-      await capturedHandlers['/auth/set-password']({ body: { token: 'usedtoken', password: 'newpass1' } }, mockReply);
+      await capturedHandlers['/auth/set-password']({ body: { token: 'goodtoken', password: 'newpass1' } }, mockReply);
 
-      expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
+      expect(User.hashPassword).toHaveBeenCalledWith('newpass1');
+      // bcrypt must not run while the transaction is open
+      expect(User.hashPassword.mock.invocationCallOrder[0]).toBeLessThan(
+        PasswordResetToken.redeem.mock.invocationCallOrder[0]
+      );
+      expect(PasswordResetToken.redeem).toHaveBeenCalledWith('goodtoken', 'hashed-newpass1');
+      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
     });
 
-    it('sets password and returns success for reset token', async () => {
+    // The consume-and-write is one transaction in the model, so the route must not
+    // mark the token or update the password itself.
+    it('does not mark the token or write the password outside the transaction', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't1',
-        user_id: '00000000-0000-4000-8000-000000000001',
-        token_type: 'reset',
-        used: false,
-        expires_at: new Date(Date.now() + 3600000),
-      });
-      User.updatePassword.mockResolvedValue();
-      PasswordResetToken.markUsed.mockResolvedValue();
+      User.hashPassword.mockResolvedValue('hashed');
+      PasswordResetToken.redeem.mockResolvedValue({ userId: 'u1', tokenType: 'setup' });
 
-      await capturedHandlers['/auth/set-password']({ body: { token: 'validtoken', password: 'newpass1' } }, mockReply);
+      await capturedHandlers['/auth/set-password']({ body: { token: 'tok', password: 'newpass1' } }, mockReply);
 
-      expect(User.updatePassword).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', 'newpass1');
+      expect(PasswordResetToken.markUsed).not.toHaveBeenCalled();
+      expect(User.updatePassword).not.toHaveBeenCalled();
       expect(User.activate).not.toHaveBeenCalled();
-      expect(PasswordResetToken.markUsed).toHaveBeenCalledWith('t1');
-      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
     });
 
-    it('calls markUsed before updatePassword to prevent token replay', async () => {
+    it('purges expired tokens before redeeming', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't1',
-        user_id: '00000000-0000-4000-8000-000000000001',
-        token_type: 'reset',
-        used: false,
-        expires_at: new Date(Date.now() + 3600000),
-      });
-      User.updatePassword.mockResolvedValue();
-      PasswordResetToken.markUsed.mockResolvedValue();
+      User.hashPassword.mockResolvedValue('hashed');
+      PasswordResetToken.redeem.mockResolvedValue({ userId: 'u1', tokenType: 'reset' });
 
-      await capturedHandlers['/auth/set-password']({ body: { token: 'validtoken', password: 'newpass1' } }, mockReply);
+      await capturedHandlers['/auth/set-password']({ body: { token: 'tok', password: 'newpass1' } }, mockReply);
 
-      expect(PasswordResetToken.markUsed).toHaveBeenCalledTimes(1);
-      expect(User.updatePassword).toHaveBeenCalledTimes(1);
-      const markUsedOrder = PasswordResetToken.markUsed.mock.invocationCallOrder[0];
-      const updatePasswordOrder = User.updatePassword.mock.invocationCallOrder[0];
-      expect(markUsedOrder).toBeLessThan(updatePasswordOrder);
-    });
-
-    it('activates user when token type is setup', async () => {
-      const authRoutes = require('../../src/routes/auth');
-      authRoutes(mockFastify, {});
-
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't2',
-        user_id: '00000000-0000-4000-8000-000000000002',
-        token_type: 'setup',
-        used: false,
-        expires_at: new Date(Date.now() + 3600000),
-      });
-      User.updatePassword.mockResolvedValue();
-      User.activate.mockResolvedValue();
-      PasswordResetToken.markUsed.mockResolvedValue();
-
-      await capturedHandlers['/auth/set-password']({ body: { token: 'setuptoken', password: 'newpass1' } }, mockReply);
-
-      expect(User.activate).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002');
-      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
+      expect(PasswordResetToken.deleteExpired.mock.invocationCallOrder[0]).toBeLessThan(
+        PasswordResetToken.redeem.mock.invocationCallOrder[0]
+      );
     });
 
     it('returns 500 on unexpected error', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockRejectedValue(new Error('DB error'));
+      User.hashPassword.mockResolvedValue('hashed');
+      PasswordResetToken.redeem.mockRejectedValue(new Error('DB error'));
 
       await capturedHandlers['/auth/set-password']({ body: { token: 'sometoken', password: 'newpass1' } }, mockReply);
 
