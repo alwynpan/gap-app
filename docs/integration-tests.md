@@ -46,7 +46,19 @@ backend/
 
 ## Test Coverage
 
-### `auth.test.js` — 22 tests
+| Suite                 | Tests | Focus                                                                 |
+| --------------------- | ----: | --------------------------------------------------------------------- |
+| `users.test.js`       |    73 | User CRUD, AM subject scoping, bulk import/delete, setup emails       |
+| `groups.test.js`      |    55 | Group CRUD, capacity, join/leave, per-assignment placement            |
+| `assignments.test.js` |    54 | Assignment CRUD, manager assignment, join lock, mapping import/export |
+| `subjects.test.js`    |    53 | Subject CRUD, enrolment, per-subject suspension, cascade deletion     |
+| `auth.test.js`        |    30 | Login, registration, password reset, principal revocation             |
+| `migrations.test.js`  |     7 | Legacy pre-UUID database upgrade and convergence with a fresh install |
+| **Total**             |   272 |                                                                       |
+
+Sections below detail selected suites; `subjects.test.js` and `assignments.test.js` follow the same table conventions.
+
+### `auth.test.js` — 30 tests
 
 | Endpoint                         | Scenario                                                                     |
 | -------------------------------- | ---------------------------------------------------------------------------- |
@@ -76,7 +88,7 @@ backend/
 
 ---
 
-### `users.test.js` — 53 tests
+### `users.test.js` — 73 tests
 
 | Endpoint                      | Scenario                                                             |
 | ----------------------------- | -------------------------------------------------------------------- |
@@ -135,7 +147,7 @@ backend/
 
 ---
 
-### `groups.test.js` — 46 tests
+### `groups.test.js` — 55 tests
 
 | Endpoint                           | Scenario                                    |
 | ---------------------------------- | ------------------------------------------- |

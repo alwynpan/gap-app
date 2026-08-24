@@ -422,20 +422,28 @@ Tests the client-side filtering and UI states related to group capacity and memb
 
 | Spec file                    |   Tests |
 | ---------------------------- | ------: |
-| `auth.spec.js`               |       9 |
-| `access-control.spec.js`     |       7 |
-| `admin.spec.js`              |       8 |
-| `assignment-manager.spec.js` |       5 |
-| `user.spec.js`               |       6 |
-| `dashboard-advanced.spec.js` |       5 |
-| `forgot-password.spec.js`    |       9 |
-| `settings.spec.js`           |       5 |
-| `groups-advanced.spec.js`    |       9 |
-| `users-advanced.spec.js`     |       5 |
+| `auth.spec.js`               |      13 |
+| `access-control.spec.js`     |      16 |
+| `register.spec.js`           |       6 |
+| `forgot-password.spec.js`    |      13 |
 | `change-password.spec.js`    |       3 |
+| `admin.spec.js`              |      11 |
+| `user.spec.js`               |       7 |
+| `assignment-manager.spec.js` |       7 |
+| `am-scoping.spec.js`         |       7 |
+| `subjects.spec.js`           |       9 |
+| `subject-landing.spec.js`    |       6 |
+| `subject-suspension.spec.js` |       3 |
+| `assignments.spec.js`        |       8 |
+| `hierarchy-workflow.spec.js` |       1 |
+| `groups-advanced.spec.js`    |      10 |
+| `join-constraints.spec.js`   |       4 |
+| `settings.spec.js`           |       6 |
+| `dashboard-advanced.spec.js` |       5 |
+| `users-advanced.spec.js`     |       6 |
+| `typed-deletion.spec.js`     |       6 |
 | `bulk-operations.spec.js`    |       4 |
-| `import-users.spec.js`       |       3 |
-| `join-constraints.spec.js`   |       3 |
+| `import-users.spec.js`       |       5 |
 | **Total**                    | **156** |
 
 ---
