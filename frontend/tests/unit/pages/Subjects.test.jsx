@@ -21,6 +21,7 @@ const makeSubject = (overrides = {}) => ({
   name: 'Mathematics',
   assignment_count: 2,
   member_count: 10,
+  roster_count: 10,
   created_at: '2025-01-15T00:00:00.000Z',
   updated_at: '2025-01-15T00:00:00.000Z',
   ...overrides,
@@ -223,16 +224,27 @@ describe('Subjects page', () => {
 
   // ── Delete subject ─────────────────────────────────────────────────────
   describe('Delete subject', () => {
+    it('warns about every enrolment the cascade deletes, including suspended ones', async () => {
+      const user = userEvent.setup();
+      // 2 active, 20 suspended: member_count is active-only, roster_count is all.
+      await setupPage([makeSubject({ assignment_count: 1, member_count: 2, roster_count: 22 })]);
+
+      await user.click(screen.getByRole('button', { name: 'Delete Subject' }));
+
+      expect(screen.getByText(/1 assignments and 22 enrolments/i)).toBeInTheDocument();
+      expect(screen.queryByText(/and 2 enrolments/i)).not.toBeInTheDocument();
+    });
+
     it('deletes a subject via the two-step typed confirmation and refetches', async () => {
       const user = userEvent.setup();
-      await setupPage([makeSubject({ assignment_count: 2, member_count: 10 })]);
+      await setupPage([makeSubject({ assignment_count: 2, member_count: 10, roster_count: 10 })]);
       api.delete.mockResolvedValueOnce({ data: { message: 'ok' } });
       api.get.mockResolvedValueOnce({ data: { subjects: [] } });
 
       await user.click(screen.getByRole('button', { name: 'Delete Subject' }));
 
       expect(screen.getByText('Delete subject')).toBeInTheDocument();
-      expect(screen.getByText(/2 assignments and 10 members will be permanently deleted/i)).toBeInTheDocument();
+      expect(screen.getByText(/2 assignments and 10 enrolments/i)).toBeInTheDocument();
 
       await user.type(screen.getByLabelText('Confirmation name'), 'Mathematics');
       await user.click(screen.getByRole('button', { name: 'Continue' }));

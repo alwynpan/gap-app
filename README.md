@@ -260,10 +260,13 @@ migration file — never edit existing ones.
 > ⚠️ **Destructive upgrade to the subject/assignment hierarchy.** Migration `013_subject_assignment_hierarchy.sql` moves
 > the database from the old flat groups model to the Subject → Assignment → Group hierarchy using a **clean-reset
 > strategy**: it **drops the legacy `groups` table (including all group memberships) and removes the `users.group_id`
-> column**. User accounts are preserved. The recommended path when upgrading an existing deployment is a full reset
-> (`pnpm --filter gap-backend migrate:reset`) followed by re-creating subjects/assignments/groups; running plain
-> `migrate` on a legacy database also converges to the new schema but still destroys all existing group data. **Back up
-> your database before upgrading.** Databases created from the current schema are unaffected.
+> column**. User accounts are preserved by `migrate`, which is the recommended path when the accounts must survive: it
+> converges a legacy database (including a pre-UUID one) to the new schema, keeping users, roles and password-reset
+> tokens, and destroying only group data. One precondition: migrations 012 and 015 add case-insensitive unique indexes
+> on `users.username` and `users.email`, and stop with an explanatory error if the legacy data holds names or addresses
+> that differ only by case (`Alice` and `alice`). Merge or rename those rows and rerun. `migrate:reset` is **not** an
+> upgrade path — it drops every table including `users`, so all accounts are lost and must be re-created or restored
+> from a backup. **Back up your database before upgrading.** Databases created from the current schema are unaffected.
 
 Migration `014_user_subjects_enabled.sql` adds the per-subject suspension flag (`user_subjects.enabled`) and is
 non-destructive — all existing memberships default to enabled.

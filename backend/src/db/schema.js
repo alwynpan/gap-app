@@ -23,8 +23,36 @@ CREATE TABLE IF NOT EXISTS roles (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- A database holding BOTH the legacy 'team_manager' and the current
+-- 'assignment_manager' cannot be renamed by migration 001 — the rename collides
+-- on roles_name_key. Fold the legacy row into the current one first, moving its
+-- members across so they are not left pointing at a deleted role. Written
+-- type-agnostically because roles.id is INTEGER before migration 004.
+DO $$
+BEGIN
+  IF to_regclass('public.roles') IS NULL THEN
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM roles WHERE name = 'team_manager')
+     AND EXISTS (SELECT 1 FROM roles WHERE name = 'assignment_manager') THEN
+    IF to_regclass('public.users') IS NOT NULL THEN
+      UPDATE users SET role_id = (SELECT id FROM roles WHERE name = 'assignment_manager')
+       WHERE role_id = (SELECT id FROM roles WHERE name = 'team_manager');
+    END IF;
+    DELETE FROM roles WHERE name = 'team_manager';
+  END IF;
+END $$;
+
 -- Insert default roles (skip if already present)
-INSERT INTO roles (name) VALUES ('admin'), ('assignment_manager'), ('user')
+INSERT INTO roles (name) VALUES ('admin'), ('user')
+ON CONFLICT (name) DO NOTHING;
+
+-- 'assignment_manager' is withheld while a legacy 'team_manager' row is still
+-- present: migration 001 renames that row to this name, and seeding it here
+-- first makes the rename collide on roles_name_key (23505).
+INSERT INTO roles (name)
+SELECT 'assignment_manager'
+WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'team_manager')
 ON CONFLICT (name) DO NOTHING;
 
 -- Create subjects table (top of the hierarchy)
@@ -79,13 +107,31 @@ CREATE TABLE IF NOT EXISTS users (
 -- User ↔ Subject membership (m2m). "enabled" is the per-subject suspension
 -- flag: suspended members keep their roster row but lose subject access and
 -- group memberships (cleanup enforced in Subject.setMemberEnabled).
-CREATE TABLE IF NOT EXISTS user_subjects (
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-  enabled BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (user_id, subject_id)
-);
+-- Guarded, like user_groups below: on a pre-004 database users.id is still
+-- INTEGER, so a UUID foreign key to it fails (42804) and takes the whole
+-- upgrade down before 004 can convert the ids. Migration 013 creates these.
+DO $$
+BEGIN
+  IF (SELECT data_type FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'users' AND column_name = 'id') = 'uuid' THEN
+    CREATE TABLE IF NOT EXISTS user_subjects (
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+      enabled BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, subject_id)
+    );
+    CREATE TABLE IF NOT EXISTS assignment_managers (
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      assignment_id UUID NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, assignment_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_subjects_subject_id ON user_subjects(subject_id);
+    CREATE INDEX IF NOT EXISTS idx_assignment_managers_assignment_id ON assignment_managers(assignment_id);
+  END IF;
+END $$;
 
 -- Per-assignment group membership: at most ONE group per (user, assignment);
 -- composite FK pins the group to the same assignment.
@@ -114,14 +160,6 @@ BEGIN
   END IF;
 END $$;
 
--- Assignment-manager scoping (m2m)
-CREATE TABLE IF NOT EXISTS assignment_managers (
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  assignment_id UUID NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (user_id, assignment_id)
-);
-
 -- Create indexes for performance
 -- Case-insensitive uniqueness (users 012/015, hierarchy names 016) is created by
 -- those migrations, not here: this DDL runs before migration 013 replaces the
@@ -131,8 +169,6 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_assignments_subject_id ON assignments(subject_id);
 CREATE INDEX IF NOT EXISTS idx_groups_enabled ON groups(enabled);
-CREATE INDEX IF NOT EXISTS idx_user_subjects_subject_id ON user_subjects(subject_id);
-CREATE INDEX IF NOT EXISTS idx_assignment_managers_assignment_id ON assignment_managers(assignment_id);
 
 -- Create schema_migrations table to track incremental migrations
 CREATE TABLE IF NOT EXISTS schema_migrations (

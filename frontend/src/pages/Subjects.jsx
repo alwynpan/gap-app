@@ -290,7 +290,7 @@ function Subjects() {
         <TypedDeleteConfirmModal
           entityLabel="subject"
           entityName={deleteModal.name}
-          warning={`${deleteModal.assignment_count} assignments and ${deleteModal.member_count} members will be permanently deleted`}
+          warning={`${deleteModal.assignment_count} assignments and ${deleteModal.roster_count ?? deleteModal.member_count} enrolments (including suspended members) will be permanently deleted`}
           deleting={deleting}
           onConfirm={handleDeleteConfirmed}
           onCancel={() => setDeleteModal(null)}
