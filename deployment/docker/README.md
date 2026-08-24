@@ -83,7 +83,7 @@ docker compose logs traefik
 | `ADMIN_PASSWORD`       |   Yes    | —                   | Password for the initial admin account (username is always `admin`, seeded on first migration only). |
 | `JWT_EXPIRES_IN`       |    No    | `24h`               | JWT token expiry. Uses ms format (e.g. `24h`, `7d`).                                                 |
 | `REGISTRATION_ENABLED` |    No    | `false`             | Allow public self-registration. Recommended to keep `false` in production.                           |
-| `SMTP_HOST`            |    No    | _(empty)_           | SMTP hostname. Leave blank to disable email — links are logged to the backend container instead.     |
+| `SMTP_HOST`            |   Yes    | _(empty)_           | SMTP hostname. Required here: with it blank no email is sent and no link is logged in production.    |
 | `SMTP_PORT`            |    No    | `587`               | SMTP server port.                                                                                    |
 | `SMTP_SECURE`          |    No    | `false`             | Use TLS (SMTPS). Set to `false` for STARTTLS on port 587.                                            |
 | `SMTP_USER`            |    No    | _(empty)_           | SMTP authentication username.                                                                        |

@@ -33,7 +33,7 @@ backend/
 
 ### Key design decisions
 
-- **One container per Jest run** — started in `globalSetup`, shared across all 4 test files, stopped in
+- **One container per Jest run** — started in `globalSetup`, shared across the API test files, stopped in
   `globalTeardown`. Faster than per-file containers.
 - **Test isolation** — each `beforeEach` calls `cleanDatabase()` which truncates `users` (except admin), `groups`,
   `config`, and `password_reset_tokens`. Roles and the admin user are preserved.
@@ -81,7 +81,7 @@ backend/
 | Endpoint                      | Scenario                                                             |
 | ----------------------------- | -------------------------------------------------------------------- |
 | `GET /api/users`              | ✅ Admin can list users                                              |
-|                               | ✅ Assignment manager can list users                                 |
+|                               | ✅ Assignment manager → 403 (admin-only)                             |
 |                               | ✅ Regular user → 403                                                |
 |                               | ✅ No token → 401                                                    |
 |                               | ✅ Filter by `role=admin`                                            |
@@ -185,6 +185,25 @@ backend/
 |                                    | ✅ Assignment manager can export            |
 |                                    | ✅ Empty mappings → `{ mappings: [] }`      |
 |                                    | ✅ Regular user → 403                       |
+
+---
+
+### `migrations.test.js` — 7 tests
+
+Upgrades a real pre-hierarchy database rather than building the current schema. The rest of the suite starts from
+`createSQL`, so it cannot catch a migration that only breaks when older objects are already present — which is how two
+upgrade outages shipped (a UUID foreign key to a still-INTEGER `users.id`, and a role-seed collision with migration
+001's rename). Uses its own throwaway containers, since it needs a database that does _not_ already have the schema.
+
+| Scenario                         | Coverage                                                        |
+| -------------------------------- | --------------------------------------------------------------- |
+| Pre-UUID legacy upgrade          | ✅ Applies `createSQL` + 001–017 without failing                |
+| Id conversion                    | ✅ `users.id` becomes UUID and every account survives           |
+| Role rename                      | ✅ `team_manager` → `assignment_manager`, no duplicate role     |
+| Hierarchy creation               | ✅ All five hierarchy tables exist; `users.group_id` is gone    |
+| Convergence with a fresh install | ✅ Identical columns, widths, defaults, constraints and indexes |
+| Shipped column widths            | ✅ `username`/`email`/`student_id` keep their real widths       |
+| Idempotency                      | ✅ Re-applying `createSQL` changes nothing                      |
 
 ---
 

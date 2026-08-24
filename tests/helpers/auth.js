@@ -25,11 +25,6 @@ async function logout(page) {
 }
 
 /**
- * Enable the group join lock from the settings page.
- * Must be called while already logged in as admin (or will log in as admin).
- * Leaves the page at /settings.
- */
-/**
  * Lock group joining for ONE assignment through the settings UI.
  * The lock is per assignment, so the caller names which one.
  *

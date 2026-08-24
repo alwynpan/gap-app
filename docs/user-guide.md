@@ -86,8 +86,9 @@ If you did not receive the email:
 - Check your spam folder
 - Ask an admin or AM to resend it (admins: Users page → select user → Send Setup Email; AMs: the subject's Members
   section → envelope icon)
-- If SMTP is not configured (development only), the admin can find the link in the backend logs; in production SMTP must
-  be configured for emails to be sent
+- If SMTP is not configured (development only), the link appears in the backend logs **only** when
+  `LOG_EMAIL_BODIES=true` is set and `NODE_ENV` is not `production`; otherwise just a masked recipient is logged. In
+  production SMTP must be configured — links are never logged there
 
 ---
 
@@ -315,8 +316,9 @@ warning tells you to place them manually.
 > Only Admins can create Admin or Assignment Manager accounts. AMs can only enrol new users into subjects where they
 > manage an assignment.
 >
-> If SMTP is not configured (development only), setup links are printed to the backend logs instead of being emailed. In
-> production, SMTP must be configured for emails to be delivered.
+> If SMTP is not configured (development only), setup links reach the backend logs only when `LOG_EMAIL_BODIES=true` is
+> set outside production; otherwise just a masked recipient is logged. In production, SMTP must be configured — links
+> are never written to the logs there.
 
 #### Editing a user
 
@@ -479,17 +481,21 @@ user–group placements. The file contains `email` and `group name` columns, rea
 
 ---
 
-### System config
+### Assignment join locks
 
 #### Locking / unlocking group joining
 
-When group joining is **locked**, regular users cannot join or leave groups in any assignment. Admins and AMs are
-unaffected.
+Each assignment has its own lock. When one is **locked**, regular users cannot join or leave groups in _that_
+assignment; other assignments are unaffected and continue as normal.
 
-To toggle the lock:
+The exemption is assignment-scoped. Admins are always exempt, and so is an assignment manager for the assignments they
+manage — but a manager who does not manage that assignment obeys its lock exactly like a student. Staff who are exempt
+can still place and remove members while it is locked.
+
+To toggle a lock:
 
 1. Navigate to **Settings** from the Administration panel.
-2. Toggle **Lock group joining** and confirm.
+2. Find the assignment's row and toggle **Lock group joining** for it, then confirm.
 
 Use the lock when you want to freeze assignments after a deadline (e.g. after group registration closes).
 

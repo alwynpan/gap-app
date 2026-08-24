@@ -48,6 +48,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+      LOG_LEVEL: ${LOG_LEVEL:-}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: gap_db

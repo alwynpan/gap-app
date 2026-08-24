@@ -192,8 +192,11 @@ cp .env.example .env
 # Edit .env — fill in at minimum:
 #   DOMAIN, LETSENCRYPT_EMAIL, DB_PASSWORD, JWT_SECRET, ADMIN_PASSWORD
 
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
+
+The production stack runs images published by CI; it does not build from source.
 
 Traefik provisions a Let's Encrypt certificate on first startup (allow 1–2 minutes).
 
@@ -213,7 +216,7 @@ docker compose logs traefik    # Check TLS provisioning
 | `ADMIN_PASSWORD`       |   Yes    | —                   | Initial admin password (seeded on first migration only)                                  |
 | `JWT_EXPIRES_IN`       |    No    | `24h`               | Token expiry                                                                             |
 | `REGISTRATION_ENABLED` |    No    | `false`             | Allow public self-registration                                                           |
-| `SMTP_HOST`            |    No    | _(empty)_           | SMTP host; leave blank to log email links to console                                     |
+| `SMTP_HOST`            |  Yes\*   | _(empty)_           | SMTP host. Required in production: with it blank no email is sent and no link is logged  |
 | `SMTP_PORT`            |    No    | `587`               | SMTP port                                                                                |
 | `SMTP_SECURE`          |    No    | `false`             | `true` for SMTPS; `false` for STARTTLS on port 587                                       |
 | `SMTP_USER`            |    No    | _(empty)_           | SMTP auth username                                                                       |
@@ -223,6 +226,10 @@ docker compose logs traefik    # Check TLS provisioning
 | `BACKUP_BEGIN`         |    No    | `0300`              | First backup time, HHMM (default: 3:00 AM)                                               |
 | `BACKUP_CLEANUP_TIME`  |    No    | `10080`             | Delete backups older than N minutes (default: 7 days)                                    |
 | `LOG_LEVEL`            |    No    | _(unset)_           | Set to `silent` to suppress non-fatal backend logs (fatal errors always write to stderr) |
+
+\* `SMTP_HOST` is technically optional, but account setup and password-reset links are delivered only by email. Bodies
+carry one-time tokens and are never written to the logs when `NODE_ENV=production`, so leaving it blank means no user
+can complete account setup.
 
 ### Database backups
 
@@ -240,7 +247,8 @@ gunzip -c /backups/<file>.sql.gz | \
 ```bash
 docker compose logs -f backend                   # Tail backend logs
 docker compose restart backend                   # Restart a service
-git pull && docker compose up -d --build         # Update to new version
+git pull                                         # Only for deployment-file changes
+docker compose pull && docker compose up -d      # Update to new images
 docker compose down                              # Stop
 docker compose down -v                           # Stop and wipe all data
 ```

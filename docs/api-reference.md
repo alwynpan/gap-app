@@ -744,8 +744,8 @@ enrolments, each entry tagged with `membership_enabled`:
 
 Get a single user by ID, enriched with `subjects` and `memberships`.
 
-| Access | Auth — users can view their own profile; AM+ can view any user |
-| ------ | -------------------------------------------------------------- |
+| Access | Auth — own profile; admin any user; assignment manager only a user inside a subject they manage |
+| ------ | ----------------------------------------------------------------------------------------------- |
 
 **Response `200`**
 
