@@ -245,4 +245,88 @@ describe('RBAC Middleware', () => {
 
     expect(mockReply.code).toHaveBeenCalledWith(403);
   });
+
+  describe('assertManagesAssignment', () => {
+    const ASSIGNMENT_ID = 'a0000000-0000-0000-0000-000000000001';
+    const USER_ID = 'u0000000-0000-0000-0000-000000000001';
+
+    const setup = async (isManagerResult) => {
+      jest.doMock('../../src/models/Assignment', () => ({
+        isManager: jest.fn().mockResolvedValue(isManagerResult),
+      }));
+      const Assignment = require('../../src/models/Assignment');
+      const rbacPlugin = require('../../src/middleware/rbac');
+      await rbacPlugin(fastify, {});
+      const assertManagesAssignment = fastify.decorate.mock.calls.find(
+        (call) => call[0] === 'assertManagesAssignment'
+      )[1];
+      const mockReply = { code: jest.fn().mockReturnThis(), send: jest.fn() };
+      return { assertManagesAssignment, mockReply, Assignment };
+    };
+
+    afterEach(() => {
+      jest.dontMock('../../src/models/Assignment');
+    });
+
+    it('is registered as a decorator', async () => {
+      const { assertManagesAssignment } = await setup(false);
+      expect(assertManagesAssignment).toEqual(expect.any(Function));
+    });
+
+    it('returns 401 for unauthenticated requests', async () => {
+      const { assertManagesAssignment, mockReply } = await setup(false);
+
+      const result = await assertManagesAssignment({ user: null }, mockReply, ASSIGNMENT_ID);
+
+      expect(result).toBe(false);
+      expect(mockReply.code).toHaveBeenCalledWith(401);
+    });
+
+    it('allows admin without consulting the manager table', async () => {
+      const { assertManagesAssignment, mockReply, Assignment } = await setup(false);
+
+      const result = await assertManagesAssignment({ user: { id: USER_ID, role: 'admin' } }, mockReply, ASSIGNMENT_ID);
+
+      expect(result).toBe(true);
+      expect(Assignment.isManager).not.toHaveBeenCalled();
+      expect(mockReply.code).not.toHaveBeenCalled();
+    });
+
+    it('allows an assignment manager who manages the assignment', async () => {
+      const { assertManagesAssignment, mockReply, Assignment } = await setup(true);
+
+      const result = await assertManagesAssignment(
+        { user: { id: USER_ID, role: 'assignment_manager' } },
+        mockReply,
+        ASSIGNMENT_ID
+      );
+
+      expect(result).toBe(true);
+      expect(Assignment.isManager).toHaveBeenCalledWith(USER_ID, ASSIGNMENT_ID);
+      expect(mockReply.code).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 for an assignment manager who does not manage the assignment', async () => {
+      const { assertManagesAssignment, mockReply } = await setup(false);
+
+      const result = await assertManagesAssignment(
+        { user: { id: USER_ID, role: 'assignment_manager' } },
+        mockReply,
+        ASSIGNMENT_ID
+      );
+
+      expect(result).toBe(false);
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+    });
+
+    it('returns 403 for a plain user regardless of the manager table', async () => {
+      const { assertManagesAssignment, mockReply, Assignment } = await setup(true);
+
+      const result = await assertManagesAssignment({ user: { id: USER_ID, role: 'user' } }, mockReply, ASSIGNMENT_ID);
+
+      expect(result).toBe(false);
+      expect(Assignment.isManager).not.toHaveBeenCalled();
+      expect(mockReply.code).toHaveBeenCalledWith(403);
+    });
+  });
 });

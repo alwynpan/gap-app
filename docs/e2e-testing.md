@@ -68,7 +68,7 @@ tests/
 ├── global-teardown.js         # Stop all services
 ├── package.json               # Playwright + Testcontainers dependencies
 ├── helpers/
-│   ├── auth.js                # loginAs(), loginAsAdmin(), logout(), enableGroupJoinLock()
+│   ├── auth.js                # loginAs(), loginAsAdmin(), logout(), lockAssignmentJoining()
 │   └── db.js                  # cleanDatabase(), createUser(), createGroup(), assignUserToGroup(), createPasswordResetToken()
 └── e2e/
     ├── auth.spec.js                  # Login, logout, unauthenticated access
@@ -95,7 +95,7 @@ tests/
 loginAs(page, username, password); // Navigate to /login, fill form, wait for /dashboard
 loginAsAdmin(page); // loginAs('admin', 'AdminPass123!')
 logout(page); // Open user menu, click Logout, wait for /login
-enableGroupJoinLock(page); // Login as admin, navigate to /settings, enable lock, wait for toggle to confirm
+lockAssignmentJoining(page, assignmentName); // Login as admin, go to /settings, lock that one assignment, wait for the toggle
 ```
 
 ### `tests/helpers/db.js`
@@ -103,8 +103,8 @@ enableGroupJoinLock(page); // Login as admin, navigate to /settings, enable lock
 ```js
 cleanDatabase()                              // DELETE all groups, non-admin users, config
 createUser({ username, email, ... })         // Insert user directly (bypasses email flow)
-createGroup({ name, enabled, ... })          // Insert group directly
-assignUserToGroup(username, groupId)         // Set group_id on user row
+createGroup({ assignmentId, name, enabled, ... }) // Insert group directly under an assignment
+assignUserToGroup(username, groupId)         // Insert user_groups membership row for the group's assignment
 createPasswordResetToken(email, opts)        // Insert hashed reset token; returns raw token for URLs
 closePool()                                  // Close the DB connection pool
 ```
@@ -173,10 +173,10 @@ Tests that each role can only reach pages they are authorized to see.
 
 **Assignment manager**
 
-| Test                                            | What it verifies                      |
-| ----------------------------------------------- | ------------------------------------- |
-| can access /users                               | AMs can view the users list           |
-| cannot access /groups — redirected to dashboard | AMs are blocked from group management |
+| Test                                           | What it verifies                          |
+| ---------------------------------------------- | ----------------------------------------- |
+| cannot access /users — redirected to dashboard | The users list is admin-only              |
+| can manage groups in a managed assignment      | AMs manage groups in assignments they own |
 
 **Admin**
 
@@ -222,13 +222,13 @@ Tests the core create / edit / delete operations that only admins can perform, i
 
 Tests what an Assignment Manager can and cannot do.
 
-| Test                                            | What it verifies                                                                                       |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| can navigate to /users page                     | AM sees the Manage Users page                                                                          |
-| cannot see the Create User button               | Create User is hidden from AMs                                                                         |
-| cannot see the Delete User button               | Delete User is hidden from AMs                                                                         |
-| cannot access /groups — redirected to dashboard | Group management is blocked for AMs                                                                    |
-| can assign a user to a group                    | AM can open the Assign Group modal, select a group, and save; the group name appears in the user's row |
+| Test                                           | What it verifies                                                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| can navigate to /users page                    | AM sees the Manage Users page                                                                          |
+| cannot see the Create User button              | Create User is hidden from AMs                                                                         |
+| cannot see the Delete User button              | Delete User is hidden from AMs                                                                         |
+| cannot access /users — redirected to dashboard | The users list is admin-only                                                                           |
+| can assign a user to a group                   | AM can open the Assign Group modal, select a group, and save; the group name appears in the user's row |
 
 ---
 
@@ -286,9 +286,10 @@ Tests the two-page password reset flow: submitting an email request and then usi
 
 ---
 
-### `settings.spec.js` — Group Join Lock Toggle
+### `settings.spec.js` — Per-Assignment Join Lock Toggle
 
-Tests admin access to the Settings page and the group join lock toggle.
+Tests admin access to the Settings page and the per-assignment join lock toggles. Each assignment has its own lock; an
+assignment manager is exempt only from locks on assignments they manage.
 
 | Test                                                                 | What it verifies                                                                                                    |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -419,23 +420,31 @@ Tests the client-side filtering and UI states related to group capacity and memb
 
 ## Test Count Summary
 
-| Spec file                    |  Tests |
-| ---------------------------- | -----: |
-| `auth.spec.js`               |      9 |
-| `access-control.spec.js`     |      7 |
-| `admin.spec.js`              |      8 |
-| `assignment-manager.spec.js` |      5 |
-| `user.spec.js`               |      6 |
-| `dashboard-advanced.spec.js` |      5 |
-| `forgot-password.spec.js`    |      9 |
-| `settings.spec.js`           |      5 |
-| `groups-advanced.spec.js`    |      9 |
-| `users-advanced.spec.js`     |      5 |
-| `change-password.spec.js`    |      3 |
-| `bulk-operations.spec.js`    |      4 |
-| `import-users.spec.js`       |      3 |
-| `join-constraints.spec.js`   |      3 |
-| **Total**                    | **81** |
+| Spec file                    |   Tests |
+| ---------------------------- | ------: |
+| `auth.spec.js`               |      13 |
+| `access-control.spec.js`     |      16 |
+| `register.spec.js`           |       6 |
+| `forgot-password.spec.js`    |      13 |
+| `change-password.spec.js`    |       3 |
+| `admin.spec.js`              |      11 |
+| `user.spec.js`               |       7 |
+| `assignment-manager.spec.js` |       7 |
+| `am-scoping.spec.js`         |       7 |
+| `subjects.spec.js`           |       9 |
+| `subject-landing.spec.js`    |       6 |
+| `subject-suspension.spec.js` |       3 |
+| `assignments.spec.js`        |       8 |
+| `hierarchy-workflow.spec.js` |       1 |
+| `groups-advanced.spec.js`    |      10 |
+| `join-constraints.spec.js`   |       4 |
+| `settings.spec.js`           |       6 |
+| `dashboard-advanced.spec.js` |       5 |
+| `users-advanced.spec.js`     |       6 |
+| `typed-deletion.spec.js`     |       6 |
+| `bulk-operations.spec.js`    |       4 |
+| `import-users.spec.js`       |       5 |
+| **Total**                    | **156** |
 
 ---
 

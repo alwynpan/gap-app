@@ -25,16 +25,20 @@ async function logout(page) {
 }
 
 /**
- * Enable the group join lock from the settings page.
- * Must be called while already logged in as admin (or will log in as admin).
- * Leaves the page at /settings.
+ * Lock group joining for ONE assignment through the settings UI.
+ * The lock is per assignment, so the caller names which one.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {string} assignmentName Row to toggle, as shown on /settings.
  */
-async function enableGroupJoinLock(page) {
+async function lockAssignmentJoining(page, assignmentName) {
   await loginAsAdmin(page);
   await page.goto('/settings');
-  await page.getByRole('button', { name: 'Enable group join lock' }).click();
-  // Wait for toggle to confirm the lock is active before continuing
-  await expect(page.getByRole('button', { name: 'Disable group join lock' })).toBeVisible({ timeout: 5000 });
+  await page.getByRole('button', { name: `Lock group joining for ${assignmentName}` }).click();
+  // Wait for the toggle to flip before continuing
+  await expect(page.getByRole('button', { name: `Unlock group joining for ${assignmentName}` })).toBeVisible({
+    timeout: 5000,
+  });
 }
 
-module.exports = { loginAs, loginAsAdmin, logout, enableGroupJoinLock, ADMIN_PASSWORD, DEFAULT_PASSWORD };
+module.exports = { loginAs, loginAsAdmin, logout, lockAssignmentJoining, ADMIN_PASSWORD, DEFAULT_PASSWORD };

@@ -2,105 +2,119 @@
 
 const { test, expect } = require('@playwright/test');
 const { loginAs } = require('../helpers/auth');
-const { cleanDatabase, createUser, createGroup, assignUserToGroup } = require('../helpers/db');
+const {
+  cleanDatabase,
+  createUser,
+  createGroup,
+  createHierarchy,
+  addUserToSubject,
+  assignManager,
+} = require('../helpers/db');
 
+/**
+ * Assignment manager user management happens on the subject detail page
+ * (Members section) — /users is admin-only and redirects AMs to the dashboard.
+ */
 test.describe('Assignment Manager', () => {
+  let am;
+  let subject;
+  let assignment;
+
   test.beforeEach(async ({ page }) => {
     await cleanDatabase();
-    await createUser({ username: 'am1', email: 'am1@test.com', role: 'assignment_manager' });
+    am = await createUser({ username: 'am1', email: 'am1@test.com', role: 'assignment_manager' });
+    ({ subject, assignment } = await createHierarchy({ subjectName: 'AM Subject', assignmentName: 'AM Assignment' }));
+    await assignManager(am.id, assignment.id);
     await loginAs(page, 'am1');
   });
 
-  test('can navigate to /users page', async ({ page }) => {
+  test('cannot open /users — redirected to dashboard', async ({ page }) => {
     await page.goto('/users');
-    await expect(page).toHaveURL(/\/users/);
-    await expect(page.getByText('Manage Users')).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page.getByRole('heading', { name: 'Manage Users' })).not.toBeVisible();
   });
 
-  test('cannot see the Create User button', async ({ page }) => {
-    await page.goto('/users');
-    await expect(page.getByRole('button', { name: /create user/i })).not.toBeVisible();
-  });
-
-  test('cannot see the Delete User button', async ({ page }) => {
-    await createUser({ username: 'targetuser', email: 'target@test.com' });
-    await page.goto('/users');
-    await expect(page.getByRole('button', { name: 'Delete User' })).not.toBeVisible();
-  });
-
-  test('cannot access /groups — redirected to dashboard', async ({ page }) => {
-    await page.goto('/groups');
+  test('cannot open /users/import — redirected to dashboard', async ({ page }) => {
+    await page.goto('/users/import');
     await expect(page).toHaveURL(/\/dashboard/);
   });
 
-  test('edit-user modal hides the Role select (no role escalation) but allows editing other fields', async ({
-    page,
-  }) => {
-    await createUser({ username: 'edittarget', email: 'edittarget@test.com', role: 'user' });
-    await page.goto('/users');
-
-    // Scope to the target user's row — the AM also has an Edit button on its own row.
-    const row = page.locator('table tbody tr').filter({ hasText: 'edittarget' });
-    await row.getByRole('button', { name: 'Edit User Profile' }).click();
-
-    // Modal opens.
-    await expect(page.getByRole('heading', { name: 'Edit User' })).toBeVisible();
-
-    // The Role <select> is admin-only — it must not be present for an assignment manager.
-    // Scope to the edit form; in edit state there is no assign-group combobox active either.
-    const editForm = page.locator('form').filter({ has: page.getByPlaceholder('Enter first name') });
-    await expect(editForm.getByRole('combobox')).toHaveCount(0);
-
-    // The AM can still update an allowed field (first name).
-    await page.getByPlaceholder('Enter first name').fill('AmEdited');
-    await page.getByRole('button', { name: /save/i }).click();
-    await expect(page.getByText('User updated successfully')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('AmEdited')).toBeVisible();
+  test('/groups redirects to /subjects for an assignment manager', async ({ page }) => {
+    await page.goto('/groups');
+    await expect(page).toHaveURL(/\/subjects/);
   });
 
-  test('built-in admin row offers no Edit User Profile control to an assignment manager', async ({ page }) => {
-    await page.goto('/users');
-    const adminRow = page.locator('table tbody tr').filter({ hasText: 'admin' });
-    await expect(adminRow).toHaveCount(1);
-    await expect(adminRow.getByRole('button', { name: 'Edit User Profile' })).toHaveCount(0);
+  test('sees the Members section on a managed subject page', async ({ page }) => {
+    const target = await createUser({ username: 'targetuser', email: 'target@test.com' });
+    await addUserToSubject(target.id, subject.id);
+
+    await page.goto(`/subjects/${subject.id}`);
+
+    await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Users enrolled in this subject')).toBeVisible();
+    const row = page.locator('table tbody tr').filter({ hasText: 'targetuser' });
+    await expect(row).toBeVisible();
+    // "+ Add Existing User" is admin-only — not offered to an AM
+    await expect(page.getByRole('button', { name: '+ Add Existing User' })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: '+ Create User' })).toBeVisible();
   });
 
-  test('can assign a user to a group', async ({ page }) => {
-    await createUser({ username: 'assignee', email: 'assignee@test.com', role: 'user' });
-    await createGroup({ name: 'AssignGroup' });
+  test('can suspend and re-enable a member from the subject page', async ({ page }) => {
+    const target = await createUser({ username: 'suspendable', email: 'suspendable@test.com' });
+    await addUserToSubject(target.id, subject.id);
 
-    await page.goto('/users');
+    await page.goto(`/subjects/${subject.id}`);
+    const row = page.locator('table tbody tr').filter({ hasText: 'suspendable' });
+    await expect(row).toBeVisible({ timeout: 10000 });
 
-    // Click the Assign Group button for the user
-    await page.getByRole('button', { name: 'Assign Group' }).first().click();
+    // Suspend via the confirmation modal
+    await row.locator('button[aria-label="Suspend Member"]').click();
+    await expect(page.getByRole('heading', { name: 'Suspend suspendable?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Suspend', exact: true }).click();
+    await expect(page.getByText('Member suspended')).toBeVisible({ timeout: 5000 });
+    await expect(row.getByText('Suspended', { exact: true })).toBeVisible();
 
-    // Select the group from the dropdown
-    await page.getByRole('combobox', { name: /assign to group/i }).selectOption({ label: 'AssignGroup' });
-    await page.getByRole('button', { name: 'Save' }).click();
-
-    // Group name appears in the user row's group cell (title attribute is unique)
-    await expect(page.locator('[title="AssignGroup"]')).toBeVisible();
+    // Re-enable
+    await row.locator('button[aria-label="Enable Member"]').click();
+    await expect(page.getByText('Member enabled')).toBeVisible({ timeout: 5000 });
+    await expect(row.getByText('Suspended', { exact: true })).not.toBeVisible();
   });
 
-  test('can unassign a user from a group', async ({ page }) => {
-    const group = await createGroup({ name: 'UnassignGroup' });
-    await createUser({ username: 'assigned', email: 'assigned@test.com', role: 'user' });
-    await assignUserToGroup('assigned', group.id);
+  test('can create a user in the managed subject via the Members section', async ({ page }) => {
+    await page.goto(`/subjects/${subject.id}`);
+    await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible({ timeout: 10000 });
 
-    await page.goto('/users');
+    await page.getByRole('button', { name: '+ Create User' }).click();
+    await page.getByPlaceholder('Enter username').fill('amcreated');
+    await page.getByPlaceholder('Enter email').fill('amcreated@test.com');
+    await page.getByPlaceholder('Enter first name').fill('Am');
+    await page.getByPlaceholder('Enter last name').fill('Created');
+    await page.getByRole('button', { name: /^create$/i }).click();
 
-    // Verify the user is currently in the group
-    const row = page.locator('table tbody tr').filter({ hasText: 'assigned' });
-    await expect(row.locator('[title="UnassignGroup"]')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('User created successfully')).toBeVisible({ timeout: 5000 });
+    const row = page.locator('table tbody tr').filter({ hasText: 'amcreated' });
+    await expect(row).toBeVisible();
+    // Created without a password — the account awaits email setup
+    await expect(row.getByText('Pending', { exact: true })).toBeVisible();
+  });
 
-    // Click the Assign Group button for the user
-    await row.getByRole('button', { name: 'Assign Group' }).click();
+  test('can assign a member to a group via the Members section Assign Group modal', async ({ page }) => {
+    const assignee = await createUser({ username: 'assignee', email: 'assignee@test.com', role: 'user' });
+    await addUserToSubject(assignee.id, subject.id);
+    await createGroup({ assignmentId: assignment.id, name: 'AssignGroup' });
 
-    // Select "No Group" to unassign
-    await page.getByRole('combobox', { name: /assign to group/i }).selectOption({ value: '' });
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.goto(`/subjects/${subject.id}`);
+    const row = page.locator('table tbody tr').filter({ hasText: 'assignee' });
+    await expect(row).toBeVisible({ timeout: 10000 });
 
-    // Group column should now show "Not assigned"
-    await expect(row.locator('[title="Not assigned"]')).toBeVisible({ timeout: 10000 });
+    await row.locator('button[aria-label="Assign Group"]').click();
+
+    // Cascade: Subject → Assignment → Group
+    await page.getByLabel('Subject', { exact: true }).selectOption({ label: 'AM Subject' });
+    await page.getByLabel('Assignment', { exact: true }).selectOption({ label: 'AM Assignment' });
+    await page.getByLabel('Group', { exact: true }).selectOption({ label: 'AssignGroup' });
+    await page.getByRole('button', { name: 'Assign', exact: true }).click();
+
+    await expect(page.getByText('User group updated successfully')).toBeVisible({ timeout: 10000 });
   });
 });

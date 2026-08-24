@@ -1,23 +1,26 @@
+# Production stack. The backend and frontend run pre-built images published by
+# CI; this file never builds them. The Dockerfiles copy workspace-root files, so
+# a build needs the repo root as its context — see .github/workflows/ci.yml.
 services:
   traefik:
     image: traefik:v3.6
     container_name: gap-traefik
     command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
-      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.letsencrypt.acme.email=${LETSENCRYPT_EMAIL}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-      - "--log.level=INFO"
-      - "--accesslog=true"
+      - '--providers.docker=true'
+      - '--providers.docker.exposedbydefault=false'
+      - '--entrypoints.web.address=:80'
+      - '--entrypoints.websecure.address=:443'
+      - '--entrypoints.web.http.redirections.entryPoint.to=websecure'
+      - '--entrypoints.web.http.redirections.entryPoint.scheme=https'
+      - '--certificatesresolvers.letsencrypt.acme.httpchallenge=true'
+      - '--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web'
+      - '--certificatesresolvers.letsencrypt.acme.email=${LETSENCRYPT_EMAIL}'
+      - '--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json'
+      - '--log.level=INFO'
+      - '--accesslog=true'
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
@@ -33,20 +36,19 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gap_user -d gap_db"]
+      test: ['CMD-SHELL', 'pg_isready -U gap_user -d gap_db']
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
   backend:
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile
+    image: ${IMAGE_NAMESPACE:-alwynpan}/gap-backend:${IMAGE_TAG:-latest}
     container_name: gap-backend
     environment:
       NODE_ENV: production
       PORT: 3001
+      LOG_LEVEL: ${LOG_LEVEL:-}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: gap_db
@@ -69,28 +71,24 @@ services:
         condition: service_healthy
     command: sh -c "npm run migrate && node src/server.js"
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`${DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/health`))"
-      - "traefik.http.routers.backend.entrypoints=websecure"
-      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
-      - "traefik.http.services.backend.loadbalancer.server.port=3001"
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.backend.rule=Host(`${DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/health`))'
+      - 'traefik.http.routers.backend.entrypoints=websecure'
+      - 'traefik.http.routers.backend.tls.certresolver=letsencrypt'
+      - 'traefik.http.services.backend.loadbalancer.server.port=3001'
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ../../frontend
-      dockerfile: Dockerfile
-      args:
-        GIT_HASH: ${GIT_HASH:-unknown}
+    image: ${IMAGE_NAMESPACE:-alwynpan}/gap-frontend:${IMAGE_TAG:-latest}
     container_name: gap-frontend
     depends_on:
       - backend
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)"
-      - "traefik.http.routers.frontend.entrypoints=websecure"
-      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)'
+      - 'traefik.http.routers.frontend.entrypoints=websecure'
+      - 'traefik.http.routers.frontend.tls.certresolver=letsencrypt'
+      - 'traefik.http.services.frontend.loadbalancer.server.port=8080'
     restart: unless-stopped
 
   db-backup:

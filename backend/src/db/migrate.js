@@ -10,20 +10,37 @@ const pool = new Pool(dbConfig);
 const { createSQL } = require('./schema');
 
 const dropSQL = `
+DROP TABLE IF EXISTS user_groups CASCADE;
+DROP TABLE IF EXISTS assignment_managers CASCADE;
+DROP TABLE IF EXISTS user_subjects CASCADE;
+DROP TABLE IF EXISTS password_reset_tokens CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS groups CASCADE;
+DROP TABLE IF EXISTS assignments CASCADE;
+DROP TABLE IF EXISTS subjects CASCADE;
 DROP TABLE IF EXISTS roles CASCADE;
 DROP TABLE IF EXISTS config CASCADE;
 DROP TABLE IF EXISTS schema_migrations CASCADE;
 `;
 
-const sampleGroupsSQL = `
-INSERT INTO groups (name, enabled) VALUES
-  ('Team Alpha', true),
-  ('Team Beta', true),
-  ('Team Gamma', true),
-  ('Team Delta', false)
-ON CONFLICT (name) DO NOTHING;
+// Minimal dev seed: one subject with one assignment and sample groups under it.
+const sampleHierarchySQL = `
+WITH subj AS (
+  INSERT INTO subjects (name) VALUES ('Sample Subject')
+  ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+  RETURNING id
+), assign AS (
+  INSERT INTO assignments (subject_id, name)
+  SELECT id, 'Assignment 1' FROM subj
+  ON CONFLICT (subject_id, name) DO UPDATE SET name = EXCLUDED.name
+  RETURNING id
+)
+INSERT INTO groups (assignment_id, name, enabled)
+SELECT assign.id, g.name, g.enabled
+FROM assign,
+     (VALUES ('Team Alpha', true), ('Team Beta', true),
+             ('Team Gamma', true), ('Team Delta', false)) AS g(name, enabled)
+ON CONFLICT (assignment_id, name) DO NOTHING;
 `;
 
 function askConfirmation(question) {
@@ -126,8 +143,8 @@ async function migrate() {
       [adminUsername, 'admin@gap.local', passwordHash]
     );
 
-    // Insert sample groups
-    await client.query(sampleGroupsSQL);
+    // Insert sample subject/assignment/groups hierarchy
+    await client.query(sampleHierarchySQL);
 
     // Run pending incremental migrations
     await runMigrations(client);
@@ -155,7 +172,13 @@ async function migrateUp() {
     // Create base schema if tables don't exist (idempotent)
     await client.query(createSQL);
 
-    // Check if admin user needs to be seeded (first-time setup)
+    // Migrations run BEFORE seeding: migration 012 replaces the username unique
+    // constraint with a functional index, and the seed must match whichever
+    // shape is current.
+    await runMigrations(client);
+
+    // Seed the admin on first-time setup, or to recover a database whose admin
+    // accounts were all removed.
     const { rows } = await client.query(
       "SELECT u.id FROM users u JOIN roles r ON u.role_id = r.id WHERE r.name = 'admin' LIMIT 1"
     );
@@ -166,17 +189,24 @@ async function migrateUp() {
       if (adminPassword) {
         const saltRounds = 10;
         const passwordHash = await bcrypt.hash(adminPassword, saltRounds);
+        // WHERE NOT EXISTS rather than ON CONFLICT (username): after migration 012
+        // uniqueness is a functional index on LOWER(username), which ON CONFLICT
+        // cannot infer — it raises 42P10 at plan time and aborts startup.
+        // $1 is cast explicitly: used bare in the SELECT list and inside LOWER()
+        // it deduces two types and Postgres rejects it (42P08).
         await client.query(
           `INSERT INTO users (username, email, password_hash, first_name, last_name, role_id, enabled)
-           VALUES ($1, $2, $3, 'Admin', 'User', (SELECT id FROM roles WHERE name = 'admin'), true)
-           ON CONFLICT (username) DO NOTHING`,
+           SELECT $1::varchar, $2::varchar, $3::varchar, 'Admin', 'User',
+                  (SELECT id FROM roles WHERE name = 'admin'), true
+           WHERE NOT EXISTS (SELECT 1 FROM users WHERE LOWER(username) = LOWER($1::varchar))`,
           [adminUsername, 'admin@gap.local', passwordHash]
         );
         console.log('Admin user created.');
+      } else {
+        console.warn('WARNING: no admin account exists and ADMIN_PASSWORD is not set; skipping admin seed.');
       }
     }
 
-    await runMigrations(client);
     await client.query('COMMIT');
     console.log('Incremental migrations completed successfully!');
   } catch (error) {

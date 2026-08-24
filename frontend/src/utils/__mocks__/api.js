@@ -7,4 +7,6 @@ const api = {
   patch: jest.fn(),
 };
 
+export const registerSessionExpiryHandler = jest.fn(() => jest.fn());
+
 export default api;

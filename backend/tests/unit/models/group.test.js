@@ -8,16 +8,19 @@ jest.mock('../../../src/db/pool', () => ({
 
 const pool = require('../../../src/db/pool');
 
+const ASSIGNMENT_ID = 'a0000000-0000-4000-8000-000000000001';
+
 describe('Group Model', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('findAll', () => {
-    it('returns all groups with member_count ordered by name', async () => {
+  describe('findAllByAssignment', () => {
+    it('returns groups for the assignment with member_count ordered by name', async () => {
       const mockGroups = [
         {
           id: '10000000-0000-4000-8000-000000000001',
+          assignment_id: ASSIGNMENT_ID,
           name: 'Alpha Team',
           enabled: true,
           max_members: null,
@@ -25,6 +28,7 @@ describe('Group Model', () => {
         },
         {
           id: '10000000-0000-4000-8000-000000000002',
+          assignment_id: ASSIGNMENT_ID,
           name: 'Beta Team',
           enabled: true,
           max_members: 5,
@@ -33,55 +37,27 @@ describe('Group Model', () => {
       ];
       pool.query.mockResolvedValue({ rows: mockGroups });
 
-      const result = await Group.findAll();
+      const result = await Group.findAllByAssignment(ASSIGNMENT_ID);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('member_count'));
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('ORDER BY g.name'));
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('member_count'), [ASSIGNMENT_ID]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('assignment_id = $1'), [ASSIGNMENT_ID]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('ORDER BY g.name'), [ASSIGNMENT_ID]);
       expect(result).toEqual(mockGroups);
     });
 
-    it('returns empty array when no groups', async () => {
+    it('counts members from user_groups', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await Group.findAll();
+      await Group.findAllByAssignment(ASSIGNMENT_ID);
 
-      expect(result).toEqual([]);
-    });
-  });
-
-  describe('findById', () => {
-    it('returns group by id with member_count', async () => {
-      const mockGroup = {
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Test Group',
-        enabled: true,
-        max_members: 10,
-        member_count: 3,
-      };
-      pool.query.mockResolvedValue({ rows: [mockGroup] });
-
-      const result = await Group.findById('10000000-0000-4000-8000-000000000001');
-
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('member_count'), [
-        '10000000-0000-4000-8000-000000000001',
-      ]);
-      expect(result).toEqual(mockGroup);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('FROM user_groups'), [ASSIGNMENT_ID]);
     });
 
-    it('returns undefined when group not found', async () => {
-      pool.query.mockResolvedValue({ rows: [] });
-
-      const result = await Group.findById('10000000-0000-4000-8000-000000000999');
-
-      expect(result).toBeUndefined();
-    });
-  });
-
-  describe('findEnabled', () => {
-    it('returns only enabled groups with member_count', async () => {
+    it('filters to enabled groups when enabledOnly is true', async () => {
       const mockGroups = [
         {
           id: '10000000-0000-4000-8000-000000000001',
+          assignment_id: ASSIGNMENT_ID,
           name: 'Active Team',
           enabled: true,
           max_members: null,
@@ -90,19 +66,124 @@ describe('Group Model', () => {
       ];
       pool.query.mockResolvedValue({ rows: mockGroups });
 
-      const result = await Group.findEnabled();
+      const result = await Group.findAllByAssignment(ASSIGNMENT_ID, { enabledOnly: true });
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('enabled = true'));
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('member_count'));
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('enabled = true'), [ASSIGNMENT_ID]);
       expect(result).toEqual(mockGroups);
     });
 
-    it('returns empty array when no enabled groups', async () => {
+    it('does not filter by enabled when enabledOnly is false', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await Group.findEnabled();
+      await Group.findAllByAssignment(ASSIGNMENT_ID, { enabledOnly: false });
+
+      expect(pool.query).not.toHaveBeenCalledWith(expect.stringContaining('enabled = true'), expect.anything());
+    });
+
+    it('returns empty array when assignment has no groups', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await Group.findAllByAssignment(ASSIGNMENT_ID);
 
       expect(result).toEqual([]);
+    });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(Group.findAllByAssignment(ASSIGNMENT_ID)).rejects.toThrow('connection refused');
+    });
+  });
+
+  describe('findById', () => {
+    it('returns group by id with assignment/subject info and member_count', async () => {
+      const mockGroup = {
+        id: '10000000-0000-4000-8000-000000000001',
+        assignment_id: ASSIGNMENT_ID,
+        name: 'Test Group',
+        enabled: true,
+        max_members: 10,
+        member_count: 3,
+        assignment_name: 'Assignment 1',
+        subject_id: 's0000000-0000-4000-8000-000000000001',
+        subject_name: 'COMP10001',
+      };
+      pool.query.mockResolvedValue({ rows: [mockGroup] });
+
+      const result = await Group.findById('10000000-0000-4000-8000-000000000001');
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('member_count'), [
+        '10000000-0000-4000-8000-000000000001',
+      ]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('assignment_name'), [
+        '10000000-0000-4000-8000-000000000001',
+      ]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('subject_name'), [
+        '10000000-0000-4000-8000-000000000001',
+      ]);
+      expect(result).toEqual(mockGroup);
+    });
+
+    it('returns null when group not found', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await Group.findById('10000000-0000-4000-8000-000000000999');
+
+      expect(result).toBeNull();
+    });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(Group.findById('10000000-0000-4000-8000-000000000001')).rejects.toThrow('connection refused');
+    });
+  });
+
+  describe('findByIds', () => {
+    it('returns matching groups for the given ids', async () => {
+      const mockGroups = [
+        { id: '10000000-0000-4000-8000-000000000001', assignment_id: ASSIGNMENT_ID, name: 'Group A' },
+        { id: '10000000-0000-4000-8000-000000000002', assignment_id: ASSIGNMENT_ID, name: 'Group B' },
+      ];
+      pool.query.mockResolvedValue({ rows: mockGroups });
+
+      const result = await Group.findByIds([
+        '10000000-0000-4000-8000-000000000001',
+        '10000000-0000-4000-8000-000000000002',
+      ]);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE id = ANY($1)'), [
+        ['10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002'],
+      ]);
+      expect(result).toEqual(mockGroups);
+    });
+
+    it('returns empty array without querying when ids is empty', async () => {
+      const result = await Group.findByIds([]);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array without querying when ids is undefined', async () => {
+      const result = await Group.findByIds(undefined);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array when no ids match', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await Group.findByIds(['10000000-0000-4000-8000-000000000999']);
+
+      expect(result).toEqual([]);
+    });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(Group.findByIds(['10000000-0000-4000-8000-000000000001'])).rejects.toThrow('connection refused');
     });
   });
 
@@ -110,30 +191,39 @@ describe('Group Model', () => {
     it('creates group with defaults (enabled=true, maxMembers=null)', async () => {
       const mockGroup = {
         id: '10000000-0000-4000-8000-000000000001',
+        assignment_id: ASSIGNMENT_ID,
         name: 'New Group',
         enabled: true,
         max_members: null,
       };
       pool.query.mockResolvedValue({ rows: [mockGroup] });
 
-      const result = await Group.create('New Group');
+      const result = await Group.create(ASSIGNMENT_ID, 'New Group');
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO groups'), ['New Group', true, null]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO groups'), [
+        ASSIGNMENT_ID,
+        'New Group',
+        true,
+        null,
+      ]);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('assignment_id'), expect.any(Array));
       expect(result).toEqual(mockGroup);
     });
 
     it('creates group with enabled=false', async () => {
       const mockGroup = {
         id: '10000000-0000-4000-8000-000000000001',
+        assignment_id: ASSIGNMENT_ID,
         name: 'Disabled Group',
         enabled: false,
         max_members: null,
       };
       pool.query.mockResolvedValue({ rows: [mockGroup] });
 
-      const result = await Group.create('Disabled Group', false);
+      const result = await Group.create(ASSIGNMENT_ID, 'Disabled Group', false);
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO groups'), [
+        ASSIGNMENT_ID,
         'Disabled Group',
         false,
         null,
@@ -144,20 +234,30 @@ describe('Group Model', () => {
     it('creates group with maxMembers', async () => {
       const mockGroup = {
         id: '10000000-0000-4000-8000-000000000001',
+        assignment_id: ASSIGNMENT_ID,
         name: 'Limited Group',
         enabled: true,
         max_members: 5,
       };
       pool.query.mockResolvedValue({ rows: [mockGroup] });
 
-      const result = await Group.create('Limited Group', true, 5);
+      const result = await Group.create(ASSIGNMENT_ID, 'Limited Group', true, 5);
 
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO groups'), [
+        ASSIGNMENT_ID,
         'Limited Group',
         true,
         5,
       ]);
       expect(result).toEqual(mockGroup);
+    });
+
+    it('propagates DB error (e.g. unique constraint)', async () => {
+      const uniqueErr = new Error('duplicate key value violates unique constraint');
+      uniqueErr.code = '23505';
+      pool.query.mockRejectedValue(uniqueErr);
+
+      await expect(Group.create(ASSIGNMENT_ID, 'Dup Group')).rejects.toMatchObject({ code: '23505' });
     });
   });
 
@@ -286,11 +386,14 @@ describe('Group Model', () => {
   });
 
   describe('getMemberCount', () => {
-    it('returns count of members in group', async () => {
+    it('returns count of members in group from user_groups', async () => {
       pool.query.mockResolvedValue({ rows: [{ count: 5 }] });
 
       const result = await Group.getMemberCount('10000000-0000-4000-8000-000000000001');
 
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('FROM user_groups'), [
+        '10000000-0000-4000-8000-000000000001',
+      ]);
       expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('COUNT'), [
         '10000000-0000-4000-8000-000000000001',
       ]);
@@ -304,281 +407,11 @@ describe('Group Model', () => {
 
       expect(result).toBe(0);
     });
-  });
-
-  describe('getMembers', () => {
-    it('returns group members with role info including first_name and last_name', async () => {
-      const mockMembers = [
-        {
-          id: '00000000-0000-4000-8000-000000000001',
-          username: 'user1',
-          email: 'user1@test.com',
-          first_name: 'Alice',
-          last_name: 'Smith',
-          student_id: 'S001',
-          enabled: true,
-          role_name: 'user',
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000002',
-          username: 'user2',
-          email: 'user2@test.com',
-          first_name: 'Bob',
-          last_name: 'Jones',
-          student_id: 'S002',
-          enabled: true,
-          role_name: 'admin',
-        },
-      ];
-      pool.query.mockResolvedValue({ rows: mockMembers });
-
-      const result = await Group.getMembers('10000000-0000-4000-8000-000000000001');
-
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('u.first_name, u.last_name'), [
-        '10000000-0000-4000-8000-000000000001',
-      ]);
-      expect(result).toEqual(mockMembers);
-    });
-
-    it('returns empty array when group has no members', async () => {
-      pool.query.mockResolvedValue({ rows: [] });
-
-      const result = await Group.getMembers('10000000-0000-4000-8000-000000000001');
-
-      expect(result).toEqual([]);
-    });
-
-    it('orders members by username', async () => {
-      const mockMembers = [
-        {
-          id: '00000000-0000-4000-8000-000000000002',
-          username: 'alice',
-          email: 'alice@test.com',
-          first_name: 'Alice',
-          last_name: 'A',
-          role_name: 'user',
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000001',
-          username: 'bob',
-          email: 'bob@test.com',
-          first_name: 'Bob',
-          last_name: 'B',
-          role_name: 'admin',
-        },
-      ];
-      pool.query.mockResolvedValue({ rows: mockMembers });
-
-      const result = await Group.getMembers('10000000-0000-4000-8000-000000000001');
-
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('ORDER BY u.username'), [
-        '10000000-0000-4000-8000-000000000001',
-      ]);
-      expect(result).toEqual(mockMembers);
-    });
-  });
-
-  describe('findByNames', () => {
-    it('returns groups matching the given names (case-insensitive)', async () => {
-      const mockGroups = [
-        { id: '10000000-0000-4000-8000-000000000001', name: 'Team Alpha', enabled: true, max_members: null },
-        { id: '10000000-0000-4000-8000-000000000002', name: 'Team Beta', enabled: true, max_members: 5 },
-      ];
-      pool.query.mockResolvedValue({ rows: mockGroups });
-
-      const result = await Group.findByNames(['Team Alpha', 'Team Beta']);
-
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE LOWER(name) = ANY($1)'), [
-        ['team alpha', 'team beta'],
-      ]);
-      expect(result).toEqual(mockGroups);
-    });
-
-    it('lowercases all names before querying', async () => {
-      pool.query.mockResolvedValue({ rows: [] });
-
-      await Group.findByNames(['UPPER GROUP', 'MiXeD Group']);
-
-      expect(pool.query).toHaveBeenCalledWith(expect.any(String), [['upper group', 'mixed group']]);
-    });
-
-    it('returns empty array without querying when names is empty', async () => {
-      const result = await Group.findByNames([]);
-
-      expect(pool.query).not.toHaveBeenCalled();
-      expect(result).toEqual([]);
-    });
-
-    it('returns empty array without querying when names is undefined', async () => {
-      const result = await Group.findByNames(undefined);
-
-      expect(pool.query).not.toHaveBeenCalled();
-      expect(result).toEqual([]);
-    });
-
-    it('returns empty array when no names match', async () => {
-      pool.query.mockResolvedValue({ rows: [] });
-
-      const result = await Group.findByNames(['nonexistent group']);
-
-      expect(result).toEqual([]);
-    });
-  });
-
-  describe('findByName', () => {
-    it('returns group when name matches (case-insensitive)', async () => {
-      const mockGroup = {
-        id: '10000000-0000-4000-8000-000000000001',
-        name: 'Team Alpha',
-        enabled: true,
-        max_members: null,
-      };
-      pool.query.mockResolvedValue({ rows: [mockGroup] });
-
-      const result = await Group.findByName('team alpha');
-
-      expect(pool.query).toHaveBeenCalledWith('SELECT * FROM groups WHERE LOWER(name) = LOWER($1)', ['team alpha']);
-      expect(result).toEqual(mockGroup);
-    });
-
-    it('returns null when group name not found', async () => {
-      pool.query.mockResolvedValue({ rows: [] });
-
-      const result = await Group.findByName('nonexistent');
-
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('getExportMappings', () => {
-    it('returns user-group mappings for normal users only', async () => {
-      const mockRows = [
-        { email: 'alice@test.com', group_name: 'Team A' },
-        { email: 'bob@test.com', group_name: 'Team B' },
-      ];
-      pool.query.mockResolvedValue({ rows: mockRows });
-
-      const result = await Group.getExportMappings();
-
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining("r.name = 'user'"));
-      expect(result).toEqual(mockRows);
-    });
-
-    it('returns empty array when no normal users have groups', async () => {
-      pool.query.mockResolvedValue({ rows: [] });
-
-      const result = await Group.getExportMappings();
-
-      expect(result).toEqual([]);
-    });
 
     it('propagates DB error', async () => {
       pool.query.mockRejectedValue(new Error('connection refused'));
 
-      await expect(Group.getExportMappings()).rejects.toThrow('connection refused');
-    });
-  });
-
-  describe('assignUserToGroup', () => {
-    let mockClient;
-
-    beforeEach(() => {
-      mockClient = {
-        query: jest.fn(),
-        release: jest.fn(),
-      };
-      pool.connect.mockResolvedValue(mockClient);
-    });
-
-    it('assigns user to group successfully within a transaction', async () => {
-      // BEGIN, SELECT FOR UPDATE (group found, not full), UPDATE users, COMMIT
-      mockClient.query
-        .mockResolvedValueOnce() // BEGIN
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              id: '10000000-0000-4000-8000-000000000001',
-              max_members: 5,
-              member_count: 2,
-            },
-          ],
-        }) // SELECT ... FOR UPDATE
-        .mockResolvedValueOnce() // UPDATE users
-        .mockResolvedValueOnce(); // COMMIT
-
-      await Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001');
-
-      expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
-      expect(mockClient.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FOR UPDATE'), [
-        '10000000-0000-4000-8000-000000000001',
-      ]);
-      expect(mockClient.query).toHaveBeenNthCalledWith(3, expect.stringContaining('UPDATE users SET group_id'), [
-        '10000000-0000-4000-8000-000000000001',
-        '00000000-0000-4000-8000-000000000001',
-      ]);
-      expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
-      expect(mockClient.release).toHaveBeenCalled();
-    });
-
-    it('throws 404 error and rolls back if group not found', async () => {
-      mockClient.query
-        .mockResolvedValueOnce() // BEGIN
-        .mockResolvedValueOnce({ rows: [] }) // SELECT FOR UPDATE — no rows
-        .mockResolvedValueOnce(); // ROLLBACK
-
-      await expect(
-        Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000999')
-      ).rejects.toMatchObject({ message: 'Group not found', statusCode: 404 });
-
-      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
-      expect(mockClient.release).toHaveBeenCalled();
-    });
-
-    it('throws 409 error and rolls back if group is full', async () => {
-      mockClient.query
-        .mockResolvedValueOnce() // BEGIN
-        .mockResolvedValueOnce({
-          rows: [{ id: '10000000-0000-4000-8000-000000000001', max_members: 3, member_count: 3 }],
-        }) // SELECT FOR UPDATE — group is full
-        .mockResolvedValueOnce(); // ROLLBACK
-
-      await expect(
-        Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001')
-      ).rejects.toMatchObject({ message: 'Group is full', statusCode: 409 });
-
-      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
-      expect(mockClient.release).toHaveBeenCalled();
-    });
-
-    it('allows assigning user when group has unlimited capacity (max_members null)', async () => {
-      mockClient.query
-        .mockResolvedValueOnce() // BEGIN
-        .mockResolvedValueOnce({
-          rows: [{ id: '10000000-0000-4000-8000-000000000001', max_members: null, member_count: 999 }],
-        }) // SELECT FOR UPDATE
-        .mockResolvedValueOnce() // UPDATE users
-        .mockResolvedValueOnce(); // COMMIT
-
-      await expect(
-        Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001')
-      ).resolves.toBeUndefined();
-
-      expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
-    });
-
-    it('rolls back and rethrows on unexpected DB error', async () => {
-      const dbError = new Error('Connection lost');
-      mockClient.query
-        .mockResolvedValueOnce() // BEGIN
-        .mockRejectedValueOnce(dbError) // SELECT FOR UPDATE fails
-        .mockResolvedValueOnce(); // ROLLBACK
-
-      await expect(
-        Group.assignUserToGroup('00000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001')
-      ).rejects.toThrow('Connection lost');
-
-      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
-      expect(mockClient.release).toHaveBeenCalled();
+      await expect(Group.getMemberCount('10000000-0000-4000-8000-000000000001')).rejects.toThrow('connection refused');
     });
   });
 
@@ -593,13 +426,25 @@ describe('Group Model', () => {
       pool.connect.mockResolvedValue(mockClient);
     });
 
-    it('inserts multiple groups in a single transaction and returns created rows', async () => {
+    it('inserts multiple groups with assignment_id in a single transaction and returns created rows', async () => {
       const input = [
         { name: 'Group A', enabled: true, maxMembers: null },
         { name: 'Group B', enabled: false, maxMembers: 5 },
       ];
-      const row1 = { id: '10000000-0000-4000-8000-000000000001', name: 'Group A', enabled: true, max_members: null };
-      const row2 = { id: '10000000-0000-4000-8000-000000000002', name: 'Group B', enabled: false, max_members: 5 };
+      const row1 = {
+        id: '10000000-0000-4000-8000-000000000001',
+        assignment_id: ASSIGNMENT_ID,
+        name: 'Group A',
+        enabled: true,
+        max_members: null,
+      };
+      const row2 = {
+        id: '10000000-0000-4000-8000-000000000002',
+        assignment_id: ASSIGNMENT_ID,
+        name: 'Group B',
+        enabled: false,
+        max_members: 5,
+      };
 
       mockClient.query
         .mockResolvedValueOnce() // BEGIN
@@ -607,18 +452,18 @@ describe('Group Model', () => {
         .mockResolvedValueOnce({ rows: [row2] }) // INSERT Group B
         .mockResolvedValueOnce(); // COMMIT
 
-      const result = await Group.bulkCreate(input);
+      const result = await Group.bulkCreate(ASSIGNMENT_ID, input);
 
       expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
       expect(mockClient.query).toHaveBeenNthCalledWith(
         2,
-        'INSERT INTO groups (name, enabled, max_members) VALUES ($1, $2, $3) RETURNING *',
-        ['Group A', true, null]
+        'INSERT INTO groups (assignment_id, name, enabled, max_members) VALUES ($1, $2, $3, $4) RETURNING *',
+        [ASSIGNMENT_ID, 'Group A', true, null]
       );
       expect(mockClient.query).toHaveBeenNthCalledWith(
         3,
-        'INSERT INTO groups (name, enabled, max_members) VALUES ($1, $2, $3) RETURNING *',
-        ['Group B', false, 5]
+        'INSERT INTO groups (assignment_id, name, enabled, max_members) VALUES ($1, $2, $3, $4) RETURNING *',
+        [ASSIGNMENT_ID, 'Group B', false, 5]
       );
       expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
       expect(mockClient.release).toHaveBeenCalled();
@@ -627,14 +472,20 @@ describe('Group Model', () => {
 
     it('commits transaction and releases client on success', async () => {
       const input = [{ name: 'Solo Group', enabled: true, maxMembers: null }];
-      const row = { id: '10000000-0000-4000-8000-000000000001', name: 'Solo Group', enabled: true, max_members: null };
+      const row = {
+        id: '10000000-0000-4000-8000-000000000001',
+        assignment_id: ASSIGNMENT_ID,
+        name: 'Solo Group',
+        enabled: true,
+        max_members: null,
+      };
 
       mockClient.query
         .mockResolvedValueOnce() // BEGIN
         .mockResolvedValueOnce({ rows: [row] }) // INSERT
         .mockResolvedValueOnce(); // COMMIT
 
-      await Group.bulkCreate(input);
+      await Group.bulkCreate(ASSIGNMENT_ID, input);
 
       expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
       expect(mockClient.release).toHaveBeenCalled();
@@ -653,7 +504,7 @@ describe('Group Model', () => {
         .mockRejectedValueOnce(uniqueErr) // INSERT fails
         .mockResolvedValueOnce(); // ROLLBACK
 
-      await expect(Group.bulkCreate(input)).rejects.toMatchObject({ code: '23505' });
+      await expect(Group.bulkCreate(ASSIGNMENT_ID, input)).rejects.toMatchObject({ code: '23505' });
 
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
       expect(mockClient.release).toHaveBeenCalled();
@@ -668,7 +519,7 @@ describe('Group Model', () => {
         .mockRejectedValueOnce(dbErr) // INSERT fails
         .mockResolvedValueOnce(); // ROLLBACK
 
-      await expect(Group.bulkCreate(input)).rejects.toThrow('Connection lost');
+      await expect(Group.bulkCreate(ASSIGNMENT_ID, input)).rejects.toThrow('Connection lost');
 
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
       expect(mockClient.release).toHaveBeenCalled();
@@ -676,14 +527,20 @@ describe('Group Model', () => {
 
     it('handles a single-item batch correctly', async () => {
       const input = [{ name: 'One Group', enabled: true, maxMembers: 10 }];
-      const row = { id: '10000000-0000-4000-8000-000000000001', name: 'One Group', enabled: true, max_members: 10 };
+      const row = {
+        id: '10000000-0000-4000-8000-000000000001',
+        assignment_id: ASSIGNMENT_ID,
+        name: 'One Group',
+        enabled: true,
+        max_members: 10,
+      };
 
       mockClient.query
         .mockResolvedValueOnce() // BEGIN
         .mockResolvedValueOnce({ rows: [row] }) // INSERT
         .mockResolvedValueOnce(); // COMMIT
 
-      const result = await Group.bulkCreate(input);
+      const result = await Group.bulkCreate(ASSIGNMENT_ID, input);
 
       expect(result).toEqual([row]);
     });
@@ -693,7 +550,7 @@ describe('Group Model', () => {
         .mockResolvedValueOnce() // BEGIN
         .mockResolvedValueOnce(); // COMMIT
 
-      const result = await Group.bulkCreate([]);
+      const result = await Group.bulkCreate(ASSIGNMENT_ID, []);
 
       expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
       expect(mockClient.query).toHaveBeenNthCalledWith(2, 'COMMIT');
@@ -712,7 +569,7 @@ describe('Group Model', () => {
         .mockRejectedValueOnce(rollbackErr); // ROLLBACK also throws
 
       // When ROLLBACK itself throws, that error propagates (the finally block still releases)
-      await expect(Group.bulkCreate(input)).rejects.toThrow('Rollback failed');
+      await expect(Group.bulkCreate(ASSIGNMENT_ID, input)).rejects.toThrow('Rollback failed');
 
       expect(mockClient.release).toHaveBeenCalled();
     });
@@ -741,5 +598,109 @@ describe('Group Model', () => {
 
       await expect(Group.bulkDelete(['id1'])).rejects.toThrow('connection refused');
     });
+  });
+
+  describe('findByName', () => {
+    it('returns group when name matches within the assignment (case-insensitive)', async () => {
+      const mockGroup = {
+        id: '10000000-0000-4000-8000-000000000001',
+        assignment_id: ASSIGNMENT_ID,
+        name: 'Team Alpha',
+        enabled: true,
+        max_members: null,
+      };
+      pool.query.mockResolvedValue({ rows: [mockGroup] });
+
+      const result = await Group.findByName(ASSIGNMENT_ID, 'team alpha');
+
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('assignment_id = $1 AND LOWER(name) = LOWER($2)'),
+        [ASSIGNMENT_ID, 'team alpha']
+      );
+      expect(result).toEqual(mockGroup);
+    });
+
+    it('returns null when group name not found in the assignment', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await Group.findByName(ASSIGNMENT_ID, 'nonexistent');
+
+      expect(result).toBeNull();
+    });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(Group.findByName(ASSIGNMENT_ID, 'team alpha')).rejects.toThrow('connection refused');
+    });
+  });
+
+  describe('findByNames', () => {
+    it('returns groups matching the given names within the assignment (case-insensitive)', async () => {
+      const mockGroups = [
+        {
+          id: '10000000-0000-4000-8000-000000000001',
+          assignment_id: ASSIGNMENT_ID,
+          name: 'Team Alpha',
+          enabled: true,
+          max_members: null,
+        },
+        {
+          id: '10000000-0000-4000-8000-000000000002',
+          assignment_id: ASSIGNMENT_ID,
+          name: 'Team Beta',
+          enabled: true,
+          max_members: 5,
+        },
+      ];
+      pool.query.mockResolvedValue({ rows: mockGroups });
+
+      const result = await Group.findByNames(ASSIGNMENT_ID, ['Team Alpha', 'Team Beta']);
+
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('assignment_id = $1 AND LOWER(name) = ANY($2::text[])'),
+        [ASSIGNMENT_ID, ['team alpha', 'team beta']]
+      );
+      expect(result).toEqual(mockGroups);
+    });
+
+    it('lowercases all names before querying', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await Group.findByNames(ASSIGNMENT_ID, ['UPPER GROUP', 'MiXeD Group']);
+
+      expect(pool.query).toHaveBeenCalledWith(expect.any(String), [ASSIGNMENT_ID, ['upper group', 'mixed group']]);
+    });
+
+    it('returns empty array without querying when names is empty', async () => {
+      const result = await Group.findByNames(ASSIGNMENT_ID, []);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array without querying when names is undefined', async () => {
+      const result = await Group.findByNames(ASSIGNMENT_ID, undefined);
+
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array when no names match', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await Group.findByNames(ASSIGNMENT_ID, ['nonexistent group']);
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('removed methods', () => {
+    it.each(['findAll', 'findEnabled', 'assignUserToGroup', 'getExportMappings', 'getMembers'])(
+      'no longer exposes %s (moved or removed)',
+      (method) => {
+        expect(Group[method]).toBeUndefined();
+      }
+    );
   });
 });

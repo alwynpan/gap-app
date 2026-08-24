@@ -14,15 +14,37 @@ import ImportUsers from './pages/ImportUsers.jsx';
 import Groups from './pages/Groups.jsx';
 import ImportGroupMappings from './pages/ImportGroupMappings.jsx';
 import Settings from './pages/Settings.jsx';
+import Subjects from './pages/Subjects.jsx';
+import SubjectDetail from './pages/SubjectDetail.jsx';
 
 function PublicRoute({ children }) {
   const { user } = useAuth();
   return user ? <Navigate to="/dashboard" replace /> : children;
 }
 
-function AppRoutes() {
-  const { registrationEnabled } = useAuth();
+/** Keeps /register mounted while the feature flag is still loading, so a deep
+ *  link is not swallowed by the catch-all before the flag arrives. */
+function RegisterRoute() {
+  const { registrationEnabled, registrationConfigLoading } = useAuth();
 
+  if (registrationConfigLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+  if (!registrationEnabled) {
+    return <Navigate to="/login" replace />;
+  }
+  return (
+    <PublicRoute>
+      <Register />
+    </PublicRoute>
+  );
+}
+
+function AppRoutes() {
   return (
     <Routes>
       {/* Public Routes */}
@@ -34,16 +56,7 @@ function AppRoutes() {
           </PublicRoute>
         }
       />
-      {registrationEnabled && (
-        <Route
-          path="/register"
-          element={
-            <PublicRoute>
-              <Register />
-            </PublicRoute>
-          }
-        />
-      )}
+      <Route path="/register" element={<RegisterRoute />} />
       <Route
         path="/forgot-password"
         element={
@@ -71,11 +84,11 @@ function AppRoutes() {
         }
       />
 
-      {/* Admin/Assignment Manager Routes */}
+      {/* Admin-only Routes */}
       <Route
         path="/users"
         element={
-          <ProtectedRoute requireAssignmentManager>
+          <ProtectedRoute requireAdmin>
             <Users />
           </ProtectedRoute>
         }
@@ -83,21 +96,40 @@ function AppRoutes() {
       <Route
         path="/users/import"
         element={
-          <ProtectedRoute requireAssignmentManager>
+          <ProtectedRoute requireAdmin>
             <ImportUsers />
           </ProtectedRoute>
         }
       />
 
-      {/* Admin Only Routes */}
+      {/* Subject / Assignment hierarchy */}
       <Route
-        path="/groups"
+        path="/subjects"
         element={
-          <ProtectedRoute requireAdmin>
+          <ProtectedRoute requireAssignmentManager>
+            <Subjects />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/subjects/:subjectId"
+        element={
+          <ProtectedRoute requireAssignmentManager>
+            <SubjectDetail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/subjects/:subjectId/assignments/:assignmentId"
+        element={
+          <ProtectedRoute requireAssignmentManager>
             <Groups />
           </ProtectedRoute>
         }
       />
+
+      {/* Legacy groups routes — keep bookmark compatibility */}
+      <Route path="/groups" element={<Navigate to="/subjects" replace />} />
       <Route
         path="/groups/import"
         element={

@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/utils/api';
 import { ArrowLeft, ArrowRight, Check, AlertTriangle } from 'lucide-react';
 import Header from '../components/Header.jsx';
 import CsvDropzone from '../components/CsvDropzone.jsx';
+import CascadingAssignmentSelect from '../components/CascadingAssignmentSelect.jsx';
 import { parseCsv, downloadCsv } from '../utils/csv.js';
 import { API_BASE } from '../config.js';
+import Modal from '../components/Modal.jsx';
 
 const GROUP_NAME_SYNONYMS = ['group name', 'group', 'group_name', 'team name', 'team'];
 const EMAIL_SYNONYMS = ['email', 'e-mail', 'user email', 'user_email', 'mail', 'email address'];
@@ -27,7 +29,17 @@ function autoDetectColumns(headers) {
 
 function ImportGroupMappings() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState(1);
+
+  // Target assignment (Subject → Assignment cascade), preselected from query params
+  const [subjects, setSubjects] = useState([]);
+  const [subjectsError, setSubjectsError] = useState('');
+  const [selection, setSelection] = useState(() => ({
+    subjectId: searchParams.get('subjectId') || '',
+    assignmentId: searchParams.get('assignmentId') || '',
+    groupId: '',
+  }));
 
   // Step 1 state
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -39,6 +51,9 @@ function ImportGroupMappings() {
 
   // Step 2 state
   const [previewRows, setPreviewRows] = useState([]);
+  // The assignment the current preview was validated against; import refuses to
+  // post rows built for a different one.
+  const [previewAssignmentId, setPreviewAssignmentId] = useState(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
   // Step 3 state
@@ -49,13 +64,36 @@ function ImportGroupMappings() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const countdownRef = useRef(null);
+  // Monotonic id so only the newest preview response is applied.
+  const previewRequestRef = useRef(0);
 
   useEffect(() => {
-    if (step === 2 && csvRows.length > 0) {
+    let cancelled = false;
+    api
+      .get(`${API_BASE}/subjects`)
+      .then((res) => {
+        if (!cancelled) {
+          setSubjects(res.data.subjects || []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSubjectsError('Failed to load subjects. Please reload the page.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Rebuild the preview when entering step 2 or when the target assignment
+  // changes (group names must be re-validated against the new assignment).
+  useEffect(() => {
+    if (step === 2 && csvRows.length > 0 && selection.assignmentId) {
       buildPreview();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [step, selection.assignmentId]);
 
   const processFile = (file) => {
     setFileError('');
@@ -96,11 +134,19 @@ function ImportGroupMappings() {
   const canProceedStep1 = csvRows.length > 0 && emailCol !== -1 && groupCol !== -1;
 
   const buildPreview = async () => {
+    // Stamp the request so a slow preview for a previously selected assignment
+    // cannot overwrite a newer one and be imported against the wrong target.
+    const requestId = ++previewRequestRef.current;
+    const requestAssignmentId = selection.assignmentId;
     setLoadingPreview(true);
     try {
-      const [usersRes, groupsRes] = await Promise.all([api.get(`${API_BASE}/users`), api.get(`${API_BASE}/groups`)]);
-      const userEmailSet = new Map((usersRes.data.users || []).map((u) => [u.email.toLowerCase(), u]));
-      const groupNameSet = new Map((groupsRes.data.groups || []).map((g) => [g.name.toLowerCase(), g]));
+      // Assignment-scoped: an assignment manager cannot call admin-only /users.
+      const previewRes = await api.get(`${API_BASE}/assignments/${requestAssignmentId}/import-preview`);
+      if (requestId !== previewRequestRef.current) {
+        return;
+      }
+      const userEmailSet = new Map((previewRes.data.users || []).map((u) => [u.email.toLowerCase(), u]));
+      const groupNameSet = new Map((previewRes.data.groups || []).map((g) => [g.name.toLowerCase(), g]));
 
       const rows = csvRows.map((row) => {
         const email = (row[emailCol] || '').trim(); // eslint-disable-line security/detect-object-injection
@@ -109,7 +155,7 @@ function ImportGroupMappings() {
         const userExists = user !== undefined;
         const groupExists = groupNameSet.has(groupName.toLowerCase());
         const isPrivilegedUser = user && (user.role_name === 'admin' || user.role_name === 'assignment_manager');
-        const alreadyInGroup = user && user.group_id !== null && user.group_id !== undefined;
+        const alreadyInGroup = Boolean(user && user.current_group_id);
 
         let status = 'import';
         let statusLabel = 'Import';
@@ -118,6 +164,12 @@ function ImportGroupMappings() {
           status = 'skip';
           statusLabel = 'Skip';
           skipReason = 'User not found';
+        } else if (user.membership_enabled === false) {
+          // The server rejects placement for suspended members, so previewing
+          // them as importable would promise something the import cannot do.
+          status = 'skip';
+          statusLabel = 'Skip';
+          skipReason = 'User is suspended in this subject';
         } else if (isPrivilegedUser) {
           status = 'skip';
           statusLabel = 'Skip';
@@ -133,11 +185,19 @@ function ImportGroupMappings() {
         }
         return { email, groupName, status, statusLabel, skipReason, action: status === 'conflict' ? 'skip' : status };
       });
+      if (requestId !== previewRequestRef.current) {
+        return;
+      }
       setPreviewRows(rows);
+      setPreviewAssignmentId(requestAssignmentId);
     } catch (_err) {
-      setFileError('Failed to load user/group data for preview');
+      if (requestId === previewRequestRef.current) {
+        setFileError('Failed to load user/group data for preview');
+      }
     } finally {
-      setLoadingPreview(false);
+      if (requestId === previewRequestRef.current) {
+        setLoadingPreview(false);
+      }
     }
   };
 
@@ -173,29 +233,21 @@ function ImportGroupMappings() {
     return () => clearInterval(countdownRef.current);
   }, [showConfirmModal]);
 
-  useEffect(() => {
-    if (!showConfirmModal) {
+  const handleImport = async () => {
+    // The preview validated group names against one assignment; refuse to post
+    // those rows anywhere else.
+    if (previewAssignmentId !== selection.assignmentId) {
+      setFileError('The selected assignment changed. Please review the preview again before importing.');
       return;
     }
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        closeConfirmModal();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showConfirmModal, closeConfirmModal]);
-
-  const handleImport = async () => {
     setImporting(true);
     try {
       const rows = previewRows.map((r) => ({
         email: r.email,
         groupName: r.groupName,
         action: r.action,
-        skipReason: r.skipReason,
       }));
-      const res = await api.post(`${API_BASE}/groups/import-mappings`, { rows });
+      const res = await api.post(`${API_BASE}/assignments/${previewAssignmentId}/import-mappings`, { rows });
       setImportResult(res.data);
 
       // Auto-download skipped rows CSV
@@ -263,8 +315,34 @@ function ImportGroupMappings() {
             ))}
           </div>
 
+          {/* Target assignment (Subject → Assignment cascade) */}
+          {step < 3 && (
+            <div className="bg-white rounded-lg shadow p-6 mb-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Target Assignment</h3>
+              <p className="text-gray-600 text-sm mb-4">
+                Choose the subject and assignment these group mappings belong to.
+              </p>
+              <div className="max-w-md">
+                <CascadingAssignmentSelect
+                  subjects={subjects}
+                  value={selection}
+                  onChange={setSelection}
+                  showGroup={false}
+                  disabled={importing}
+                />
+              </div>
+              {subjectsError && <p className="text-sm text-red-600">{subjectsError}</p>}
+            </div>
+          )}
+
+          {step < 3 && !selection.assignmentId && (
+            <div className="bg-white rounded-lg shadow p-6 text-sm text-gray-500">
+              Select a subject and assignment to continue.
+            </div>
+          )}
+
           {/* Step 1: Upload */}
-          {step === 1 && (
+          {step === 1 && selection.assignmentId && (
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Upload CSV File</h3>
               <p className="text-gray-600 text-sm mb-4">
@@ -343,7 +421,7 @@ function ImportGroupMappings() {
           )}
 
           {/* Step 2: Preview */}
-          {step === 2 && (
+          {step === 2 && selection.assignmentId && (
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-2">Preview</h3>
 
@@ -510,54 +588,43 @@ function ImportGroupMappings() {
 
       {/* Import confirmation modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="import-confirm-title"
-            className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl"
-          >
-            <h3 id="import-confirm-title" className="text-lg font-semibold text-gray-900 mb-4">
-              Before You Continue
-            </h3>
-
-            <div className="mb-5 space-y-3 text-sm text-gray-700">
-              <p>
-                This tool is designed for <strong>migrating user–group assignments from another system</strong> onto a
-                fresh instance where no group memberships exist yet.
+        <Modal title="Before You Continue" onClose={closeConfirmModal} closeOnBackdrop={false} maxWidthClass="max-w-lg">
+          <div className="mb-5 space-y-3 text-sm text-gray-700">
+            <p>
+              This tool is designed for <strong>migrating user–group assignments from another system</strong> onto a
+              fresh instance where no group memberships exist yet.
+            </p>
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-amber-800">
+                <strong>Existing group memberships will not be cleared before importing.</strong> Any users who are
+                already in a group and are not explicitly marked as &ldquo;Overwrite&rdquo; in the preview will be
+                skipped. If your instance already has group assignments, this import may produce unexpected membership
+                outcomes. Please review the preview table carefully before proceeding.
               </p>
-              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-4 py-3">
-                <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                <p className="text-amber-800">
-                  <strong>Existing group memberships will not be cleared before importing.</strong> Any users who are
-                  already in a group and are not explicitly marked as &ldquo;Overwrite&rdquo; in the preview will be
-                  skipped. If your instance already has group assignments, this import may produce unexpected membership
-                  outcomes. Please review the preview table carefully before proceeding.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={closeConfirmModal}
-                autoFocus
-                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  closeConfirmModal();
-                  handleImport();
-                }}
-                disabled={countdown > 0}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {countdown > 0 ? `Confirm (${countdown})` : 'Confirm'}
-              </button>
             </div>
           </div>
-        </div>
+
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={closeConfirmModal}
+              autoFocus
+              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                closeConfirmModal();
+                handleImport();
+              }}
+              disabled={countdown > 0}
+              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {countdown > 0 ? `Confirm (${countdown})` : 'Confirm'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

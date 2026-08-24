@@ -46,11 +46,22 @@ Edit `.env` — at minimum, set:
 - `JWT_SECRET`
 - `ADMIN_PASSWORD`
 
-**3. Build images and start services:**
+Optionally override which published image is deployed:
+
+- `IMAGE_NAMESPACE` — Docker Hub namespace (default `alwynpan`)
+- `IMAGE_TAG` — image tag (default `latest`; use a release tag such as `1.4.0` to pin a version)
+
+**3. Pull the images and start services:**
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
+
+The stack runs pre-built images published by CI — it does not build from source. Building here would fail: the
+Dockerfiles copy workspace-root files (`pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`), so a build needs the
+repository root as its context, which is what `.github/workflows/ci.yml` uses. To build a one-off image locally, run
+`docker build -f backend/Dockerfile -t alwynpan/gap-backend:dev .` from the repository root.
 
 Traefik will automatically provision a Let's Encrypt certificate on first startup. This may take a minute or two.
 
@@ -72,7 +83,7 @@ docker compose logs traefik
 | `ADMIN_PASSWORD`       |   Yes    | —                   | Password for the initial admin account (username is always `admin`, seeded on first migration only). |
 | `JWT_EXPIRES_IN`       |    No    | `24h`               | JWT token expiry. Uses ms format (e.g. `24h`, `7d`).                                                 |
 | `REGISTRATION_ENABLED` |    No    | `false`             | Allow public self-registration. Recommended to keep `false` in production.                           |
-| `SMTP_HOST`            |    No    | _(empty)_           | SMTP hostname. Leave blank to disable email — links are logged to the backend container instead.     |
+| `SMTP_HOST`            |   Yes    | _(empty)_           | SMTP hostname. Required here: with it blank no email is sent and no link is logged in production.    |
 | `SMTP_PORT`            |    No    | `587`               | SMTP server port.                                                                                    |
 | `SMTP_SECURE`          |    No    | `false`             | Use TLS (SMTPS). Set to `false` for STARTTLS on port 587.                                            |
 | `SMTP_USER`            |    No    | _(empty)_           | SMTP authentication username.                                                                        |
@@ -118,9 +129,12 @@ docker compose restart backend
 **Update to a new version:**
 
 ```bash
-git pull
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
+
+Pin a specific release by setting `IMAGE_TAG` in `.env` first; with the default `latest`, `pull` fetches the newest
+image built from `main`.
 
 **Stop all services:**
 

@@ -1,6 +1,9 @@
 const User = require('../models/User');
 const Group = require('../models/Group');
 const Role = require('../models/Role');
+const Subject = require('../models/Subject');
+const Assignment = require('../models/Assignment');
+const UserGroup = require('../models/UserGroup');
 const PasswordResetToken = require('../models/PasswordResetToken');
 const { sendPasswordSetupEmail } = require('../services/email');
 const {
@@ -8,6 +11,7 @@ const {
   parseBody,
   createUserSchema,
   updateUserSchema,
+  updateUserGroupSchema,
   changePasswordSchema,
   importUserRowSchema,
   validateUUID,
@@ -19,10 +23,37 @@ const config = require('../config/index');
 const _parsed = parseInt(process.env.MAX_IMPORT_SIZE || '2000', 10);
 const MAX_IMPORT_SIZE = Number.isNaN(_parsed) ? 2000 : _parsed;
 
+const UNIQUE_VIOLATION = '23505';
+
+// Seeded by the migration runner; the recovery account, so it cannot be
+// disabled, demoted, or deleted.
+const BUILTIN_ADMIN_USERNAME = 'admin';
+
+/**
+ * Map a Postgres unique-violation on the users table to a 409 message.
+ * Returns null when the error is not a unique violation.
+ */
+function uniqueViolationMessage(error) {
+  if (error.code !== UNIQUE_VIOLATION) {
+    return null;
+  }
+  if (error.constraint?.includes('student_id')) {
+    return 'Student ID already exists';
+  }
+  if (error.constraint?.includes('email')) {
+    return 'Email already exists';
+  }
+  if (error.constraint?.includes('username')) {
+    return 'Username already exists';
+  }
+  return 'A user with these details already exists';
+}
+
 async function usersRoutes(fastify, _options) {
   const isDev = config.app.nodeEnv === 'development';
 
-  // Get all users (admin/assignment_manager only) — supports ?role=, ?status=, ?groupId= filters
+  // Get all users (admin only) — supports ?role=, ?status=, ?subjectId=,
+  // ?assignmentId= and ?groupId= (uuid or 'none') filters.
   fastify.get(
     '/users',
     {
@@ -30,7 +61,7 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
+        const allowed = await fastify.requireAdmin(request, reply);
         if (!allowed) {
           return reply;
         }
@@ -38,7 +69,7 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const { role, status, groupId } = request.query || {};
+        const { role, status, subjectId, assignmentId, groupId } = request.query || {};
 
         const VALID_STATUSES = ['active', 'inactive', 'pending'];
         if (status !== undefined && !VALID_STATUSES.includes(status)) {
@@ -47,12 +78,58 @@ async function usersRoutes(fastify, _options) {
         if (role !== undefined && !ROLE_VALUES.includes(role)) {
           return reply.code(400).send({ error: 'Invalid role filter' });
         }
+        if (subjectId !== undefined && !validateUUID(subjectId)) {
+          return reply.code(400).send({ error: 'Invalid subjectId filter' });
+        }
+        if (assignmentId !== undefined && !validateUUID(assignmentId)) {
+          return reply.code(400).send({ error: 'Invalid assignmentId filter' });
+        }
         if (groupId !== undefined && groupId !== 'none' && !validateUUID(groupId)) {
           return reply.code(400).send({ error: 'Invalid groupId filter' });
         }
+        if (groupId === 'none' && assignmentId === undefined) {
+          return reply.code(400).send({ error: 'assignmentId is required when filtering ungrouped users' });
+        }
 
-        const users = await User.findAll({ role, status, groupId });
-        return reply.send({ users });
+        // GET /users is admin-only since the AM authorization tightening — the
+        // User model's managedBy filter is retained but no longer set here.
+        const filters = { role, status, subjectId, assignmentId, groupId };
+
+        const users = await User.findAll(filters);
+
+        // Attach subject enrolments and group memberships in two batch queries
+        const userIds = users.map((u) => u.id);
+        let subjectRows = [];
+        let membershipRows = [];
+        if (userIds.length > 0) {
+          [subjectRows, membershipRows] = await Promise.all([
+            Subject.findForUsers(userIds),
+            UserGroup.findMembershipsForUsers(userIds),
+          ]);
+        }
+        const subjectsByUser = new Map();
+        for (const row of subjectRows) {
+          const { user_id: uid, ...subject } = row;
+          if (!subjectsByUser.has(uid)) {
+            subjectsByUser.set(uid, []);
+          }
+          subjectsByUser.get(uid).push(subject);
+        }
+        const membershipsByUser = new Map();
+        for (const row of membershipRows) {
+          const { user_id: uid, ...membership } = row;
+          if (!membershipsByUser.has(uid)) {
+            membershipsByUser.set(uid, []);
+          }
+          membershipsByUser.get(uid).push(membership);
+        }
+        const enriched = users.map((u) => ({
+          ...u,
+          subjects: subjectsByUser.get(u.id) || [],
+          memberships: membershipsByUser.get(u.id) || [],
+        }));
+
+        return reply.send({ users: enriched });
       } catch (error) {
         logger.error('Get users error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve users' });
@@ -68,14 +145,24 @@ async function usersRoutes(fastify, _options) {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
         }
-        // Users can view their own profile, admin/assignment_manager can view all
+        // Self and admin always; an assignment manager only for users inside a
+        // subject they manage — the same scope as PUT /users/:id.
         const userId = request.params.id;
-        if (request.user.id !== userId) {
-          const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
-          if (!allowed) {
-            return reply;
-          }
+        // Validate before the scope query: a malformed id reaching the uuid
+        // comparison surfaces as a 500 instead of a 400.
+        if (!validateUUID(userId)) {
+          return reply.code(400).send({ error: 'Invalid ID format' });
         }
+        if (request.user.id === userId || request.user.role === 'admin') {
+          return;
+        }
+        if (
+          request.user.role === 'assignment_manager' &&
+          (await Assignment.managesAnySubjectOfUser(request.user.id, userId))
+        ) {
+          return;
+        }
+        return reply.code(403).send({ error: 'Forbidden: Insufficient permissions' });
       },
     },
     async (request, reply) => {
@@ -90,9 +177,13 @@ async function usersRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
-        // Remove password hash from response
+        // Remove password hash from response and enrich with hierarchy data
         const { password_hash: _password_hash, ...userWithoutPassword } = user;
-        return reply.send({ user: userWithoutPassword });
+        const [subjects, memberships] = await Promise.all([
+          Subject.findForUser(userId),
+          UserGroup.findMembershipsForUser(userId),
+        ]);
+        return reply.send({ user: { ...userWithoutPassword, subjects, memberships } });
       } catch (error) {
         logger.error('Get user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to retrieve user' });
@@ -123,7 +214,18 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: validationError });
         }
 
-        const { username, email, firstName, lastName, studentId, groupId, role } = body;
+        const {
+          username,
+          email,
+          firstName,
+          lastName,
+          studentId,
+          role,
+          subjectIds,
+          assignmentId,
+          groupId,
+          assignmentIds,
+        } = body;
 
         // Only admins can create admin or assignment_manager users
         if ((role === 'admin' || role === 'assignment_manager') && request.user.role !== 'admin') {
@@ -141,7 +243,7 @@ async function usersRoutes(fastify, _options) {
           return reply.code(409).send({ error: 'Email already exists' });
         }
 
-        // Get role ID by name lookup (needed before group check to know effective role)
+        // Get role ID by name lookup (needed to know the effective role)
         const effectiveRole = role || 'user';
         const roleRecord = await Role.findByName(effectiveRole);
         if (!roleRecord) {
@@ -149,10 +251,9 @@ async function usersRoutes(fastify, _options) {
         }
         const roleId = roleRecord.id;
 
-        // studentId and groupId only apply to regular users
+        // studentId and subject/group placement only apply to regular users
         const isUserRole = effectiveRole === 'user';
         const effectiveStudentId = isUserRole ? studentId : undefined;
-        const effectiveGroupId = isUserRole ? groupId : undefined;
 
         // Check studentId uniqueness
         if (effectiveStudentId) {
@@ -162,15 +263,65 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
-        // If a group is specified, verify it exists and has capacity
-        if (effectiveGroupId) {
-          const group = await Group.findById(effectiveGroupId);
-          if (!group) {
-            return reply.code(404).send({ error: 'Group not found' });
+        // Regular users must be enrolled in at least one subject; optional
+        // immediate group placement requires assignmentId within those subjects.
+        if (isUserRole) {
+          if (!Array.isArray(subjectIds) || subjectIds.length === 0) {
+            return reply.code(400).send({ error: 'Subject is required' });
           }
-          if (group.max_members !== null && group.member_count >= group.max_members) {
-            return reply.code(400).send({ error: 'Group is full' });
+          for (const sid of subjectIds) {
+            const subject = await Subject.findById(sid);
+            if (!subject) {
+              return reply.code(404).send({ error: 'Subject not found' });
+            }
+            // AMs may only enrol users into subjects containing an assignment
+            // they manage (same rule as POST /users/import).
+            if (request.user?.role === 'assignment_manager') {
+              const manages = await Assignment.managesAnyInSubject(request.user.id, sid);
+              if (!manages) {
+                return reply.code(403).send({ error: 'Forbidden: You do not manage any assignment in this subject' });
+              }
+            }
           }
+          if (groupId && !assignmentId) {
+            return reply.code(400).send({ error: 'assignmentId is required when groupId is provided' });
+          }
+          if (assignmentId) {
+            const assignment = await Assignment.findById(assignmentId);
+            if (!assignment) {
+              return reply.code(404).send({ error: 'Assignment not found' });
+            }
+            if (!subjectIds.includes(assignment.subject_id)) {
+              return reply.code(400).send({ error: 'Assignment does not belong to the selected subjects' });
+            }
+            // Managing an assignment in the subject is not enough to place a
+            // member into a sibling assignment — require this exact one.
+            const managesOk = await fastify.assertManagesAssignment(request, reply, assignmentId);
+            if (!managesOk) {
+              return reply;
+            }
+          }
+          if (groupId) {
+            const group = await Group.findById(groupId);
+            if (!group) {
+              return reply.code(404).send({ error: 'Group not found' });
+            }
+            if (group.assignment_id !== assignmentId) {
+              return reply.code(400).send({ error: 'Group does not belong to the selected assignment' });
+            }
+          }
+        }
+
+        // Assignment managers may be given assignments to manage at creation time
+        let managedAssignmentIds = [];
+        if (effectiveRole === 'assignment_manager' && Array.isArray(assignmentIds) && assignmentIds.length > 0) {
+          for (const aid of assignmentIds) {
+            const assignment = await Assignment.findById(aid);
+            if (!assignment) {
+              return reply.code(404).send({ error: 'Assignment not found' });
+            }
+          }
+          managedAssignmentIds = assignmentIds;
         }
 
         // Always create user as pending — password must be set via the email link
@@ -181,9 +332,26 @@ async function usersRoutes(fastify, _options) {
           firstName,
           lastName,
           studentId: effectiveStudentId,
-          groupId: effectiveGroupId,
           roleId,
         });
+
+        let placementWarning;
+        if (isUserRole) {
+          for (const sid of subjectIds) {
+            await Subject.addUsers(sid, [newUser.id]);
+          }
+          if (groupId) {
+            try {
+              await UserGroup.assignUserToGroup(newUser.id, groupId, { replace: true });
+            } catch (placementError) {
+              // Don't fail the request — the user was created and enrolled successfully
+              logger.error('Group placement failed after user creation', { err: placementError.message });
+              placementWarning = `User created but group placement failed: ${placementError.message}`;
+            }
+          }
+        } else if (managedAssignmentIds.length > 0) {
+          await Assignment.addManagers(newUser.id, managedAssignmentIds);
+        }
 
         // Only admins can suppress the setup email; assignment managers always trigger it
         const shouldSendEmail = request.user?.role === 'admin' ? body.sendSetupEmail !== false : true;
@@ -198,7 +366,7 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
-        return reply.code(201).send({
+        const response = {
           message: 'User created successfully',
           user: {
             id: newUser.id,
@@ -207,19 +375,15 @@ async function usersRoutes(fastify, _options) {
             status: newUser.status,
             studentId: newUser.student_id,
           },
-        });
+        };
+        if (placementWarning) {
+          response.warning = placementWarning;
+        }
+        return reply.code(201).send(response);
       } catch (error) {
-        if (error.code === '23505') {
-          if (error.constraint?.includes('student_id')) {
-            return reply.code(409).send({ error: 'Student ID already exists' });
-          }
-          if (error.constraint?.includes('email')) {
-            return reply.code(409).send({ error: 'Email already exists' });
-          }
-          if (error.constraint?.includes('username')) {
-            return reply.code(409).send({ error: 'Username already exists' });
-          }
-          return reply.code(409).send({ error: 'A user with these details already exists' });
+        const conflict = uniqueViolationMessage(error);
+        if (conflict) {
+          return reply.code(409).send({ error: conflict });
         }
         logger.error('Create user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to create user' });
@@ -227,17 +391,14 @@ async function usersRoutes(fastify, _options) {
     }
   );
 
-  // Update user's group assignment (admin/assignment_manager only)
+  // Update user's group placement for one assignment (admin, or an assignment
+  // manager who manages that assignment). groupId null removes the placement.
   fastify.put(
     '/users/:id/group',
     {
       preHandler: async (request, reply) => {
         if (!request.user) {
           return reply.code(401).send({ error: 'Unauthorized' });
-        }
-        const allowed = await fastify.checkRole(request, reply, ['admin', 'assignment_manager']);
-        if (!allowed) {
-          return reply;
         }
       },
     },
@@ -247,14 +408,10 @@ async function usersRoutes(fastify, _options) {
         if (!validateUUID(userId)) {
           return reply.code(400).send({ error: 'Invalid ID format' });
         }
-        const { groupId } = request.body;
 
-        if (groupId === undefined) {
-          return reply.code(400).send({ error: 'groupId is required' });
-        }
-
-        if (groupId !== null && !validateUUID(groupId)) {
-          return reply.code(400).send({ error: 'Invalid groupId format' });
+        const { data: body, error: validationError } = parseBody(updateUserGroupSchema, request.body);
+        if (validationError) {
+          return reply.code(400).send({ error: validationError });
         }
 
         // Verify user exists
@@ -263,19 +420,53 @@ async function usersRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
-        // If groupId is not null, assign inside a transaction with row-level lock (H2)
-        if (groupId !== null) {
-          await Group.assignUserToGroup(userId, groupId);
-        } else {
-          await User.updateGroup(userId, null);
+        // Role guard, then assignment-scoped guard (admin always passes both)
+        const allowed = await fastify.requireAssignmentManager(request, reply);
+        if (!allowed) {
+          return reply;
         }
+        const managesOk = await fastify.assertManagesAssignment(request, reply, body.assignmentId);
+        if (!managesOk) {
+          return reply;
+        }
+
+        const assignment = await Assignment.findById(body.assignmentId);
+        if (!assignment) {
+          return reply.code(404).send({ error: 'Assignment not found' });
+        }
+
+        if (body.groupId === null) {
+          await UserGroup.remove(userId, body.assignmentId);
+          return reply.send({
+            message: 'User removed from group',
+            user: {
+              id: user.id,
+              username: user.username,
+              assignmentId: body.assignmentId,
+              groupId: null,
+            },
+          });
+        }
+
+        const group = await Group.findById(body.groupId);
+        if (!group) {
+          return reply.code(404).send({ error: 'Group not found' });
+        }
+        if (group.assignment_id !== body.assignmentId) {
+          return reply.code(400).send({ error: 'Group does not belong to the selected assignment' });
+        }
+
+        // Atomic placement — enforces subject membership (403), capacity (409)
+        // and existence (404) under a row-level lock on the group.
+        await UserGroup.assignUserToGroup(userId, body.groupId, { replace: true });
 
         return reply.send({
           message: 'User group updated successfully',
           user: {
             id: user.id,
             username: user.username,
-            groupId: groupId,
+            assignmentId: body.assignmentId,
+            groupId: body.groupId,
           },
         });
       } catch (error) {
@@ -315,9 +506,11 @@ async function usersRoutes(fastify, _options) {
           return reply.code(404).send({ error: 'User not found' });
         }
 
-        // Assignment managers can only edit non-admin users
-        if (isAssignmentManager && targetUser.role_name === 'admin') {
-          return reply.code(403).send({ error: 'Forbidden: Assignment managers cannot edit admin users' });
+        // Assignment managers may only edit regular users. Editing a peer
+        // manager would let them change that peer's email and capture the
+        // password reset, inheriting the peer's assignments.
+        if (isAssignmentManager && !isSelfEdit && targetUser.role_name !== 'user') {
+          return reply.code(403).send({ error: 'Forbidden: Assignment managers can only edit regular users' });
         }
 
         // Attach to request so the handler can reuse it without a second DB call
@@ -332,7 +525,7 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: validationError });
         }
 
-        const { email, firstName, lastName, studentId, role, enabled, username, groupId } = body;
+        const { email, firstName, lastName, studentId, role, enabled, username } = body;
 
         // Reuse the user already fetched in preHandler (M3)
         const user = request.targetUser;
@@ -346,7 +539,7 @@ async function usersRoutes(fastify, _options) {
         }
 
         // Prevent disabling or changing role of the built-in admin user
-        if (user.username === 'admin') {
+        if (user.username === BUILTIN_ADMIN_USERNAME) {
           if (enabled === false) {
             return reply.code(400).send({ error: 'Cannot disable the built-in admin account' });
           }
@@ -357,6 +550,22 @@ async function usersRoutes(fastify, _options) {
 
         const isAdmin = request.user.role === 'admin';
         const isAssignmentManager = request.user.role === 'assignment_manager';
+        const isSelfEdit = request.user.id === userId;
+
+        // Assignment managers may only edit users enrolled (any enabled state)
+        // in a subject containing an assignment they manage; self-edit stays allowed
+        if (isAssignmentManager && !isSelfEdit) {
+          const inScope = await Assignment.managesAnySubjectOfUser(request.user.id, userId);
+          if (!inScope) {
+            return reply.code(403).send({ error: 'Forbidden: user is not in a subject you manage' });
+          }
+        }
+
+        // Only admins may enable or disable accounts — explicit reject for everyone else
+        if (enabled !== undefined && !isAdmin) {
+          return reply.code(403).send({ error: 'Only admins can enable or disable accounts' });
+        }
+
         const updates = { email, firstName, lastName };
 
         // Only include studentId for regular users
@@ -365,10 +574,6 @@ async function usersRoutes(fastify, _options) {
         }
 
         if (isAdmin) {
-          // Only include groupId for regular users
-          if (user.role_name === 'user' && groupId !== undefined) {
-            updates.groupId = groupId;
-          }
           // Resolve role name to roleId if provided and changed
           if (role !== undefined && role !== user.role_name) {
             const roleRecord = await Role.findByName(role);
@@ -379,9 +584,8 @@ async function usersRoutes(fastify, _options) {
           }
         }
 
-        // Admins and assignment managers can enable/disable users; sync status accordingly
-        // (assignment managers cannot edit admin users — enforced in preHandler)
-        if ((isAdmin || isAssignmentManager) && enabled !== undefined) {
+        // Admins can enable/disable users; sync status accordingly
+        if (isAdmin && enabled !== undefined) {
           updates.enabled = enabled;
           if (enabled === false) {
             updates.status = 'inactive';
@@ -402,6 +606,10 @@ async function usersRoutes(fastify, _options) {
           user: safeUser,
         });
       } catch (error) {
+        const conflict = uniqueViolationMessage(error);
+        if (conflict) {
+          return reply.code(409).send({ error: conflict });
+        }
         logger.error('Update user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to update user' });
       }
@@ -490,6 +698,16 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'Cannot delete your own account' });
         }
 
+        // The built-in admin is the recovery account; PUT already refuses to
+        // disable or demote it, so deletion must be refused too.
+        const target = await User.findById(userId);
+        if (!target) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
+        if (target.username === BUILTIN_ADMIN_USERNAME) {
+          return reply.code(400).send({ error: 'Cannot delete the built-in admin account' });
+        }
+
         const deletedUser = await User.delete(userId);
 
         if (!deletedUser) {
@@ -498,6 +716,9 @@ async function usersRoutes(fastify, _options) {
 
         return reply.send({ message: 'User deleted successfully' });
       } catch (error) {
+        if (error.statusCode && error.statusCode < 500) {
+          return reply.code(error.statusCode).send({ error: error.message });
+        }
         logger.error('Delete user error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to delete user' });
       }
@@ -536,9 +757,17 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'Cannot delete your own account' });
         }
 
+        const targets = await User.findByIds(uniqueIds);
+        if (targets.some((u) => u.username === BUILTIN_ADMIN_USERNAME)) {
+          return reply.code(400).send({ error: 'Cannot delete the built-in admin account' });
+        }
+
         const deleted = await User.bulkDelete(uniqueIds);
         return reply.send({ message: 'Users deleted successfully', deleted });
       } catch (error) {
+        if (error.statusCode && error.statusCode < 500) {
+          return reply.code(error.statusCode).send({ error: error.message });
+        }
         logger.error('Bulk delete users error', { err: error.message, code: error.code });
         return reply.code(500).send({ error: 'Failed to delete users' });
       }
@@ -561,8 +790,11 @@ async function usersRoutes(fastify, _options) {
     },
     async (request, reply) => {
       try {
-        const { users: usersToImport, conflictAction = 'skip', sendSetupEmail = false } = request.body || {};
+        const { users: usersToImport, conflictAction = 'skip', sendSetupEmail = false, subjectId } = request.body || {};
 
+        if (!subjectId || !validateUUID(subjectId)) {
+          return reply.code(400).send({ error: 'Subject is required' });
+        }
         if (conflictAction !== 'skip' && conflictAction !== 'overwrite') {
           return reply.code(400).send({ error: "Invalid 'conflictAction'. Allowed values are 'skip' or 'overwrite'." });
         }
@@ -578,6 +810,20 @@ async function usersRoutes(fastify, _options) {
           return reply.code(400).send({ error: `Import exceeds maximum of ${MAX_IMPORT_SIZE} rows` });
         }
 
+        const subject = await Subject.findById(subjectId);
+        if (!subject) {
+          return reply.code(404).send({ error: 'Subject not found' });
+        }
+
+        // Assignment managers may only import into subjects containing an
+        // assignment they manage
+        if (request.user.role === 'assignment_manager') {
+          const manages = await Assignment.managesAnyInSubject(request.user.id, subjectId);
+          if (!manages) {
+            return reply.code(403).send({ error: 'Forbidden: You do not manage any assignment in this subject' });
+          }
+        }
+
         const roleRecord = await Role.findByName('user');
         if (!roleRecord) {
           return reply.code(500).send({ error: 'User role not found' });
@@ -586,6 +832,7 @@ async function usersRoutes(fastify, _options) {
         let imported = 0;
         let skipped = 0;
         const errors = [];
+        const enrolledUserIds = [];
 
         // First pass: parse all rows and collect unique keys for batch lookup
         const parsedRows = [];
@@ -593,8 +840,10 @@ async function usersRoutes(fastify, _options) {
           const rawRow = usersToImport[rowNum - 1];
           const parseResult = importUserRowSchema.safeParse(rawRow);
           if (!parseResult.success) {
-            const rawUsername = typeof rawRow.username === 'string' ? rawRow.username.slice(0, 100) : '';
-            const rawEmail = typeof rawRow.email === 'string' ? rawRow.email.slice(0, 255) : '';
+            // rawRow may be null or a scalar; read labels defensively
+            const row = typeof rawRow === 'object' && rawRow !== null ? rawRow : {};
+            const rawUsername = typeof row.username === 'string' ? row.username.slice(0, 100) : '';
+            const rawEmail = typeof row.email === 'string' ? row.email.slice(0, 255) : '';
             const rowLabel = sanitize(rawUsername || rawEmail) || `row ${rowNum}`;
             errors.push({ row: rowNum, identifier: rowLabel, reason: 'Missing or invalid required fields' });
             parsedRows.push(null);
@@ -618,6 +867,20 @@ async function usersRoutes(fastify, _options) {
         const usernameMap = new Map(usernameRows.map((u) => [u.username.toLowerCase(), u]));
         const emailMap = new Map(emailRows.map((u) => [u.email, u]));
         const studentIdMap = new Map(studentIdRows.map((u) => [u.student_id, u]));
+
+        // An assignment manager may only overwrite accounts that were already in
+        // their scope BEFORE this request. Enrolment happens after this loop, so
+        // without the pre-check the import's own enrolment would manufacture the
+        // authorization — letting an AM rewrite any user's email and capture
+        // their password reset link.
+        const isAssignmentManager = request.user.role === 'assignment_manager';
+        const overwritableIds =
+          isAssignmentManager && conflictAction === 'overwrite'
+            ? await Assignment.filterUsersInManagedSubjects(
+                request.user.id,
+                usernameRows.map((u) => u.id)
+              )
+            : new Set();
 
         // Second pass: process rows using in-memory maps; update maps after each write
         // for within-batch duplicate detection
@@ -643,6 +906,14 @@ async function usersRoutes(fastify, _options) {
                   row: rowNum,
                   identifier: rowLabel,
                   reason: 'Cannot overwrite admin or assignment manager account',
+                });
+                continue;
+              }
+              if (isAssignmentManager && !overwritableIds.has(existing.id)) {
+                errors.push({
+                  row: rowNum,
+                  identifier: rowLabel,
+                  reason: 'Cannot overwrite a user outside the subjects you manage',
                 });
                 continue;
               }
@@ -690,6 +961,7 @@ async function usersRoutes(fastify, _options) {
                   studentIdMap.set(studentId, updatedEntry);
                 }
               }
+              enrolledUserIds.push(existing.id);
               imported++;
               continue;
             }
@@ -733,6 +1005,7 @@ async function usersRoutes(fastify, _options) {
             if (studentId) {
               studentIdMap.set(studentId, newEntry);
             }
+            enrolledUserIds.push(newUser.id);
 
             if (sendSetupEmail) {
               try {
@@ -749,6 +1022,11 @@ async function usersRoutes(fastify, _options) {
             const reason = rowError.code === '23505' ? 'Duplicate entry' : 'Processing failed';
             errors.push({ row: rowNum, identifier: rowLabel, reason });
           }
+        }
+
+        // Enrol every created/overwritten user in the target subject in one call
+        if (enrolledUserIds.length > 0) {
+          await Subject.addUsers(subjectId, enrolledUserIds);
         }
 
         errors.sort((a, b) => a.row - b.row);
@@ -780,6 +1058,23 @@ async function usersRoutes(fastify, _options) {
         await PasswordResetToken.deleteExpired();
 
         const { userIds } = request.body || {};
+        const isAssignmentManager = request.user.role === 'assignment_manager';
+
+        // AM scoping: users enrolled (any enabled state) in a subject containing
+        // an assignment the caller manages
+        let managedSubjectIds;
+        if (isAssignmentManager) {
+          const managed = await Assignment.findManagedBy(request.user.id);
+          managedSubjectIds = new Set(managed.map((a) => a.subject_id));
+        }
+        const idsInManagedSubjects = async (users) => {
+          if (users.length === 0) {
+            return new Set();
+          }
+          const rows = await Subject.findForUsers(users.map((u) => u.id));
+          return new Set(rows.filter((r) => managedSubjectIds.has(r.id)).map((r) => r.user_id));
+        };
+
         // If userIds provided, send only to those; otherwise send to all pending users
         let targets;
         if (Array.isArray(userIds) && userIds.length > 0) {
@@ -791,10 +1086,22 @@ async function usersRoutes(fastify, _options) {
             return reply.code(400).send({ error: 'One or more user IDs have an invalid format' });
           }
           const found = await User.findByIds(userIds);
+          if (isAssignmentManager) {
+            // Every explicit target must be in scope — reject before any email is sent
+            const inScope = await idsInManagedSubjects(found);
+            if (found.some((u) => !inScope.has(u.id))) {
+              return reply.code(403).send({ error: 'Forbidden: user is not in a subject you manage' });
+            }
+          }
           targets = found.filter((u) => u.status === 'pending');
         } else {
           const all = await User.findAll({ status: 'pending' });
-          targets = all;
+          if (isAssignmentManager) {
+            const inScope = await idsInManagedSubjects(all);
+            targets = all.filter((u) => inScope.has(u.id));
+          } else {
+            targets = all;
+          }
         }
 
         let sent = 0;
@@ -803,8 +1110,14 @@ async function usersRoutes(fastify, _options) {
           try {
             await PasswordResetToken.deleteStaleForUser(u.id);
             const tokenRecord = await PasswordResetToken.create(u.id, 'setup', 24);
-            await sendPasswordSetupEmail(u, tokenRecord.token);
-            sent++;
+            // Only count real deliveries: with SMTP unconfigured nothing is sent,
+            // and reporting success would leave accounts unreachable but "done".
+            const delivered = await sendPasswordSetupEmail(u, tokenRecord.token);
+            if (delivered) {
+              sent++;
+            } else {
+              errors.push({ userId: u.id, username: u.username, reason: 'Email not sent: SMTP is not configured' });
+            }
           } catch (emailError) {
             logger.error('Failed to send setup email', { username: u.username, err: emailError.message });
             errors.push({ userId: u.id, username: u.username, reason: 'Failed to send email' });

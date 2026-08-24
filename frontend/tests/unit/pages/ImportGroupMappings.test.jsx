@@ -28,6 +28,63 @@ jest.mock('../../../src/utils/csv.js', () => ({
   downloadCsv: jest.fn(),
 }));
 
+// ── API route mocks ──────────────────────────────────────────────────────────
+
+const SUBJECTS = [
+  { id: 'sub-1', name: 'Subject One' },
+  { id: 'sub-2', name: 'Subject Two' },
+];
+
+const ASSIGNMENTS = [
+  { id: 'asg-1', name: 'Assignment One' },
+  { id: 'asg-2', name: 'Assignment Two' },
+];
+
+/**
+ * Install a url-router implementation on api.get. Groups are served per
+ * assignment id via `groupsByAssignment`; the plain `groups` option applies
+ * to every assignment.
+ */
+function mockApiRoutes({
+  users = [],
+  groups = [],
+  groupsByAssignment = null,
+  subjects = SUBJECTS,
+  assignments = ASSIGNMENTS,
+} = {}) {
+  api.get.mockImplementation((url) => {
+    if (url.endsWith('/subjects')) {
+      return Promise.resolve({ data: { subjects } });
+    }
+    if (url.includes('/subjects/')) {
+      return Promise.resolve({ data: { subject: subjects[0], assignments } });
+    }
+    const groupsMatch = url.match(/\/assignments\/([^/]+)\/groups$/);
+    if (groupsMatch) {
+      const list = groupsByAssignment ? groupsByAssignment[groupsMatch[1]] || [] : groups;
+      return Promise.resolve({ data: { groups: list } });
+    }
+    const previewMatch = url.match(/\/assignments\/([^/]+)\/import-preview$/);
+    if (previewMatch) {
+      const assignmentId = previewMatch[1];
+      const list = groupsByAssignment ? groupsByAssignment[assignmentId] || [] : groups;
+      // The endpoint reports each member's current group in THIS assignment only.
+      const previewUsers = users.map((u) => ({
+        id: u.id,
+        email: u.email,
+        role_name: u.role_name,
+        membership_enabled: u.membership_enabled ?? true,
+        current_group_id: (u.memberships || []).find((m) => m.assignment_id === assignmentId)?.group_id ?? null,
+      }));
+      return Promise.resolve({ data: { users: previewUsers, groups: list } });
+    }
+    if (url.endsWith('/users')) {
+      return Promise.resolve({ data: { users } });
+    }
+    return Promise.reject(new Error(`Unexpected url: ${url}`));
+  });
+}
+
 // ── FileReader mock ──────────────────────────────────────────────────────────
 function setupFileReaderMock() {
   const OriginalFileReader = global.FileReader;
@@ -69,12 +126,15 @@ function uploadCsv(content, name = 'mappings.csv') {
   });
 }
 
-function renderPage() {
-  return render(
-    <MemoryRouter initialEntries={['/groups/import']}>
+async function renderPage(query = '?subjectId=sub-1&assignmentId=asg-1') {
+  const utils = render(
+    <MemoryRouter initialEntries={[`/groups/import${query}`]}>
       <ImportGroupMappings />
     </MemoryRouter>
   );
+  // Flush the GET /subjects (and cascade) fetches fired on mount
+  await act(async () => {});
+  return utils;
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -84,6 +144,7 @@ describe('ImportGroupMappings page', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockApiRoutes();
     restoreFileReader = setupFileReaderMock();
   });
 
@@ -91,22 +152,60 @@ describe('ImportGroupMappings page', () => {
     restoreFileReader();
   });
 
+  // ── Target assignment cascade ──────────────────────────────────────────────
+
+  describe('Target assignment cascade', () => {
+    it('preselects the subject and assignment from query params', async () => {
+      await renderPage('?subjectId=sub-1&assignmentId=asg-1');
+      expect(screen.getByLabelText('Subject')).toHaveValue('sub-1');
+      await waitFor(() => expect(screen.getByLabelText('Assignment')).toHaveValue('asg-1'));
+    });
+
+    it('gates the wizard until an assignment is chosen', async () => {
+      await renderPage('');
+      expect(screen.queryByText('Upload CSV File')).not.toBeInTheDocument();
+      expect(screen.getByText(/select a subject and assignment to continue/i)).toBeInTheDocument();
+
+      await userEvent.selectOptions(screen.getByLabelText('Subject'), 'sub-1');
+      await screen.findByRole('option', { name: 'Assignment One' });
+      // Still gated with only a subject selected
+      expect(screen.queryByText('Upload CSV File')).not.toBeInTheDocument();
+
+      await userEvent.selectOptions(screen.getByLabelText('Assignment'), 'asg-1');
+      expect(screen.getByText('Upload CSV File')).toBeInTheDocument();
+      expect(screen.queryByText(/select a subject and assignment to continue/i)).not.toBeInTheDocument();
+    });
+
+    it('does not render a group select (showGroup is false)', async () => {
+      await renderPage('');
+      expect(screen.queryByLabelText('Group')).not.toBeInTheDocument();
+    });
+
+    it('re-gates the wizard when the subject changes and clears the assignment', async () => {
+      await renderPage('?subjectId=sub-1&assignmentId=asg-1');
+      expect(screen.getByText('Upload CSV File')).toBeInTheDocument();
+      await userEvent.selectOptions(screen.getByLabelText('Subject'), 'sub-2');
+      expect(screen.queryByText('Upload CSV File')).not.toBeInTheDocument();
+      expect(screen.getByText(/select a subject and assignment to continue/i)).toBeInTheDocument();
+    });
+  });
+
   // ── Step 1: Upload ─────────────────────────────────────────────────────────
 
   describe('Step 1: Upload', () => {
-    it('renders the upload heading', () => {
-      renderPage();
+    it('renders the upload heading', async () => {
+      await renderPage();
       expect(screen.getByText('Import Group Mappings')).toBeInTheDocument();
       expect(screen.getByText('Upload CSV File')).toBeInTheDocument();
     });
 
-    it('shows the file input', () => {
-      renderPage();
+    it('shows the file input', async () => {
+      await renderPage();
       expect(document.querySelector('input[type="file"]')).toBeInTheDocument();
     });
 
-    it('shows error for non-CSV files', () => {
-      renderPage();
+    it('shows error for non-CSV files', async () => {
+      await renderPage();
       const input = document.querySelector('input[type="file"]');
       const txtFile = new File(['data'], 'data.txt', { type: 'text/plain' });
       Object.defineProperty(input, 'files', { configurable: true, value: [txtFile] });
@@ -116,39 +215,37 @@ describe('ImportGroupMappings page', () => {
       expect(screen.getByText('Please upload a CSV file')).toBeInTheDocument();
     });
 
-    it('shows error when CSV has fewer than 2 rows', () => {
-      renderPage();
+    it('shows error when CSV has fewer than 2 rows', async () => {
+      await renderPage();
       uploadCsv('group name,email');
       expect(screen.getByText(/CSV must have a header row/i)).toBeInTheDocument();
     });
 
-    it('auto-detects columns and shows row count when columns cannot be detected', () => {
-      renderPage();
+    it('auto-detects columns and shows row count when columns cannot be detected', async () => {
+      await renderPage();
       uploadCsv('col1,col2\nval1@test.com,Group A\nval2@test.com,Group B');
       expect(screen.getByText(/Loaded 2 rows/i)).toBeInTheDocument();
     });
 
-    it('shows column mapping UI when columns cannot be auto-detected', () => {
-      renderPage();
+    it('shows column mapping UI when columns cannot be auto-detected', async () => {
+      await renderPage();
       uploadCsv('col1,col2\nval1,val2');
       expect(screen.getByText(/could not be auto-detected/i)).toBeInTheDocument();
       expect(screen.getByLabelText('Email column')).toBeInTheDocument();
       expect(screen.getByLabelText('Group name column')).toBeInTheDocument();
     });
 
-    it('Next button is disabled without a valid file', () => {
-      renderPage();
+    it('Next button is disabled without a valid file', async () => {
+      await renderPage();
       expect(screen.getByRole('button', { name: /next: preview/i })).toBeDisabled();
     });
 
     it('accepts a valid CSV via drag and drop and auto-advances to preview', async () => {
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
-          groups: [{ id: 'g1', name: 'Team A' }],
-        },
+      mockApiRoutes({
+        users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
+        groups: [{ id: 'g1', name: 'Team A' }],
       });
-      renderPage();
+      await renderPage();
       const file = makeCsvFile('group name,email\nTeam A,alice@test.com');
       const dropzone = screen.getByRole('button', { name: /click to browse/i });
       act(() => {
@@ -157,8 +254,8 @@ describe('ImportGroupMappings page', () => {
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
     });
 
-    it('shows error when a non-CSV file is dropped', () => {
-      renderPage();
+    it('shows error when a non-CSV file is dropped', async () => {
+      await renderPage();
       const file = new File(['data'], 'data.txt', { type: 'text/plain' });
       const dropzone = screen.getByRole('button', { name: /click to browse/i });
       act(() => {
@@ -168,13 +265,11 @@ describe('ImportGroupMappings page', () => {
     });
 
     it('auto-advances to step 2 when a valid CSV with detectable columns is uploaded', async () => {
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
-          groups: [{ id: 'g1', name: 'Team Alpha' }],
-        },
+      mockApiRoutes({
+        users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
+        groups: [{ id: 'g1', name: 'Team Alpha' }],
       });
-      renderPage();
+      await renderPage();
       uploadCsv('group name,email\nTeam Alpha,alice@test.com');
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
     });
@@ -196,8 +291,8 @@ describe('ImportGroupMappings page', () => {
     ];
 
     async function goToPreview(csv = validCsv) {
-      api.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
-      renderPage();
+      mockApiRoutes({ users: mockUsers, groups: mockGroups });
+      await renderPage();
       uploadCsv(csv);
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
     }
@@ -213,44 +308,104 @@ describe('ImportGroupMappings page', () => {
       await waitFor(() => expect(screen.getAllByText('Ready').length).toBeGreaterThan(0));
     });
 
+    it('validates group names against the selected assignment groups', async () => {
+      mockApiRoutes({
+        users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
+        groupsByAssignment: { 'asg-1': [{ id: 'g1', name: 'Team Alpha' }] },
+      });
+      await renderPage();
+      uploadCsv('group name,email\nTeam Beta,alice@test.com');
+      await waitFor(() => expect(screen.getByText(/Group not found/i)).toBeInTheDocument());
+      expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/assignments\/asg-1\/import-preview$/));
+      // Preview data must come from the assignment-scoped endpoint only. The
+      // admin-only user list would 403 for an assignment manager, which used to
+      // make this page unusable for them.
+      const urls = api.get.mock.calls.map(([url]) => url);
+      expect(urls.some((url) => /\/users$/.test(url))).toBe(false);
+      expect(urls.some((url) => /\/groups$/.test(url))).toBe(false);
+    });
+
+    it('refetches groups and rebuilds the preview when the assignment changes', async () => {
+      mockApiRoutes({
+        users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
+        groupsByAssignment: {
+          'asg-1': [{ id: 'g1', name: 'Team Alpha' }],
+          'asg-2': [],
+        },
+      });
+      await renderPage();
+      uploadCsv('group name,email\nTeam Alpha,alice@test.com');
+      await waitFor(() => expect(screen.getAllByText('Ready').length).toBeGreaterThan(0));
+
+      await userEvent.selectOptions(screen.getByLabelText('Assignment'), 'asg-2');
+
+      await waitFor(() =>
+        expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/assignments\/asg-2\/import-preview$/))
+      );
+      // "Team Alpha" does not exist in asg-2 → row becomes a skip
+      await waitFor(() => expect(screen.getByText(/Group not found/i)).toBeInTheDocument());
+    });
+
     it('highlights rows with unknown user as Skip', async () => {
       const csvWithUnknown = 'group name,email\nTeam Alpha,alice@test.com\nTeam Alpha,nobody@ghost.com';
-      api.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
-      renderPage();
+      mockApiRoutes({ users: mockUsers, groups: mockGroups });
+      await renderPage();
       uploadCsv(csvWithUnknown);
       await waitFor(() => expect(screen.getByText(/User not found/i)).toBeInTheDocument());
     });
 
     it('highlights rows with unknown group as Skip', async () => {
       const csvWithBadGroup = 'group name,email\nGhost Group,alice@test.com';
-      api.get.mockResolvedValue({ data: { users: mockUsers, groups: mockGroups } });
-      renderPage();
+      mockApiRoutes({ users: mockUsers, groups: mockGroups });
+      await renderPage();
       uploadCsv(csvWithBadGroup);
       await waitFor(() => expect(screen.getByText(/Group not found/i)).toBeInTheDocument());
     });
 
-    it('shows Conflict status for users already in a group', async () => {
+    it('shows Conflict status for users already in a group of the selected assignment', async () => {
       const conflictCsv = 'group name,email\nTeam Alpha,assigned@test.com';
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ id: 'u3', email: 'assigned@test.com', group_id: 'g1' }],
-          groups: mockGroups,
-        },
+      mockApiRoutes({
+        users: [
+          {
+            id: 'u3',
+            email: 'assigned@test.com',
+            memberships: [{ assignment_id: 'asg-1', group_id: 'g1', group_name: 'Team Beta' }],
+          },
+        ],
+        groups: mockGroups,
       });
-      renderPage();
+      await renderPage();
       uploadCsv(conflictCsv);
       await waitFor(() => expect(screen.getAllByText(/Conflict/i).length).toBeGreaterThan(0));
+      expect(screen.getAllByText(/User already in a group/i).length).toBeGreaterThan(0);
+    });
+
+    it('does NOT flag a conflict when the membership is in a different assignment', async () => {
+      const csv = 'group name,email\nTeam Alpha,other@test.com';
+      mockApiRoutes({
+        users: [
+          {
+            id: 'u4',
+            email: 'other@test.com',
+            memberships: [{ assignment_id: 'asg-2', group_id: 'g9', group_name: 'Elsewhere' }],
+          },
+        ],
+        groups: mockGroups,
+      });
+      await renderPage();
+      uploadCsv(csv);
+      await waitFor(() => expect(screen.getAllByText(/Import/).length).toBeGreaterThan(0));
+      expect(screen.queryByText(/User already in a group/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Conflict/i)).not.toBeInTheDocument();
     });
 
     it('marks admin users as Skip with appropriate reason', async () => {
       const csvWithAdmin = 'group name,email\nTeam Alpha,admin@test.com';
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ id: 'a1', email: 'admin@test.com', role_name: 'admin', group_id: null }],
-          groups: mockGroups,
-        },
+      mockApiRoutes({
+        users: [{ id: 'a1', email: 'admin@test.com', role_name: 'admin', group_id: null }],
+        groups: mockGroups,
       });
-      renderPage();
+      await renderPage();
       uploadCsv(csvWithAdmin);
       await waitFor(() =>
         expect(screen.getByText(/Admins and Assignment Managers cannot be assigned/i)).toBeInTheDocument()
@@ -259,13 +414,11 @@ describe('ImportGroupMappings page', () => {
 
     it('marks assignment_manager users as Skip with appropriate reason', async () => {
       const csvWithAM = 'group name,email\nTeam Alpha,am@test.com';
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ id: 'am1', email: 'am@test.com', role_name: 'assignment_manager', group_id: null }],
-          groups: mockGroups,
-        },
+      mockApiRoutes({
+        users: [{ id: 'am1', email: 'am@test.com', role_name: 'assignment_manager', group_id: null }],
+        groups: mockGroups,
       });
-      renderPage();
+      await renderPage();
       uploadCsv(csvWithAM);
       await waitFor(() =>
         expect(screen.getByText(/Admins and Assignment Managers cannot be assigned/i)).toBeInTheDocument()
@@ -274,16 +427,14 @@ describe('ImportGroupMappings page', () => {
 
     it('does not count privileged-user rows as importable', async () => {
       const csvMixed = 'group name,email\nTeam Alpha,admin@test.com\nTeam Alpha,alice@test.com';
-      api.get.mockResolvedValue({
-        data: {
-          users: [
-            { id: 'a1', email: 'admin@test.com', role_name: 'admin', group_id: null },
-            { id: 'u1', email: 'alice@test.com', role_name: 'user', group_id: null },
-          ],
-          groups: mockGroups,
-        },
+      mockApiRoutes({
+        users: [
+          { id: 'a1', email: 'admin@test.com', role_name: 'admin', group_id: null },
+          { id: 'u1', email: 'alice@test.com', role_name: 'user', group_id: null },
+        ],
+        groups: mockGroups,
       });
-      renderPage();
+      await renderPage();
       uploadCsv(csvMixed);
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
       // Import button should reflect only 1 importable row
@@ -292,13 +443,17 @@ describe('ImportGroupMappings page', () => {
 
     it('shows a skip/overwrite dropdown for conflict rows', async () => {
       const conflictCsv = 'group name,email\nTeam Alpha,assigned@test.com';
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ id: 'u3', email: 'assigned@test.com', group_id: 'g1' }],
-          groups: mockGroups,
-        },
+      mockApiRoutes({
+        users: [
+          {
+            id: 'u3',
+            email: 'assigned@test.com',
+            memberships: [{ assignment_id: 'asg-1', group_id: 'g1', group_name: 'Team Beta' }],
+          },
+        ],
+        groups: mockGroups,
       });
-      renderPage();
+      await renderPage();
       uploadCsv(conflictCsv);
       await waitFor(() => expect(screen.getByLabelText(/Action for assigned@test.com/i)).toBeInTheDocument());
     });
@@ -306,15 +461,23 @@ describe('ImportGroupMappings page', () => {
     describe('Bulk conflict actions', () => {
       const conflictCsv = 'group name,email\nTeam Alpha,alice@test.com\nTeam Beta,bob@test.com';
       const conflictUsers = [
-        { id: 'u1', email: 'alice@test.com', role_name: 'user', group_id: 'g0' },
-        { id: 'u2', email: 'bob@test.com', role_name: 'user', group_id: 'g0' },
+        {
+          id: 'u1',
+          email: 'alice@test.com',
+          role_name: 'user',
+          memberships: [{ assignment_id: 'asg-1', group_id: 'g0', group_name: 'Old Team' }],
+        },
+        {
+          id: 'u2',
+          email: 'bob@test.com',
+          role_name: 'user',
+          memberships: [{ assignment_id: 'asg-1', group_id: 'g0', group_name: 'Old Team' }],
+        },
       ];
 
       async function goToConflictPreview() {
-        api.get.mockResolvedValue({
-          data: { users: conflictUsers, groups: mockGroups },
-        });
-        renderPage();
+        mockApiRoutes({ users: conflictUsers, groups: mockGroups });
+        await renderPage();
         uploadCsv(conflictCsv);
         await waitFor(() => expect(screen.getAllByText(/Conflict/i).length).toBeGreaterThan(0));
       }
@@ -344,8 +507,8 @@ describe('ImportGroupMappings page', () => {
         await userEvent.click(screen.getByRole('button', { name: /overwrite all/i }));
         await waitFor(() => expect(screen.getByRole('button', { name: /import 2 rows/i })).toBeInTheDocument());
         // Then revert first row back to skip individually
-        const selects = screen.getAllByRole('combobox');
-        await userEvent.selectOptions(selects[0], 'skip');
+        const actionSelect = screen.getByLabelText(/Action for alice@test.com/i);
+        await userEvent.selectOptions(actionSelect, 'skip');
         await waitFor(() => expect(screen.getByRole('button', { name: /import 1 row/i })).toBeInTheDocument());
       });
 
@@ -369,21 +532,19 @@ describe('ImportGroupMappings page', () => {
 
   describe('Step 3: Result', () => {
     async function runImport(importResponse = { imported: 2, skipped: [], errors: [] }) {
-      api.get.mockResolvedValue({
-        data: {
-          users: [
-            { id: 'u1', email: 'alice@test.com', group_id: null },
-            { id: 'u2', email: 'bob@test.com', group_id: null },
-          ],
-          groups: [
-            { id: 'g1', name: 'Team Alpha' },
-            { id: 'g2', name: 'Team Beta' },
-          ],
-        },
+      mockApiRoutes({
+        users: [
+          { id: 'u1', email: 'alice@test.com', group_id: null },
+          { id: 'u2', email: 'bob@test.com', group_id: null },
+        ],
+        groups: [
+          { id: 'g1', name: 'Team Alpha' },
+          { id: 'g2', name: 'Team Beta' },
+        ],
       });
       api.post.mockResolvedValue({ data: importResponse });
 
-      renderPage();
+      await renderPage();
       uploadCsv('group name,email\nTeam Alpha,alice@test.com\nTeam Beta,bob@test.com');
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Preview' })).toBeInTheDocument());
       await waitFor(() => expect(screen.getAllByText('Ready').length).toBeGreaterThan(0));
@@ -410,6 +571,42 @@ describe('ImportGroupMappings page', () => {
     it('shows import result counts', async () => {
       await runImport({ imported: 2, skipped: [], errors: [] });
       expect(screen.getByText('2')).toBeInTheDocument();
+    });
+
+    it('submits to POST /assignments/:assignmentId/import-mappings', async () => {
+      await runImport();
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringMatching(/\/assignments\/asg-1\/import-mappings$/),
+        expect.objectContaining({ rows: expect.any(Array) })
+      );
+    });
+
+    it('sends only email, groupName and action for each row', async () => {
+      await runImport();
+      const [, body] = api.post.mock.calls[0];
+      expect(body.rows.length).toBeGreaterThan(0);
+      expect(body.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ email: 'alice@test.com', groupName: 'Team Alpha', action: 'import' }),
+        ])
+      );
+      for (const row of body.rows) {
+        expect(Object.keys(row).sort()).toEqual(['action', 'email', 'groupName']);
+      }
+    });
+
+    it('surfaces the "User is not a member of this subject" skip reason in the skipped CSV', async () => {
+      await runImport({
+        imported: 1,
+        skipped: [{ email: 'bob@test.com', groupName: 'Team Beta', reason: 'User is not a member of this subject' }],
+        errors: [],
+      });
+      expect(screen.getByText(/skipped and errored rows has been downloaded/i)).toBeInTheDocument();
+      expect(downloadCsv).toHaveBeenCalledTimes(1);
+      const [rows] = downloadCsv.mock.calls[0];
+      expect(rows).toEqual(
+        expect.arrayContaining([expect.objectContaining({ reason: 'User is not a member of this subject' })])
+      );
     });
 
     it('shows "Back to Groups" button', async () => {
@@ -441,8 +638,8 @@ describe('ImportGroupMappings page', () => {
     ];
 
     async function goToImportReady() {
-      api.get.mockResolvedValue({ data: { users: confirmUsers, groups: confirmGroups } });
-      renderPage();
+      mockApiRoutes({ users: confirmUsers, groups: confirmGroups });
+      await renderPage();
       uploadCsv(confirmCsv);
       await waitFor(() => expect(screen.getAllByText('Ready').length).toBeGreaterThan(0));
     }
@@ -544,11 +741,9 @@ describe('ImportGroupMappings page', () => {
 
   describe('Skipped CSV download', () => {
     it('does not include duplicate rows when a skipped row appears in both preview and API response', async () => {
-      api.get.mockResolvedValue({
-        data: {
-          users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
-          groups: [{ id: 'g1', name: 'Team Alpha' }],
-        },
+      mockApiRoutes({
+        users: [{ id: 'u1', email: 'alice@test.com', group_id: null }],
+        groups: [{ id: 'g1', name: 'Team Alpha' }],
       });
       api.post.mockResolvedValue({
         data: {
@@ -558,7 +753,7 @@ describe('ImportGroupMappings page', () => {
         },
       });
 
-      renderPage();
+      await renderPage();
       uploadCsv('group name,email\nTeam Alpha,alice@test.com\nTeam Alpha,nobody@test.com');
       await waitFor(() => expect(screen.getByRole('button', { name: /import 1 row/i })).toBeInTheDocument());
 

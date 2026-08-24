@@ -29,6 +29,15 @@ const {
   validateUUID,
   bulkCreateGroupItemSchema,
   BULK_CREATE_MAX,
+  createSubjectSchema,
+  updateSubjectSchema,
+  createAssignmentSchema,
+  updateAssignmentSchema,
+  addSubjectUsersSchema,
+  setMemberEnabledSchema,
+  setAssignmentManagersSchema,
+  updateUserGroupSchema,
+  bulkCreateGroupsSchema,
 } = require('../../src/utils/schemas');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -416,6 +425,46 @@ describe('createUserSchema', () => {
     const result = parseBody(createUserSchema, { ...validBody, username: '<script>xss</script>' });
     expect(result.error).toBe('Username may only contain letters, numbers, underscores, hyphens, and dots');
   });
+
+  it('accepts subjectIds as an array of UUIDs', () => {
+    const data = ok(createUserSchema, {
+      ...validBody,
+      subjectIds: ['10000000-0000-4000-8000-000000000001'],
+    });
+    expect(data.subjectIds).toEqual(['10000000-0000-4000-8000-000000000001']);
+  });
+
+  it('rejects subjectIds containing a non-UUID', () => {
+    expect(err(createUserSchema, { ...validBody, subjectIds: ['nope'] })).toEqual(expect.any(String));
+  });
+
+  it('accepts optional assignmentId and groupId UUIDs for placement', () => {
+    const data = ok(createUserSchema, {
+      ...validBody,
+      subjectIds: ['10000000-0000-4000-8000-000000000001'],
+      assignmentId: '20000000-0000-4000-8000-000000000001',
+      groupId: '30000000-0000-4000-8000-000000000001',
+    });
+    expect(data.assignmentId).toBe('20000000-0000-4000-8000-000000000001');
+    expect(data.groupId).toBe('30000000-0000-4000-8000-000000000001');
+  });
+
+  it('rejects a non-UUID assignmentId', () => {
+    expect(err(createUserSchema, { ...validBody, assignmentId: 'bad' })).toEqual(expect.any(String));
+  });
+
+  it('accepts assignmentIds (AM scope) as an array of UUIDs', () => {
+    const data = ok(createUserSchema, {
+      ...validBody,
+      role: 'assignment_manager',
+      assignmentIds: ['20000000-0000-4000-8000-000000000001'],
+    });
+    expect(data.assignmentIds).toEqual(['20000000-0000-4000-8000-000000000001']);
+  });
+
+  it('rejects assignmentIds containing a non-UUID', () => {
+    expect(err(createUserSchema, { ...validBody, assignmentIds: ['bad'] })).toEqual(expect.any(String));
+  });
 });
 
 // ── updateUserSchema ──────────────────────────────────────────────────────────
@@ -446,18 +495,9 @@ describe('updateUserSchema', () => {
     );
   });
 
-  it('accepts optional groupId as UUID (M1)', () => {
+  it('strips groupId — group membership is managed via PUT /users/:id/group, not user update', () => {
     const data = ok(updateUserSchema, { groupId: '10000000-0000-4000-8000-000000000001' });
-    expect(data.groupId).toBe('10000000-0000-4000-8000-000000000001');
-  });
-
-  it('accepts groupId as null (M1)', () => {
-    const data = ok(updateUserSchema, { groupId: null });
-    expect(data.groupId).toBeNull();
-  });
-
-  it('rejects groupId that is not a UUID (M1)', () => {
-    expect(err(updateUserSchema, { groupId: 'not-a-uuid' })).toEqual(expect.any(String));
+    expect(data.groupId).toBeUndefined();
   });
 });
 
@@ -516,17 +556,30 @@ describe('importUserRowSchema', () => {
 // ── createGroupSchema ─────────────────────────────────────────────────────────
 
 describe('createGroupSchema', () => {
-  it('accepts a valid group name', () => {
-    const data = ok(createGroupSchema, { name: 'Team A' });
+  const ASSIGNMENT_ID = '20000000-0000-4000-8000-000000000001';
+
+  it('accepts a valid group name with assignmentId', () => {
+    const data = ok(createGroupSchema, { assignmentId: ASSIGNMENT_ID, name: 'Team A' });
     expect(data.name).toBe('Team A');
+    expect(data.assignmentId).toBe(ASSIGNMENT_ID);
+  });
+
+  it('rejects a missing assignmentId', () => {
+    expect(err(createGroupSchema, { name: 'Team A' })).toEqual(expect.any(String));
+  });
+
+  it('rejects a non-UUID assignmentId', () => {
+    expect(err(createGroupSchema, { assignmentId: 'nope', name: 'Team A' })).toEqual(expect.any(String));
   });
 
   it('rejects empty group name', () => {
-    expect(err(createGroupSchema, { name: '' })).toBe('Group name is required');
+    expect(err(createGroupSchema, { assignmentId: ASSIGNMENT_ID, name: '' })).toBe('Group name is required');
   });
 
   it('rejects group name over 100 characters', () => {
-    expect(err(createGroupSchema, { name: 'x'.repeat(101) })).toBe('Group name must be at most 100 characters');
+    expect(err(createGroupSchema, { assignmentId: ASSIGNMENT_ID, name: 'x'.repeat(101) })).toBe(
+      'Group name must be at most 100 characters'
+    );
   });
 });
 
@@ -715,5 +768,197 @@ describe('bulkCreateGroupItemSchema', () => {
 describe('BULK_CREATE_MAX', () => {
   it('is set to 2000', () => {
     expect(BULK_CREATE_MAX).toBe(2000);
+  });
+});
+
+// ── hierarchy schemas ─────────────────────────────────────────────────────────
+
+const SUBJECT_ID = '10000000-0000-4000-8000-000000000001';
+const ASSIGNMENT_ID = '20000000-0000-4000-8000-000000000001';
+const GROUP_ID = '30000000-0000-4000-8000-000000000001';
+const USER_ID = '40000000-0000-4000-8000-000000000001';
+
+describe('createSubjectSchema', () => {
+  it('accepts a valid subject name', () => {
+    const data = ok(createSubjectSchema, { name: 'Software Engineering' });
+    expect(data.name).toBe('Software Engineering');
+  });
+
+  it('rejects an empty name', () => {
+    expect(err(createSubjectSchema, { name: '' })).toBe('Subject name is required');
+  });
+
+  it('rejects a name over 100 characters', () => {
+    expect(err(createSubjectSchema, { name: 'x'.repeat(101) })).toBe('Subject name must be at most 100 characters');
+  });
+
+  it('rejects a missing name', () => {
+    expect(err(createSubjectSchema, {})).toEqual(expect.any(String));
+  });
+});
+
+describe('updateSubjectSchema', () => {
+  it('accepts a valid name', () => {
+    const data = ok(updateSubjectSchema, { name: 'Renamed Subject' });
+    expect(data.name).toBe('Renamed Subject');
+  });
+
+  it('rejects an empty name', () => {
+    expect(err(updateSubjectSchema, { name: '' })).toBe('Subject name is required');
+  });
+});
+
+describe('createAssignmentSchema', () => {
+  it('accepts a valid subjectId and name', () => {
+    const data = ok(createAssignmentSchema, { subjectId: SUBJECT_ID, name: 'Assignment 1' });
+    expect(data.subjectId).toBe(SUBJECT_ID);
+    expect(data.name).toBe('Assignment 1');
+  });
+
+  it('rejects a missing subjectId', () => {
+    expect(err(createAssignmentSchema, { name: 'Assignment 1' })).toEqual(expect.any(String));
+  });
+
+  it('rejects a non-UUID subjectId', () => {
+    expect(err(createAssignmentSchema, { subjectId: 'nope', name: 'Assignment 1' })).toEqual(expect.any(String));
+  });
+
+  it('rejects an empty name', () => {
+    expect(err(createAssignmentSchema, { subjectId: SUBJECT_ID, name: '' })).toBe('Assignment name is required');
+  });
+
+  it('rejects a name over 100 characters', () => {
+    expect(err(createAssignmentSchema, { subjectId: SUBJECT_ID, name: 'x'.repeat(101) })).toBe(
+      'Assignment name must be at most 100 characters'
+    );
+  });
+});
+
+describe('updateAssignmentSchema', () => {
+  it('accepts a valid name', () => {
+    const data = ok(updateAssignmentSchema, { name: 'Renamed Assignment' });
+    expect(data.name).toBe('Renamed Assignment');
+  });
+
+  it('rejects an empty name', () => {
+    expect(err(updateAssignmentSchema, { name: '' })).toBe('Assignment name is required');
+  });
+});
+
+describe('addSubjectUsersSchema', () => {
+  it('accepts a list of user UUIDs', () => {
+    const data = ok(addSubjectUsersSchema, { userIds: [USER_ID] });
+    expect(data.userIds).toEqual([USER_ID]);
+  });
+
+  it('rejects an empty list', () => {
+    expect(err(addSubjectUsersSchema, { userIds: [] })).toEqual(expect.any(String));
+  });
+
+  it('rejects more than 2000 ids', () => {
+    const userIds = Array.from({ length: 2001 }, () => USER_ID);
+    expect(err(addSubjectUsersSchema, { userIds })).toEqual(expect.any(String));
+  });
+
+  it('rejects non-UUID entries', () => {
+    expect(err(addSubjectUsersSchema, { userIds: ['nope'] })).toEqual(expect.any(String));
+  });
+
+  it('rejects a missing userIds field', () => {
+    expect(err(addSubjectUsersSchema, {})).toEqual(expect.any(String));
+  });
+});
+
+describe('setMemberEnabledSchema', () => {
+  it('accepts enabled true', () => {
+    const data = ok(setMemberEnabledSchema, { enabled: true });
+    expect(data.enabled).toBe(true);
+  });
+
+  it('accepts enabled false', () => {
+    const data = ok(setMemberEnabledSchema, { enabled: false });
+    expect(data.enabled).toBe(false);
+  });
+
+  it('rejects a missing enabled field', () => {
+    expect(err(setMemberEnabledSchema, {})).toEqual(expect.any(String));
+  });
+
+  it('rejects a non-boolean enabled value', () => {
+    expect(err(setMemberEnabledSchema, { enabled: 'true' })).toEqual(expect.any(String));
+    expect(err(setMemberEnabledSchema, { enabled: 1 })).toEqual(expect.any(String));
+    expect(err(setMemberEnabledSchema, { enabled: null })).toEqual(expect.any(String));
+  });
+});
+
+describe('setAssignmentManagersSchema', () => {
+  it('accepts a list of user UUIDs', () => {
+    const data = ok(setAssignmentManagersSchema, { userIds: [USER_ID] });
+    expect(data.userIds).toEqual([USER_ID]);
+  });
+
+  it('accepts an empty list (clears all managers)', () => {
+    const data = ok(setAssignmentManagersSchema, { userIds: [] });
+    expect(data.userIds).toEqual([]);
+  });
+
+  it('rejects more than 2000 ids', () => {
+    const userIds = Array.from({ length: 2001 }, () => USER_ID);
+    expect(err(setAssignmentManagersSchema, { userIds })).toEqual(expect.any(String));
+  });
+
+  it('rejects non-UUID entries', () => {
+    expect(err(setAssignmentManagersSchema, { userIds: ['nope'] })).toEqual(expect.any(String));
+  });
+});
+
+describe('updateUserGroupSchema', () => {
+  it('accepts assignmentId with a group UUID', () => {
+    const data = ok(updateUserGroupSchema, { assignmentId: ASSIGNMENT_ID, groupId: GROUP_ID });
+    expect(data.assignmentId).toBe(ASSIGNMENT_ID);
+    expect(data.groupId).toBe(GROUP_ID);
+  });
+
+  it('accepts groupId as null (remove from group)', () => {
+    const data = ok(updateUserGroupSchema, { assignmentId: ASSIGNMENT_ID, groupId: null });
+    expect(data.groupId).toBeNull();
+  });
+
+  it('rejects a missing assignmentId', () => {
+    expect(err(updateUserGroupSchema, { groupId: GROUP_ID })).toEqual(expect.any(String));
+  });
+
+  it('rejects a non-UUID groupId', () => {
+    expect(err(updateUserGroupSchema, { assignmentId: ASSIGNMENT_ID, groupId: 'nope' })).toEqual(expect.any(String));
+  });
+});
+
+describe('bulkCreateGroupsSchema', () => {
+  it('accepts an assignmentId with a list of group items', () => {
+    const data = ok(bulkCreateGroupsSchema, {
+      assignmentId: ASSIGNMENT_ID,
+      groups: [{ name: 'Team A' }, { name: 'Team B', enabled: false, maxMembers: 5 }],
+    });
+    expect(data.assignmentId).toBe(ASSIGNMENT_ID);
+    expect(data.groups).toHaveLength(2);
+  });
+
+  it('rejects an empty groups list', () => {
+    expect(err(bulkCreateGroupsSchema, { assignmentId: ASSIGNMENT_ID, groups: [] })).toEqual(expect.any(String));
+  });
+
+  it('rejects more groups than BULK_CREATE_MAX', () => {
+    const groups = Array.from({ length: BULK_CREATE_MAX + 1 }, (_, i) => ({ name: `G${i}` }));
+    expect(err(bulkCreateGroupsSchema, { assignmentId: ASSIGNMENT_ID, groups })).toEqual(expect.any(String));
+  });
+
+  it('rejects a missing assignmentId', () => {
+    expect(err(bulkCreateGroupsSchema, { groups: [{ name: 'Team A' }] })).toEqual(expect.any(String));
+  });
+
+  it('rejects an invalid group item (empty name)', () => {
+    expect(err(bulkCreateGroupsSchema, { assignmentId: ASSIGNMENT_ID, groups: [{ name: '' }] })).toBe(
+      'Group name is required'
+    );
   });
 });

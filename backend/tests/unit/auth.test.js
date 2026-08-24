@@ -8,6 +8,7 @@ jest.mock('../../src/models/User', () => ({
   update: jest.fn(),
   updateGroup: jest.fn(),
   updatePassword: jest.fn(),
+  hashPassword: jest.fn(),
   activate: jest.fn(),
   delete: jest.fn(),
   verifyPassword: jest.fn(),
@@ -23,6 +24,7 @@ jest.mock('../../src/models/Role', () => ({
 jest.mock('../../src/models/PasswordResetToken', () => ({
   create: jest.fn(),
   findByToken: jest.fn(),
+  redeem: jest.fn(),
   markUsed: jest.fn(),
   deleteStaleForUser: jest.fn(),
   deleteExpired: jest.fn().mockResolvedValue(0),
@@ -32,6 +34,18 @@ jest.mock('../../src/services/email', () => ({
   sendPasswordResetEmail: jest.fn(),
   sendPasswordSetupEmail: jest.fn(),
   sendEmail: jest.fn(),
+}));
+
+jest.mock('../../src/models/Subject', () => ({
+  findForUser: jest.fn(),
+}));
+
+jest.mock('../../src/models/Assignment', () => ({
+  findManagedBy: jest.fn(),
+}));
+
+jest.mock('../../src/models/UserGroup', () => ({
+  findMembershipsForUser: jest.fn(),
 }));
 
 jest.mock('../../src/config/index', () => ({
@@ -51,11 +65,18 @@ jest.mock('../../src/utils/logger', () => ({
 
 const User = require('../../src/models/User');
 const Role = require('../../src/models/Role');
+const Subject = require('../../src/models/Subject');
+const Assignment = require('../../src/models/Assignment');
+const UserGroup = require('../../src/models/UserGroup');
 const PasswordResetToken = require('../../src/models/PasswordResetToken');
 const { sendPasswordResetEmail } = require('../../src/services/email');
 const config = require('../../src/config/index');
 
 describe('Auth Routes', () => {
+  const SUBJECT_ID = '30000000-0000-4000-8000-000000000001';
+  const ASSIGNMENT_ID = '40000000-0000-4000-8000-000000000001';
+  const GROUP_ID = '10000000-0000-4000-8000-000000000001';
+
   let mockReply;
   let mockFastify;
   let capturedHandlers;
@@ -87,6 +108,11 @@ describe('Auth Routes', () => {
       }),
       generateToken: jest.fn().mockResolvedValue('mock-token'),
     };
+
+    // Default hierarchy enrichment mocks
+    Subject.findForUser.mockResolvedValue([]);
+    UserGroup.findMembershipsForUser.mockResolvedValue([]);
+    Assignment.findManagedBy.mockResolvedValue([]);
   });
 
   describe('POST /auth/register', () => {
@@ -484,34 +510,45 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid credentials' });
     });
 
-    it('successfully logs in user', async () => {
+    it('successfully logs in user with subjects and memberships and no group claims in the JWT', async () => {
       const mockUser = {
         id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
+        first_name: 'Test',
+        last_name: 'User',
         enabled: true,
         password_hash: 'hash',
         role_name: 'admin',
-        group_id: '10000000-0000-4000-8000-000000000001',
-        group_name: 'Team A',
         student_id: 'S123',
       };
       User.findByUsername.mockResolvedValue(mockUser);
       User.verifyPassword.mockResolvedValue(true);
       mockFastify.generateToken.mockResolvedValue('jwt-token-123');
+      Subject.findForUser.mockResolvedValue([{ id: SUBJECT_ID, name: 'Subject 1', created_at: 'now' }]);
+      const memberships = [
+        {
+          assignment_id: ASSIGNMENT_ID,
+          assignment_name: 'Assignment 1',
+          subject_id: SUBJECT_ID,
+          subject_name: 'Subject 1',
+          group_id: GROUP_ID,
+          group_name: 'Group 1',
+        },
+      ];
+      UserGroup.findMembershipsForUser.mockResolvedValue(memberships);
 
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
       await capturedHandlers['/auth/login']({ body: { username: 'testuser', password: 'correctpassword' } }, mockReply);
 
+      // JWT payload must contain only id/username/email/role — no groupId/groupName claims
       expect(mockFastify.generateToken).toHaveBeenCalledWith({
         id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
         role: 'admin',
-        groupId: '10000000-0000-4000-8000-000000000001',
-        groupName: 'Team A',
       });
       expect(mockReply.send).toHaveBeenCalledWith({
         message: 'Login successful',
@@ -520,12 +557,73 @@ describe('Auth Routes', () => {
           id: '00000000-0000-4000-8000-000000000001',
           username: 'testuser',
           email: 'test@test.com',
+          firstName: 'Test',
+          lastName: 'User',
           role: 'admin',
-          groupId: '10000000-0000-4000-8000-000000000001',
-          groupName: 'Team A',
           studentId: 'S123',
+          subjects: [{ id: SUBJECT_ID, name: 'Subject 1' }],
+          memberships,
+          managedAssignments: [],
         },
       });
+    });
+
+    it('includes managedAssignments for assignment_manager login', async () => {
+      const mockUser = {
+        id: '00000000-0000-4000-8000-000000000002',
+        username: 'manager',
+        email: 'am@test.com',
+        first_name: 'Man',
+        last_name: 'Ager',
+        enabled: true,
+        password_hash: 'hash',
+        role_name: 'assignment_manager',
+        student_id: null,
+      };
+      User.findByUsername.mockResolvedValue(mockUser);
+      User.verifyPassword.mockResolvedValue(true);
+      const managed = [{ id: ASSIGNMENT_ID, name: 'Assignment 1', subject_id: SUBJECT_ID, subject_name: 'Subject 1' }];
+      Assignment.findManagedBy.mockResolvedValue(managed);
+
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/login']({ body: { username: 'manager', password: 'correctpassword' } }, mockReply);
+
+      expect(Assignment.findManagedBy).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002');
+      expect(mockReply.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: expect.objectContaining({ role: 'assignment_manager', managedAssignments: managed }),
+        })
+      );
+    });
+
+    it('does not query managed assignments for regular user login', async () => {
+      const mockUser = {
+        id: '00000000-0000-4000-8000-000000000003',
+        username: 'regular',
+        email: 'reg@test.com',
+        first_name: 'Reg',
+        last_name: 'User',
+        enabled: true,
+        password_hash: 'hash',
+        role_name: 'user',
+        student_id: null,
+      };
+      User.findByUsername.mockResolvedValue(mockUser);
+      User.verifyPassword.mockResolvedValue(true);
+
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      await capturedHandlers['/auth/login']({ body: { username: 'regular', password: 'correctpassword' } }, mockReply);
+
+      expect(Assignment.findManagedBy).not.toHaveBeenCalled();
+      expect(mockReply.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: expect.objectContaining({ managedAssignments: [] }),
+        })
+      );
     });
 
     it('handles login error', async () => {
@@ -608,7 +706,7 @@ describe('Auth Routes', () => {
       expect(result).toBeUndefined();
     });
 
-    it('returns current user info', async () => {
+    it('returns current user info enriched with subjects, memberships and managedAssignments', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
@@ -616,11 +714,23 @@ describe('Auth Routes', () => {
         id: '00000000-0000-4000-8000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
+        first_name: 'Test',
+        last_name: 'User',
         role_name: 'admin',
-        group_id: '10000000-0000-4000-8000-000000000001',
-        group_name: 'Team A',
         student_id: null,
       });
+      Subject.findForUser.mockResolvedValue([{ id: SUBJECT_ID, name: 'Subject 1', created_at: 'now' }]);
+      const memberships = [
+        {
+          assignment_id: ASSIGNMENT_ID,
+          assignment_name: 'Assignment 1',
+          subject_id: SUBJECT_ID,
+          subject_name: 'Subject 1',
+          group_id: GROUP_ID,
+          group_name: 'Group 1',
+        },
+      ];
+      UserGroup.findMembershipsForUser.mockResolvedValue(memberships);
 
       const request = {
         user: {
@@ -628,24 +738,55 @@ describe('Auth Routes', () => {
           username: 'testuser',
           email: 'test@test.com',
           role: 'admin',
-          groupId: '10000000-0000-4000-8000-000000000001',
-          groupName: 'Team A',
         },
       };
 
       await capturedHandlers['/auth/me'](request, mockReply);
 
       expect(User.findById).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
+      expect(Subject.findForUser).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
+      expect(UserGroup.findMembershipsForUser).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
       expect(mockReply.send).toHaveBeenCalledWith({
         user: {
           id: '00000000-0000-4000-8000-000000000001',
           username: 'testuser',
           email: 'test@test.com',
+          firstName: 'Test',
+          lastName: 'User',
           role: 'admin',
-          groupId: '10000000-0000-4000-8000-000000000001',
-          groupName: 'Team A',
           studentId: null,
+          subjects: [{ id: SUBJECT_ID, name: 'Subject 1' }],
+          memberships,
+          managedAssignments: [],
         },
+      });
+    });
+
+    it('includes managedAssignments for assignment_manager in /auth/me', async () => {
+      const authRoutes = require('../../src/routes/auth');
+      authRoutes(mockFastify, {});
+
+      User.findById.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000002',
+        username: 'manager',
+        email: 'am@test.com',
+        first_name: 'Man',
+        last_name: 'Ager',
+        role_name: 'assignment_manager',
+        student_id: null,
+      });
+      const managed = [{ id: ASSIGNMENT_ID, name: 'Assignment 1', subject_id: SUBJECT_ID, subject_name: 'Subject 1' }];
+      Assignment.findManagedBy.mockResolvedValue(managed);
+
+      const request = { user: { id: '00000000-0000-4000-8000-000000000002' } };
+      await capturedHandlers['/auth/me'](request, mockReply);
+
+      expect(Assignment.findManagedBy).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002');
+      expect(mockReply.send).toHaveBeenCalledWith({
+        user: expect.objectContaining({
+          role: 'assignment_manager',
+          managedAssignments: managed,
+        }),
       });
     });
 
@@ -802,46 +943,12 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Password must be at least 6 characters' });
     });
 
-    it('calls deleteExpired before looking up token', async () => {
+    it('rejects a token that redeem reports as invalid, used, or expired', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockResolvedValue(null);
-
-      await capturedHandlers['/auth/set-password']({ body: { token: 'sometoken', password: 'newpass1' } }, mockReply);
-
-      expect(PasswordResetToken.deleteExpired).toHaveBeenCalled();
-      const deleteExpiredOrder = PasswordResetToken.deleteExpired.mock.invocationCallOrder[0];
-      const findByTokenOrder = PasswordResetToken.findByToken.mock.invocationCallOrder[0];
-      expect(deleteExpiredOrder).toBeLessThan(findByTokenOrder);
-    });
-
-    it('returns 400 for expired token', async () => {
-      const authRoutes = require('../../src/routes/auth');
-      authRoutes(mockFastify, {});
-
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't1',
-        user_id: 'u1',
-        token_type: 'reset',
-        used: false,
-        expires_at: new Date(Date.now() - 3600000), // 1 hour in the past
-      });
-
-      await capturedHandlers['/auth/set-password'](
-        { body: { token: 'expiredtoken', password: 'newpass1' } },
-        mockReply
-      );
-
-      expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
-    });
-
-    it('returns 400 when token is invalid or expired', async () => {
-      const authRoutes = require('../../src/routes/auth');
-      authRoutes(mockFastify, {});
-
-      PasswordResetToken.findByToken.mockResolvedValue(null);
+      User.hashPassword.mockResolvedValue('hashed');
+      PasswordResetToken.redeem.mockResolvedValue(null);
 
       await capturedHandlers['/auth/set-password']({ body: { token: 'badtoken', password: 'newpass1' } }, mockReply);
 
@@ -849,95 +956,60 @@ describe('Auth Routes', () => {
       expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
     });
 
-    it('returns 400 when token is already used', async () => {
+    it('hashes the password before opening the transaction, then redeems', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't1',
-        user_id: 'u1',
-        token_type: 'reset',
-        used: true,
-        expires_at: new Date(Date.now() + 3600000),
-      });
+      User.hashPassword.mockResolvedValue('hashed-newpass1');
+      PasswordResetToken.redeem.mockResolvedValue({ userId: 'u1', tokenType: 'reset' });
 
-      await capturedHandlers['/auth/set-password']({ body: { token: 'usedtoken', password: 'newpass1' } }, mockReply);
+      await capturedHandlers['/auth/set-password']({ body: { token: 'goodtoken', password: 'newpass1' } }, mockReply);
 
-      expect(mockReply.code).toHaveBeenCalledWith(400);
-      expect(mockReply.send).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
+      expect(User.hashPassword).toHaveBeenCalledWith('newpass1');
+      // bcrypt must not run while the transaction is open
+      expect(User.hashPassword.mock.invocationCallOrder[0]).toBeLessThan(
+        PasswordResetToken.redeem.mock.invocationCallOrder[0]
+      );
+      expect(PasswordResetToken.redeem).toHaveBeenCalledWith('goodtoken', 'hashed-newpass1');
+      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
     });
 
-    it('sets password and returns success for reset token', async () => {
+    // The consume-and-write is one transaction in the model, so the route must not
+    // mark the token or update the password itself.
+    it('does not mark the token or write the password outside the transaction', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't1',
-        user_id: '00000000-0000-4000-8000-000000000001',
-        token_type: 'reset',
-        used: false,
-        expires_at: new Date(Date.now() + 3600000),
-      });
-      User.updatePassword.mockResolvedValue();
-      PasswordResetToken.markUsed.mockResolvedValue();
+      User.hashPassword.mockResolvedValue('hashed');
+      PasswordResetToken.redeem.mockResolvedValue({ userId: 'u1', tokenType: 'setup' });
 
-      await capturedHandlers['/auth/set-password']({ body: { token: 'validtoken', password: 'newpass1' } }, mockReply);
+      await capturedHandlers['/auth/set-password']({ body: { token: 'tok', password: 'newpass1' } }, mockReply);
 
-      expect(User.updatePassword).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', 'newpass1');
+      expect(PasswordResetToken.markUsed).not.toHaveBeenCalled();
+      expect(User.updatePassword).not.toHaveBeenCalled();
       expect(User.activate).not.toHaveBeenCalled();
-      expect(PasswordResetToken.markUsed).toHaveBeenCalledWith('t1');
-      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
     });
 
-    it('calls markUsed before updatePassword to prevent token replay', async () => {
+    it('purges expired tokens before redeeming', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't1',
-        user_id: '00000000-0000-4000-8000-000000000001',
-        token_type: 'reset',
-        used: false,
-        expires_at: new Date(Date.now() + 3600000),
-      });
-      User.updatePassword.mockResolvedValue();
-      PasswordResetToken.markUsed.mockResolvedValue();
+      User.hashPassword.mockResolvedValue('hashed');
+      PasswordResetToken.redeem.mockResolvedValue({ userId: 'u1', tokenType: 'reset' });
 
-      await capturedHandlers['/auth/set-password']({ body: { token: 'validtoken', password: 'newpass1' } }, mockReply);
+      await capturedHandlers['/auth/set-password']({ body: { token: 'tok', password: 'newpass1' } }, mockReply);
 
-      expect(PasswordResetToken.markUsed).toHaveBeenCalledTimes(1);
-      expect(User.updatePassword).toHaveBeenCalledTimes(1);
-      const markUsedOrder = PasswordResetToken.markUsed.mock.invocationCallOrder[0];
-      const updatePasswordOrder = User.updatePassword.mock.invocationCallOrder[0];
-      expect(markUsedOrder).toBeLessThan(updatePasswordOrder);
-    });
-
-    it('activates user when token type is setup', async () => {
-      const authRoutes = require('../../src/routes/auth');
-      authRoutes(mockFastify, {});
-
-      PasswordResetToken.findByToken.mockResolvedValue({
-        id: 't2',
-        user_id: '00000000-0000-4000-8000-000000000002',
-        token_type: 'setup',
-        used: false,
-        expires_at: new Date(Date.now() + 3600000),
-      });
-      User.updatePassword.mockResolvedValue();
-      User.activate.mockResolvedValue();
-      PasswordResetToken.markUsed.mockResolvedValue();
-
-      await capturedHandlers['/auth/set-password']({ body: { token: 'setuptoken', password: 'newpass1' } }, mockReply);
-
-      expect(User.activate).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002');
-      expect(mockReply.send).toHaveBeenCalledWith({ message: 'Password set successfully. You can now log in.' });
+      expect(PasswordResetToken.deleteExpired.mock.invocationCallOrder[0]).toBeLessThan(
+        PasswordResetToken.redeem.mock.invocationCallOrder[0]
+      );
     });
 
     it('returns 500 on unexpected error', async () => {
       const authRoutes = require('../../src/routes/auth');
       authRoutes(mockFastify, {});
 
-      PasswordResetToken.findByToken.mockRejectedValue(new Error('DB error'));
+      User.hashPassword.mockResolvedValue('hashed');
+      PasswordResetToken.redeem.mockRejectedValue(new Error('DB error'));
 
       await capturedHandlers['/auth/set-password']({ body: { token: 'sometoken', password: 'newpass1' } }, mockReply);
 

@@ -4,19 +4,32 @@ const { test, expect } = require('@playwright/test');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { cleanDatabase, createGroup, createUser, assignUserToGroup } = require('../helpers/db');
+const {
+  cleanDatabase,
+  createGroup,
+  createUser,
+  createHierarchy,
+  addUserToSubject,
+  assignUserToGroup,
+} = require('../helpers/db');
 const { loginAsAdmin } = require('../helpers/auth');
 
 test.describe('Groups — Advanced Admin Features', () => {
+  let subject;
+  let assignment;
+
   test.beforeEach(async () => {
     await cleanDatabase();
+    ({ subject, assignment } = await createHierarchy({ subjectName: 'Adv Subject', assignmentName: 'Adv Assignment' }));
   });
+
+  const groupsUrl = () => `/subjects/${subject.id}/assignments/${assignment.id}`;
 
   // ── Bulk Create ────────────────────────────────────────────────────────────
 
   test('bulk create groups with prefix and count', async ({ page }) => {
     await loginAsAdmin(page);
-    await page.goto('/groups');
+    await page.goto(groupsUrl());
     await page.getByRole('button', { name: 'Bulk Create' }).click();
     await expect(page.getByText('Bulk Create Groups')).toBeVisible();
 
@@ -35,7 +48,7 @@ test.describe('Groups — Advanced Admin Features', () => {
 
   test('bulk create with member limit sets max_members on all groups', async ({ page }) => {
     await loginAsAdmin(page);
-    await page.goto('/groups');
+    await page.goto(groupsUrl());
     await page.getByRole('button', { name: 'Bulk Create' }).click();
     await page.getByPlaceholder('e.g. Team').fill('LimitedGroup');
     await page.getByPlaceholder('e.g. 10').fill('2');
@@ -51,9 +64,9 @@ test.describe('Groups — Advanced Admin Features', () => {
   // ── Enable / Disable toggle ────────────────────────────────────────────────
 
   test('admin can disable an enabled group', async ({ page }) => {
-    await createGroup({ name: 'ActiveGroup', enabled: true });
+    await createGroup({ assignmentId: assignment.id, name: 'ActiveGroup', enabled: true });
     await loginAsAdmin(page);
-    await page.goto('/groups');
+    await page.goto(groupsUrl());
     const row = page.locator('table tbody tr').filter({ hasText: 'ActiveGroup' });
     await row.locator('button[aria-label="Disable Group"]').click();
     await expect(page.getByText('Group disabled successfully')).toBeVisible({ timeout: 5000 });
@@ -61,9 +74,9 @@ test.describe('Groups — Advanced Admin Features', () => {
   });
 
   test('admin can re-enable a disabled group', async ({ page }) => {
-    await createGroup({ name: 'DisabledGroup', enabled: false });
+    await createGroup({ assignmentId: assignment.id, name: 'DisabledGroup', enabled: false });
     await loginAsAdmin(page);
-    await page.goto('/groups');
+    await page.goto(groupsUrl());
     const row = page.locator('table tbody tr').filter({ hasText: 'DisabledGroup' });
     await row.locator('button[aria-label="Enable Group"]').click();
     await expect(page.getByText('Group enabled successfully')).toBeVisible({ timeout: 5000 });
@@ -73,9 +86,9 @@ test.describe('Groups — Advanced Admin Features', () => {
   // ── Set Member Limit ───────────────────────────────────────────────────────
 
   test('admin can set a member limit on a group', async ({ page }) => {
-    await createGroup({ name: 'LimitGroup' });
+    await createGroup({ assignmentId: assignment.id, name: 'LimitGroup' });
     await loginAsAdmin(page);
-    await page.goto('/groups');
+    await page.goto(groupsUrl());
     const row = page.locator('table tbody tr').filter({ hasText: 'LimitGroup' });
     await row.locator('button[aria-label="Set Member Limit"]').click();
     // Use heading role to avoid strict mode violation with tooltip spans
@@ -87,9 +100,9 @@ test.describe('Groups — Advanced Admin Features', () => {
   });
 
   test('admin can remove a member limit (set to unlimited)', async ({ page }) => {
-    await createGroup({ name: 'LimitedGroup2', maxMembers: 5 });
+    await createGroup({ assignmentId: assignment.id, name: 'LimitedGroup2', maxMembers: 5 });
     await loginAsAdmin(page);
-    await page.goto('/groups');
+    await page.goto(groupsUrl());
     const row = page.locator('table tbody tr').filter({ hasText: 'LimitedGroup2' });
     await row.locator('button[aria-label="Set Member Limit"]').click();
     await page.getByPlaceholder('Unlimited').clear();
@@ -101,11 +114,11 @@ test.describe('Groups — Advanced Admin Features', () => {
   // ── Export Mappings ────────────────────────────────────────────────────────
 
   test('export mappings button triggers a CSV download', async ({ page }) => {
-    const group = await createGroup({ name: 'ExportGroup' });
+    const group = await createGroup({ assignmentId: assignment.id, name: 'ExportGroup' });
     await createUser({ username: 'exportuser', email: 'exportuser@test.com' });
     await assignUserToGroup('exportuser', group.id);
     await loginAsAdmin(page);
-    await page.goto('/groups');
+    await page.goto(groupsUrl());
 
     const [download] = await Promise.all([
       page.waitForEvent('download'),
@@ -117,8 +130,10 @@ test.describe('Groups — Advanced Admin Features', () => {
   // ── Import Group Mappings (CSV wizard) ────────────────────────────────────
 
   test('import group mappings wizard: upload CSV, preview, and import', async ({ page }) => {
-    await createGroup({ name: 'ImportTarget' });
-    await createUser({ username: 'importtarget', email: 'importtarget@test.com' });
+    await createGroup({ assignmentId: assignment.id, name: 'ImportTarget' });
+    const importUser = await createUser({ username: 'importtarget', email: 'importtarget@test.com' });
+    // The universal placement rule requires the user to be a subject member
+    await addUserToSubject(importUser.id, subject.id);
 
     const csvContent = `email,group\nimporttarget@test.com,ImportTarget\n`;
     const tmpFile = path.join(os.tmpdir(), 'test-mappings.csv');
@@ -126,7 +141,8 @@ test.describe('Groups — Advanced Admin Features', () => {
 
     try {
       await loginAsAdmin(page);
-      await page.goto('/groups/import');
+      // Query params preselect the Subject → Assignment cascade
+      await page.goto(`/groups/import?subjectId=${subject.id}&assignmentId=${assignment.id}`);
 
       // Hidden file input — use setInputFiles to bypass browser file picker
       await page.locator('input[aria-label="Upload CSV file"]').setInputFiles(tmpFile);
@@ -149,15 +165,24 @@ test.describe('Groups — Advanced Admin Features', () => {
     }
   });
 
+  test('import group mappings wizard requires choosing an assignment first', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto('/groups/import');
+    await expect(page.getByText('Select a subject and assignment to continue.')).toBeVisible();
+    // The upload dropzone is gated behind the cascade selection
+    await expect(page.locator('input[aria-label="Upload CSV file"]')).toHaveCount(0);
+  });
+
   test('import group mappings shows "Group not found" for unknown groups', async ({ page }) => {
-    await createUser({ username: 'missinggroup', email: 'missinggroup@test.com' });
+    const missingUser = await createUser({ username: 'missinggroup', email: 'missinggroup@test.com' });
+    await addUserToSubject(missingUser.id, subject.id);
     const csvContent = `email,group\nmissinggroup@test.com,NoSuchGroup\n`;
     const tmpFile = path.join(os.tmpdir(), 'test-missing.csv');
     fs.writeFileSync(tmpFile, csvContent);
 
     try {
       await loginAsAdmin(page);
-      await page.goto('/groups/import');
+      await page.goto(`/groups/import?subjectId=${subject.id}&assignmentId=${assignment.id}`);
       await page.locator('input[aria-label="Upload CSV file"]').setInputFiles(tmpFile);
       await expect(page.getByRole('heading', { name: 'Preview' })).toBeVisible({ timeout: 10000 });
       await expect(page.getByText('Group not found')).toBeVisible();

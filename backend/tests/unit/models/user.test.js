@@ -3,6 +3,7 @@ const User = require('../../../src/models/User');
 // Mock the database pool
 jest.mock('../../../src/db/pool', () => ({
   query: jest.fn(),
+  connect: jest.fn(),
 }));
 
 // Mock bcrypt
@@ -14,26 +15,29 @@ jest.mock('bcryptjs', () => ({
 const bcrypt = require('bcryptjs');
 const pool = require('../../../src/db/pool');
 
+const SUBJECT_ID = 's0000000-0000-4000-8000-000000000001';
+const ASSIGNMENT_ID = 'a0000000-0000-4000-8000-000000000001';
+const GROUP_ID = 'g0000000-0000-4000-8000-000000000001';
+const MANAGER_ID = 'm0000000-0000-4000-8000-000000000001';
+
 describe('User Model', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   describe('findAll', () => {
-    it('returns all users with group and role info', async () => {
+    it('returns all users with role info', async () => {
       const mockUsers = [
         {
           id: 'u0000000-0000-0000-0000-000000000001',
           username: 'user1',
           email: 'user1@test.com',
-          group_name: 'Team A',
           role_name: 'user',
         },
         {
           id: 'u0000000-0000-0000-0000-000000000002',
           username: 'user2',
           email: 'user2@test.com',
-          group_name: 'Team B',
           role_name: 'admin',
         },
       ];
@@ -45,12 +49,109 @@ describe('User Model', () => {
       expect(result).toEqual(mockUsers);
     });
 
+    it('does not join or select from groups', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findAll();
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('LEFT JOIN groups');
+      expect(sql).not.toContain('group_id');
+      expect(sql).not.toContain('group_name');
+    });
+
     it('returns empty array when no users', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
       const result = await User.findAll();
 
       expect(result).toEqual([]);
+    });
+
+    it('filters by role', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findAll({ role: 'admin' });
+
+      const [sql, values] = pool.query.mock.calls[0];
+      expect(sql).toContain('r.name = $1');
+      expect(values).toEqual(['admin']);
+    });
+
+    it('filters by status', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findAll({ status: 'pending' });
+
+      const [sql, values] = pool.query.mock.calls[0];
+      expect(sql).toContain('u.status = $1');
+      expect(values).toEqual(['pending']);
+    });
+
+    it('filters by subjectId using user_subjects EXISTS', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findAll({ subjectId: SUBJECT_ID });
+
+      const [sql, values] = pool.query.mock.calls[0];
+      expect(sql).toContain('FROM user_subjects us');
+      expect(sql).toContain('us.subject_id = $1');
+      expect(values).toEqual([SUBJECT_ID]);
+    });
+
+    it('filters by groupId using user_groups EXISTS', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findAll({ groupId: GROUP_ID });
+
+      const [sql, values] = pool.query.mock.calls[0];
+      expect(sql).toContain('FROM user_groups ug');
+      expect(sql).toContain('ug.group_id = $1');
+      expect(values).toEqual([GROUP_ID]);
+    });
+
+    it('filters ungrouped users of an assignment when groupId is "none" with assignmentId', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findAll({ assignmentId: ASSIGNMENT_ID, groupId: 'none' });
+
+      const [sql, values] = pool.query.mock.calls[0];
+      // Enrolled in the assignment's subject...
+      expect(sql).toContain('JOIN assignments a ON a.subject_id = us.subject_id');
+      expect(sql).toContain('a.id = $1');
+      // ...but with no user_groups row for the assignment
+      expect(sql).toContain('NOT EXISTS');
+      expect(sql).toContain('ug.assignment_id = $2');
+      expect(values).toEqual([ASSIGNMENT_ID, ASSIGNMENT_ID]);
+    });
+
+    it('scopes users by managedBy via assignment_managers', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findAll({ managedBy: MANAGER_ID });
+
+      const [sql, values] = pool.query.mock.calls[0];
+      expect(sql).toContain('JOIN assignment_managers am ON am.assignment_id = a.id');
+      expect(sql).toContain('am.user_id = $1');
+      expect(values).toEqual([MANAGER_ID]);
+    });
+
+    it('combines multiple filters with sequential placeholders', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findAll({ role: 'user', status: 'active', subjectId: SUBJECT_ID });
+
+      const [sql, values] = pool.query.mock.calls[0];
+      expect(sql).toContain('r.name = $1');
+      expect(sql).toContain('u.status = $2');
+      expect(sql).toContain('us.subject_id = $3');
+      expect(values).toEqual(['user', 'active', SUBJECT_ID]);
+    });
+
+    it('propagates DB error', async () => {
+      pool.query.mockRejectedValue(new Error('connection refused'));
+
+      await expect(User.findAll()).rejects.toThrow('connection refused');
     });
   });
 
@@ -71,6 +172,17 @@ describe('User Model', () => {
         ['u0000000-0000-0000-0000-000000000001', 'u0000000-0000-0000-0000-000000000002'],
       ]);
       expect(result).toEqual(mockUsers);
+    });
+
+    it('does not join or select from groups', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findByIds(['u0000000-0000-0000-0000-000000000001']);
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('LEFT JOIN groups');
+      expect(sql).not.toContain('group_id');
+      expect(sql).not.toContain('group_name');
     });
 
     it('returns empty array without querying when ids is empty', async () => {
@@ -95,12 +207,11 @@ describe('User Model', () => {
   });
 
   describe('findById', () => {
-    it('returns user by id with group and role info', async () => {
+    it('returns user by id with role info', async () => {
       const mockUser = {
         id: 'u0000000-0000-0000-0000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
-        group_name: 'Team A',
         role_name: 'user',
       };
       pool.query.mockResolvedValue({ rows: [mockUser] });
@@ -111,6 +222,17 @@ describe('User Model', () => {
         'u0000000-0000-0000-0000-000000000001',
       ]);
       expect(result).toEqual(mockUser);
+    });
+
+    it('does not join or select from groups', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findById('u0000000-0000-0000-0000-000000000001');
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('LEFT JOIN groups');
+      expect(sql).not.toContain('group_id');
+      expect(sql).not.toContain('group_name');
     });
 
     it('returns null when user not found', async () => {
@@ -128,7 +250,6 @@ describe('User Model', () => {
         id: 'u0000000-0000-0000-0000-000000000001',
         username: 'testuser',
         password_hash: 'hashed123',
-        group_name: 'Team A',
         role_name: 'user',
       };
       pool.query.mockResolvedValue({ rows: [mockUser] });
@@ -139,6 +260,17 @@ describe('User Model', () => {
         'testuser',
       ]);
       expect(result).toEqual(mockUser);
+    });
+
+    it('does not join or select from groups', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findByUsername('testuser');
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('LEFT JOIN groups');
+      expect(sql).not.toContain('group_id');
+      expect(sql).not.toContain('group_name');
     });
 
     it('returns null when username not found', async () => {
@@ -160,10 +292,20 @@ describe('User Model', () => {
 
       const result = await User.findByEmails(['a@test.com', 'b@test.com']);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.email = ANY($1)'), [
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE LOWER(u.email) = ANY($1)'), [
         ['a@test.com', 'b@test.com'],
       ]);
       expect(result).toEqual(mockUsers);
+    });
+
+    it('does not select group columns', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findByEmails(['a@test.com']);
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('group_id');
+      expect(sql).not.toContain('group_name');
     });
 
     it('returns empty array without querying when emails is empty', async () => {
@@ -213,6 +355,17 @@ describe('User Model', () => {
       expect(pool.query).toHaveBeenCalledWith(expect.any(String), [['upper', 'mixed']]);
     });
 
+    it('does not join or select from groups', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findByUsernames(['alice']);
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('LEFT JOIN groups');
+      expect(sql).not.toContain('group_id');
+      expect(sql).not.toContain('group_name');
+    });
+
     it('returns empty array without querying when usernames is empty', async () => {
       const result = await User.findByUsernames([]);
 
@@ -242,6 +395,16 @@ describe('User Model', () => {
         ['S001', 'S002'],
       ]);
       expect(result).toEqual(mockUsers);
+    });
+
+    it('does not select group columns', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findByStudentIds(['S001']);
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('group_id');
+      expect(sql).not.toContain('group_name');
     });
 
     it('returns empty array without querying when studentIds is empty', async () => {
@@ -282,6 +445,16 @@ describe('User Model', () => {
       expect(result).toEqual(mockUser);
     });
 
+    it('does not select group columns', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findByStudentId('S001');
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('group_id');
+      expect(sql).not.toContain('group_name');
+    });
+
     it('returns null when no row matches', async () => {
       pool.query.mockResolvedValue({ rows: [] });
 
@@ -302,8 +475,20 @@ describe('User Model', () => {
 
       const result = await User.findByEmail('test@test.com');
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE u.email = $1'), ['test@test.com']);
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WHERE LOWER(u.email) = LOWER($1)'), [
+        'test@test.com',
+      ]);
       expect(result).toEqual(mockUser);
+    });
+
+    it('does not select group columns', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await User.findByEmail('test@test.com');
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('group_id');
+      expect(sql).not.toContain('group_name');
     });
 
     it('returns null when email not found', async () => {
@@ -316,13 +501,12 @@ describe('User Model', () => {
   });
 
   describe('create', () => {
-    it('creates user with hashed password and default role', async () => {
+    it('creates user with hashed password (active status)', async () => {
       const userData = {
         username: 'newuser',
         email: 'new@test.com',
         password: 'password123',
         studentId: 'S123',
-        groupId: 'g0000000-0000-0000-0000-000000000001',
         roleId: 'r0000000-0000-0000-0000-000000000003',
       };
       const mockCreatedUser = {
@@ -331,6 +515,7 @@ describe('User Model', () => {
         email: 'new@test.com',
         student_id: 'S123',
         enabled: true,
+        status: 'active',
         created_at: new Date(),
       };
 
@@ -347,9 +532,58 @@ describe('User Model', () => {
         'newuser',
         'newuser',
         'S123',
-        'g0000000-0000-0000-0000-000000000001',
         'r0000000-0000-0000-0000-000000000003',
         'active',
+      ]);
+      expect(result).toEqual(mockCreatedUser);
+    });
+
+    it('does not insert a group_id column', async () => {
+      bcrypt.hash.mockResolvedValue('hashedPassword123');
+      pool.query.mockResolvedValue({ rows: [{}] });
+
+      await User.create({
+        username: 'newuser',
+        email: 'new@test.com',
+        password: 'password123',
+        roleId: 'r0000000-0000-0000-0000-000000000003',
+      });
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('group_id');
+    });
+
+    it('creates pending user without password (no hash)', async () => {
+      const userData = {
+        username: 'pendinguser',
+        email: 'pending@test.com',
+        studentId: null,
+        roleId: 'r0000000-0000-0000-0000-000000000003',
+      };
+      const mockCreatedUser = {
+        id: 'u0000000-0000-0000-0000-000000000001',
+        username: 'pendinguser',
+        email: 'pending@test.com',
+        student_id: null,
+        enabled: true,
+        status: 'pending',
+        created_at: new Date(),
+      };
+
+      pool.query.mockResolvedValue({ rows: [mockCreatedUser] });
+
+      const result = await User.create(userData);
+
+      expect(bcrypt.hash).not.toHaveBeenCalled();
+      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO users'), [
+        'pendinguser',
+        'pending@test.com',
+        null,
+        'pendinguser',
+        'pendinguser',
+        null,
+        'r0000000-0000-0000-0000-000000000003',
+        'pending',
       ]);
       expect(result).toEqual(mockCreatedUser);
     });
@@ -360,7 +594,6 @@ describe('User Model', () => {
         email: 'new@test.com',
         password: 'password123',
         studentId: null,
-        groupId: null,
         roleId: 'r0000000-0000-0000-0000-000000000003',
       };
       const mockCreatedUser = {
@@ -384,7 +617,6 @@ describe('User Model', () => {
         'newuser',
         'newuser',
         null,
-        null,
         'r0000000-0000-0000-0000-000000000003',
         'active',
       ]);
@@ -397,7 +629,6 @@ describe('User Model', () => {
         email: 'new@test.com',
         password: 'password123',
         studentId: null,
-        groupId: null,
         roleId: 'r0000000-0000-0000-0000-000000000003',
       };
 
@@ -413,7 +644,6 @@ describe('User Model', () => {
         email: 'admin@test.com',
         password: 'password123',
         studentId: null,
-        groupId: null,
         roleId: 'r0000000-0000-0000-0000-000000000001',
       };
       const mockCreatedUser = {
@@ -437,7 +667,6 @@ describe('User Model', () => {
         'adminuser',
         'adminuser',
         null,
-        null,
         'r0000000-0000-0000-0000-000000000001',
         'active',
       ]);
@@ -451,7 +680,6 @@ describe('User Model', () => {
         username: 'updateduser',
         email: 'updated@test.com',
         studentId: 'S456',
-        groupId: 'g0000000-0000-0000-0000-000000000002',
         roleId: 'r0000000-0000-0000-0000-000000000002',
         enabled: false,
       };
@@ -470,12 +698,24 @@ describe('User Model', () => {
         'updateduser',
         'updated@test.com',
         'S456',
-        'g0000000-0000-0000-0000-000000000002',
         'r0000000-0000-0000-0000-000000000002',
         false,
         'u0000000-0000-0000-0000-000000000001',
       ]);
       expect(result).toEqual(mockUpdatedUser);
+    });
+
+    it('ignores groupId and does not touch group_id', async () => {
+      pool.query.mockResolvedValue({ rows: [{}] });
+
+      await User.update('u0000000-0000-0000-0000-000000000001', {
+        username: 'updateduser',
+        groupId: 'g0000000-0000-0000-0000-000000000002',
+      });
+
+      const [sql, values] = pool.query.mock.calls[0];
+      expect(sql).not.toContain('group_id');
+      expect(values).toEqual(['updateduser', 'u0000000-0000-0000-0000-000000000001']);
     });
 
     it('updates user with partial fields', async () => {
@@ -510,53 +750,9 @@ describe('User Model', () => {
     });
   });
 
-  describe('updateGroup', () => {
-    it('updates user group', async () => {
-      const mockUpdatedUser = {
-        id: 'u0000000-0000-0000-0000-000000000001',
-        username: 'testuser',
-        group_id: 'g0000000-0000-0000-0000-000000000002',
-      };
-      pool.query.mockResolvedValue({ rows: [mockUpdatedUser] });
-
-      const result = await User.updateGroup(
-        'u0000000-0000-0000-0000-000000000001',
-        'g0000000-0000-0000-0000-000000000002'
-      );
-
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [
-        'g0000000-0000-0000-0000-000000000002',
-        'u0000000-0000-0000-0000-000000000001',
-      ]);
-      expect(result).toEqual(mockUpdatedUser);
-    });
-
-    it('sets group to null', async () => {
-      const mockUpdatedUser = {
-        id: 'u0000000-0000-0000-0000-000000000001',
-        username: 'testuser',
-        group_id: null,
-      };
-      pool.query.mockResolvedValue({ rows: [mockUpdatedUser] });
-
-      const result = await User.updateGroup('u0000000-0000-0000-0000-000000000001', null);
-
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), [
-        null,
-        'u0000000-0000-0000-0000-000000000001',
-      ]);
-      expect(result).toEqual(mockUpdatedUser);
-    });
-
-    it('returns undefined when user not found', async () => {
-      pool.query.mockResolvedValue({ rows: [] });
-
-      const result = await User.updateGroup(
-        'u0000000-0000-0000-0000-000000000999',
-        'g0000000-0000-0000-0000-000000000001'
-      );
-
-      expect(result).toBeUndefined();
+  describe('removed methods', () => {
+    it('no longer exposes updateGroup (membership lives in UserGroup)', () => {
+      expect(User.updateGroup).toBeUndefined();
     });
   });
 
@@ -601,28 +797,72 @@ describe('User Model', () => {
   });
 
   describe('delete', () => {
+    let mockClient;
+
+    beforeEach(() => {
+      mockClient = { query: jest.fn(), release: jest.fn() };
+      pool.connect.mockResolvedValue(mockClient);
+    });
+
+    /** Queue the transaction steps: BEGIN, advisory lock, survivor count, DELETE, COMMIT. */
+    const mockTransaction = ({ survivors, rows = [], rowCount = rows.length }) => {
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // pg_advisory_xact_lock
+        .mockResolvedValueOnce({ rows: [{ n: survivors }] }) // remaining enabled admins
+        .mockResolvedValueOnce({ rows, rowCount }) // DELETE ... RETURNING
+        .mockResolvedValueOnce({}); // COMMIT
+    };
+
     it('deletes user and returns deleted user', async () => {
       const mockDeletedUser = {
         id: 'u0000000-0000-0000-0000-000000000001',
         username: 'testuser',
         email: 'test@test.com',
       };
-      pool.query.mockResolvedValue({ rows: [mockDeletedUser] });
+      mockTransaction({ survivors: 1, rows: [mockDeletedUser] });
 
       const result = await User.delete('u0000000-0000-0000-0000-000000000001');
 
-      expect(pool.query).toHaveBeenCalledWith('DELETE FROM users WHERE id = $1 RETURNING *', [
-        'u0000000-0000-0000-0000-000000000001',
+      expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, 'DELETE FROM users WHERE id = ANY($1) RETURNING *', [
+        ['u0000000-0000-0000-0000-000000000001'],
       ]);
+      expect(mockClient.query).toHaveBeenLastCalledWith('COMMIT');
+      expect(mockClient.release).toHaveBeenCalled();
       expect(result).toEqual(mockDeletedUser);
     });
 
     it('returns undefined when user not found', async () => {
-      pool.query.mockResolvedValue({ rows: [] });
+      mockTransaction({ survivors: 1, rows: [] });
 
       const result = await User.delete('u0000000-0000-0000-0000-000000000999');
 
       expect(result).toBeUndefined();
+    });
+
+    it('refuses to delete the last enabled admin and rolls back', async () => {
+      mockTransaction({ survivors: 0 });
+
+      await expect(User.delete('u0000000-0000-0000-0000-000000000001')).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Cannot delete the last enabled admin account',
+      });
+      expect(mockClient.query).toHaveBeenLastCalledWith('ROLLBACK');
+      // The DELETE must never be issued
+      expect(mockClient.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM users'),
+        expect.anything()
+      );
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('serializes concurrent deletions on an advisory lock', async () => {
+      mockTransaction({ survivors: 2, rows: [{ id: 'x' }] });
+
+      await User.delete('x');
+
+      expect(mockClient.query).toHaveBeenNthCalledWith(2, 'SELECT pg_advisory_xact_lock($1)', [expect.any(Number)]);
     });
   });
 
@@ -736,27 +976,53 @@ describe('User Model', () => {
   });
 
   describe('bulkDelete', () => {
+    let mockClient;
+
+    beforeEach(() => {
+      mockClient = { query: jest.fn(), release: jest.fn() };
+      pool.connect.mockResolvedValue(mockClient);
+    });
+
+    const mockTransaction = ({ survivors, rowCount }) => {
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // advisory lock
+        .mockResolvedValueOnce({ rows: [{ n: survivors }] }) // remaining enabled admins
+        .mockResolvedValueOnce({ rows: [], rowCount }) // DELETE ... RETURNING
+        .mockResolvedValueOnce({}); // COMMIT
+    };
+
     it('executes DELETE … WHERE id = ANY and returns row count', async () => {
-      pool.query.mockResolvedValue({ rowCount: 2 });
+      mockTransaction({ survivors: 1, rowCount: 2 });
 
       const result = await User.bulkDelete(['id1', 'id2']);
 
-      expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM users'), [['id1', 'id2']]);
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, expect.stringContaining('DELETE FROM users'), [
+        ['id1', 'id2'],
+      ]);
       expect(result).toBe(2);
     });
 
     it('returns 0 when no rows matched', async () => {
-      pool.query.mockResolvedValue({ rowCount: 0 });
+      mockTransaction({ survivors: 1, rowCount: 0 });
 
       const result = await User.bulkDelete(['nonexistent-id']);
 
       expect(result).toBe(0);
     });
 
+    it('refuses a batch that would remove every enabled admin', async () => {
+      mockTransaction({ survivors: 0, rowCount: 0 });
+
+      await expect(User.bulkDelete(['admin-id'])).rejects.toMatchObject({ statusCode: 400 });
+      expect(mockClient.query).toHaveBeenLastCalledWith('ROLLBACK');
+    });
+
     it('propagates DB error', async () => {
-      pool.query.mockRejectedValue(new Error('connection refused'));
+      mockClient.query.mockRejectedValue(new Error('connection refused'));
 
       await expect(User.bulkDelete(['id1'])).rejects.toThrow('connection refused');
+      expect(mockClient.release).toHaveBeenCalled();
     });
   });
 });

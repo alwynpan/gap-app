@@ -25,16 +25,15 @@ backend/
     │   └── setupEnv.js                     # Set process.env from container config (runs before modules load)
     ├── helpers/
     │   ├── server.js                       # buildTestServer() / closeTestServer() helpers
-    │   └── db.js                           # cleanDatabase(), createUser(), createGroup(), loginAs(), getPool()
+    │   └── db.js                           # cleanDatabase(), createUser(), createSubject(), createAssignment(), createGroup({ assignmentId, ... }), addUserToSubject(), assignManager(), addUserToGroup(), loginAs(), getPool()
     ├── auth.test.js
     ├── users.test.js
     ├── groups.test.js
-    └── config.test.js
 ```
 
 ### Key design decisions
 
-- **One container per Jest run** — started in `globalSetup`, shared across all 4 test files, stopped in
+- **One container per Jest run** — started in `globalSetup`, shared across the API test files, stopped in
   `globalTeardown`. Faster than per-file containers.
 - **Test isolation** — each `beforeEach` calls `cleanDatabase()` which truncates `users` (except admin), `groups`,
   `config`, and `password_reset_tokens`. Roles and the admin user are preserved.
@@ -47,7 +46,19 @@ backend/
 
 ## Test Coverage
 
-### `auth.test.js` — 22 tests
+| Suite                 | Tests | Focus                                                                 |
+| --------------------- | ----: | --------------------------------------------------------------------- |
+| `users.test.js`       |    73 | User CRUD, AM subject scoping, bulk import/delete, setup emails       |
+| `groups.test.js`      |    55 | Group CRUD, capacity, join/leave, per-assignment placement            |
+| `assignments.test.js` |    54 | Assignment CRUD, manager assignment, join lock, mapping import/export |
+| `subjects.test.js`    |    53 | Subject CRUD, enrolment, per-subject suspension, cascade deletion     |
+| `auth.test.js`        |    30 | Login, registration, password reset, principal revocation             |
+| `migrations.test.js`  |     7 | Legacy pre-UUID database upgrade and convergence with a fresh install |
+| **Total**             |   272 |                                                                       |
+
+Sections below detail selected suites; `subjects.test.js` and `assignments.test.js` follow the same table conventions.
+
+### `auth.test.js` — 30 tests
 
 | Endpoint                         | Scenario                                                                     |
 | -------------------------------- | ---------------------------------------------------------------------------- |
@@ -77,12 +88,12 @@ backend/
 
 ---
 
-### `users.test.js` — 53 tests
+### `users.test.js` — 73 tests
 
 | Endpoint                      | Scenario                                                             |
 | ----------------------------- | -------------------------------------------------------------------- |
 | `GET /api/users`              | ✅ Admin can list users                                              |
-|                               | ✅ Assignment manager can list users                                 |
+|                               | ✅ Assignment manager → 403 (admin-only)                             |
 |                               | ✅ Regular user → 403                                                |
 |                               | ✅ No token → 401                                                    |
 |                               | ✅ Filter by `role=admin`                                            |
@@ -136,7 +147,7 @@ backend/
 
 ---
 
-### `groups.test.js` — 46 tests
+### `groups.test.js` — 55 tests
 
 | Endpoint                           | Scenario                                    |
 | ---------------------------------- | ------------------------------------------- |
@@ -189,38 +200,36 @@ backend/
 
 ---
 
-### `config.test.js` — 18 tests
+### `migrations.test.js` — 7 tests
 
-| Endpoint                            | Scenario                                               |
-| ----------------------------------- | ------------------------------------------------------ |
-| `GET /api/config/group-join-locked` | ✅ Authenticated user reads lock status                |
-|                                     | ✅ Defaults to `false` when no config row exists       |
-|                                     | ✅ No token → 401                                      |
-| `GET /api/config`                   | ✅ Admin can read all config                           |
-|                                     | ✅ Assignment manager can read all config              |
-|                                     | ✅ Regular user → 403                                  |
-|                                     | ✅ No token → 401                                      |
-| `PUT /api/config/:key`              | ✅ Admin sets group_join_locked=true                   |
-|                                     | ✅ Admin sets group_join_locked=false                  |
-|                                     | ✅ Config change reflected in GET immediately          |
-|                                     | ✅ Unknown key → 400                                   |
-|                                     | ✅ Missing value → 400                                 |
-|                                     | ✅ Assignment manager can update config                |
-|                                     | ✅ Regular user → 403                                  |
-|                                     | ✅ No token → 401                                      |
-| `group_join_locked` enforcement     | ✅ Regular user blocked from joining when locked → 403 |
-|                                     | ✅ Assignment manager bypasses lock when joining → 200 |
-|                                     | ✅ Admin bypasses lock when joining → 200              |
+Upgrades a real pre-hierarchy database rather than building the current schema. The rest of the suite starts from
+`createSQL`, so it cannot catch a migration that only breaks when older objects are already present — which is how two
+upgrade outages shipped (a UUID foreign key to a still-INTEGER `users.id`, and a role-seed collision with migration
+001's rename). Uses its own throwaway containers, since it needs a database that does _not_ already have the schema.
+
+| Scenario                         | Coverage                                                        |
+| -------------------------------- | --------------------------------------------------------------- |
+| Pre-UUID legacy upgrade          | ✅ Applies `createSQL` + 001–017 without failing                |
+| Id conversion                    | ✅ `users.id` becomes UUID and every account survives           |
+| Role rename                      | ✅ `team_manager` → `assignment_manager`, no duplicate role     |
+| Hierarchy creation               | ✅ All five hierarchy tables exist; `users.group_id` is gone    |
+| Convergence with a fresh install | ✅ Identical columns, widths, defaults, constraints and indexes |
+| Shipped column widths            | ✅ `username`/`email`/`student_id` keep their real widths       |
+| Idempotency                      | ✅ Re-applying `createSQL` changes nothing                      |
 
 ---
 
-## Updating This Document
+### Per-assignment join lock — covered in `assignments.test.js`
 
-**Whenever integration tests are added, removed, or modified**, update this document in the same PR/commit:
+`config.test.js` was removed with the global `/api/config` endpoints; the lock is now a per-assignment flag.
 
-1. Add/remove rows from the relevant table.
-2. Update the test count in the section heading.
-3. Update the total in the [Running](#running) section if the overall count changes.
-
-The per-section test counts (22 / 53 / 46 / 18 = **139 total**) must always match
-`jest --config jest.integration.config.js` output.
+| Endpoint                             | Coverage                                       |
+| ------------------------------------ | ---------------------------------------------- |
+| `PUT /api/assignments/:id/join-lock` | ✅ Admin locks and unlocks one assignment      |
+|                                      | ✅ Managing AM can lock their own assignment   |
+|                                      | ✅ AM managing nothing is refused → 403        |
+|                                      | ✅ Regular user is refused → 403               |
+|                                      | ✅ Locking one assignment leaves siblings open |
+|                                      | ✅ Rejects non-boolean joinLocked and bad UUID |
+|                                      | ✅ 404 for unknown assignment                  |
+|                                      | ✅ New assignments default to unlocked         |

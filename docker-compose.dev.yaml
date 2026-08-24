@@ -5,13 +5,14 @@ services:
     environment:
       POSTGRES_DB: gap_db
       POSTGRES_USER: gap_user
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-gap_password_dev}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Loopback only: a published port would expose these credentials to the LAN
+      - '127.0.0.1:5432:5432'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gap_user -d gap_db"]
+      test: ['CMD-SHELL', 'pg_isready -U gap_user -d gap_db']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -30,13 +31,16 @@ services:
       DB_PORT: 5432
       DB_NAME: gap_db
       DB_USER: gap_user
-      DB_PASSWORD: ${DB_PASSWORD:-gap_password_dev}
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      # No fallback: a known JWT secret lets anyone forge an admin token
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
       JWT_EXPIRES_IN: 24h
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
       CORS_ORIGIN: http://localhost:3000
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change_this_in_production}
-      # SMTP settings — leave SMTP_HOST blank to disable email (links are logged to console instead)
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+      # SMTP settings — leave SMTP_HOST blank to disable email. Bodies carry a
+      # one-time token, so logging them is opt-in rather than inferred.
+      LOG_EMAIL_BODIES: ${LOG_EMAIL_BODIES:-false}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
@@ -45,7 +49,7 @@ services:
       SMTP_FROM: ${SMTP_FROM:-no-reply@gap-app.local}
       APP_URL: ${APP_URL:-http://localhost:3000}
     ports:
-      - "3001:3001"
+      - '127.0.0.1:3001:3001'
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,7 +64,7 @@ services:
       dockerfile: frontend/Dockerfile.dev
     container_name: gap-frontend
     ports:
-      - "3000:3000"
+      - '127.0.0.1:3000:3000'
     depends_on:
       - backend
     environment:

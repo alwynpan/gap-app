@@ -15,6 +15,8 @@ import {
   createUserSchema,
   changePasswordSchema,
   createGroupSchema,
+  createSubjectSchema,
+  createAssignmentSchema,
   updateGroupSchema,
   updateUserSchema,
   forgotPasswordSchema,
@@ -457,12 +459,79 @@ describe('createUserSchema', () => {
     expect(data.role).toBe('assignment_manager');
   });
 
-  it('accepts optional groupId as valid UUID', () => {
+  it('accepts optional groupId as valid UUID when assignmentId is provided', () => {
     const data = ok(createUserSchema, {
       ...validBody,
+      assignmentId: '660e8400-e29b-41d4-a716-446655440000',
       groupId: '550e8400-e29b-41d4-a716-446655440000',
     });
+    expect(data.assignmentId).toBe('660e8400-e29b-41d4-a716-446655440000');
     expect(data.groupId).toBe('550e8400-e29b-41d4-a716-446655440000');
+  });
+
+  it('rejects groupId without assignmentId', () => {
+    expect(
+      err(createUserSchema, {
+        ...validBody,
+        groupId: '550e8400-e29b-41d4-a716-446655440000',
+      })
+    ).toBe('Select an assignment first');
+  });
+
+  it('rejects groupId when assignmentId is an empty string (coerced to null)', () => {
+    expect(
+      err(createUserSchema, {
+        ...validBody,
+        assignmentId: '',
+        groupId: '550e8400-e29b-41d4-a716-446655440000',
+      })
+    ).toBe('Select an assignment first');
+  });
+
+  it('coerces empty string assignmentId to null', () => {
+    const data = ok(createUserSchema, { ...validBody, assignmentId: '' });
+    expect(data.assignmentId).toBeNull();
+  });
+
+  it('accepts assignmentId alone as a valid UUID', () => {
+    const data = ok(createUserSchema, {
+      ...validBody,
+      assignmentId: '660e8400-e29b-41d4-a716-446655440000',
+    });
+    expect(data.assignmentId).toBe('660e8400-e29b-41d4-a716-446655440000');
+  });
+
+  it('rejects invalid assignmentId (non-UUID)', () => {
+    expect(err(createUserSchema, { ...validBody, assignmentId: 'not-a-uuid' })).toEqual(expect.any(String));
+  });
+
+  it('accepts subjectIds as an array of UUIDs', () => {
+    const data = ok(createUserSchema, {
+      ...validBody,
+      subjectIds: ['550e8400-e29b-41d4-a716-446655440000', '660e8400-e29b-41d4-a716-446655440000'],
+    });
+    expect(data.subjectIds).toHaveLength(2);
+  });
+
+  it('accepts an empty subjectIds array', () => {
+    const data = ok(createUserSchema, { ...validBody, subjectIds: [] });
+    expect(data.subjectIds).toEqual([]);
+  });
+
+  it('rejects subjectIds containing a non-UUID entry', () => {
+    expect(err(createUserSchema, { ...validBody, subjectIds: ['not-a-uuid'] })).toBe('Invalid ID format');
+  });
+
+  it('accepts assignmentIds as an array of UUIDs', () => {
+    const data = ok(createUserSchema, {
+      ...validBody,
+      assignmentIds: ['550e8400-e29b-41d4-a716-446655440000'],
+    });
+    expect(data.assignmentIds).toEqual(['550e8400-e29b-41d4-a716-446655440000']);
+  });
+
+  it('rejects assignmentIds containing a non-UUID entry', () => {
+    expect(err(createUserSchema, { ...validBody, assignmentIds: ['nope'] })).toBe('Invalid ID format');
   });
 
   it('accepts optional studentId', () => {
@@ -525,12 +594,78 @@ describe('createUserSchema', () => {
 // ── createGroupSchema / updateGroupSchema ─────────────────────────────────────
 
 describe('createGroupSchema', () => {
-  it('accepts a valid group name', () => {
-    expect(ok(createGroupSchema, { name: 'Alpha' }).name).toBe('Alpha');
+  const validAssignmentId = '660e8400-e29b-41d4-a716-446655440000';
+
+  it('accepts a valid group name with assignmentId', () => {
+    const data = ok(createGroupSchema, { assignmentId: validAssignmentId, name: 'Alpha' });
+    expect(data.name).toBe('Alpha');
+    expect(data.assignmentId).toBe(validAssignmentId);
   });
 
   it('rejects empty name', () => {
-    expect(err(createGroupSchema, { name: '' })).toBe('Group name is required');
+    expect(err(createGroupSchema, { assignmentId: validAssignmentId, name: '' })).toBe('Group name is required');
+  });
+
+  it('rejects missing assignmentId', () => {
+    expect(err(createGroupSchema, { name: 'Alpha' })).toEqual(expect.any(String));
+  });
+
+  it('rejects non-UUID assignmentId', () => {
+    expect(err(createGroupSchema, { assignmentId: 'not-a-uuid', name: 'Alpha' })).toBe('Invalid assignment ID');
+  });
+});
+
+// ── createSubjectSchema ───────────────────────────────────────────────────────
+
+describe('createSubjectSchema', () => {
+  it('accepts a valid subject name', () => {
+    expect(ok(createSubjectSchema, { name: 'COMP90041' }).name).toBe('COMP90041');
+  });
+
+  it('sanitizes HTML from the name', () => {
+    expect(ok(createSubjectSchema, { name: '<b>Maths</b>' }).name).toBe('Maths');
+  });
+
+  it('rejects empty name', () => {
+    expect(err(createSubjectSchema, { name: '' })).toBe('Subject name is required');
+  });
+
+  it('rejects a name longer than 100 characters', () => {
+    expect(err(createSubjectSchema, { name: 'a'.repeat(101) })).toBe('Subject name must be at most 100 characters');
+  });
+
+  it('rejects missing name', () => {
+    expect(err(createSubjectSchema, {})).toEqual(expect.any(String));
+  });
+});
+
+// ── createAssignmentSchema ────────────────────────────────────────────────────
+
+describe('createAssignmentSchema', () => {
+  const validSubjectId = '550e8400-e29b-41d4-a716-446655440000';
+
+  it('accepts a valid subjectId and name', () => {
+    const data = ok(createAssignmentSchema, { subjectId: validSubjectId, name: 'Assignment 1' });
+    expect(data.subjectId).toBe(validSubjectId);
+    expect(data.name).toBe('Assignment 1');
+  });
+
+  it('rejects empty name', () => {
+    expect(err(createAssignmentSchema, { subjectId: validSubjectId, name: '' })).toBe('Assignment name is required');
+  });
+
+  it('rejects a name longer than 100 characters', () => {
+    expect(err(createAssignmentSchema, { subjectId: validSubjectId, name: 'a'.repeat(101) })).toBe(
+      'Assignment name must be at most 100 characters'
+    );
+  });
+
+  it('rejects non-UUID subjectId', () => {
+    expect(err(createAssignmentSchema, { subjectId: 'not-a-uuid', name: 'Assignment 1' })).toBe('Invalid subject ID');
+  });
+
+  it('rejects missing subjectId', () => {
+    expect(err(createAssignmentSchema, { name: 'Assignment 1' })).toEqual(expect.any(String));
   });
 });
 

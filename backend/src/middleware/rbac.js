@@ -1,4 +1,5 @@
 const fp = require('fastify-plugin');
+const Assignment = require('../models/Assignment');
 
 async function rbacPlugin(fastify, _options) {
   // Decorate fastify with RBAC helpers
@@ -26,6 +27,26 @@ async function rbacPlugin(fastify, _options) {
   // Helper to check if user is assignment_manager or admin
   fastify.decorate('requireAssignmentManager', async (request, reply) => {
     return fastify.checkRole(request, reply, ['assignment_manager', 'admin']);
+  });
+
+  // Scoped check: admin always passes; an assignment_manager passes only for
+  // assignments they manage (assignment_managers table). Everyone else is 403.
+  fastify.decorate('assertManagesAssignment', async (request, reply, assignmentId) => {
+    if (!request.user) {
+      reply.code(401).send({ error: 'Unauthorized' });
+      return false;
+    }
+
+    if (request.user.role === 'admin') {
+      return true;
+    }
+
+    if (request.user.role === 'assignment_manager' && (await Assignment.isManager(request.user.id, assignmentId))) {
+      return true;
+    }
+
+    reply.code(403).send({ error: 'Forbidden: You do not manage this assignment' });
+    return false;
   });
 }
 
